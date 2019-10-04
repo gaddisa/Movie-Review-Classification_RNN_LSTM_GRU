@@ -9,6 +9,6 @@ The project is about classification of reviews of movies as positive or negative
 - NumPy: library for numerical calculations
 - Matplotlib: library for data visualisation
 - PIL: Python Image Library for opening and manage different image formats
-- Pytorch: a deep learning framework by Facebook AI Research Team for building neural networks
-- torchvision: package consists of popular datasets, model architectures, and common image transformations for computer vision
+- tensorflow: a deep learning framework by Google AI Research Team for building neural networks
+- KERAS: package consists of popular datasets, model architectures, and common image transformations for computer vision
 # project 2:Sequence to Sequence Learning for Automatic Language Translation
