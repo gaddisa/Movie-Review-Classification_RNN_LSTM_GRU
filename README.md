@@ -1,5 +1,7 @@
 # Movie Review Classification Using RNN/LSTM/GRU
-
+<p align="center">
+  <img src="icon_2.png" alt="Icon" width="200px">
+</p>
 ## Project Overview
 
 The **Movie-Review-Classification_RNN_LSTM_GRU** project aims to perform sentiment analysis on movie reviews using recurrent neural network (RNN) variants such as Long Short-Term Memory (LSTM) and Gated Recurrent Unit (GRU). Sentiment analysis involves determining the sentiment polarity (positive or negative) associated with a given text, in this case, movie reviews.
