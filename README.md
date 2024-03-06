@@ -1,6 +1,6 @@
 # Movie Review Classification Using RNN/LSTM/GRU
 <p align="center">
-  <img src="icon_2.png" alt="Icon" width="200px">
+  <img src="icon_2.png" alt="Icon" width="400px">
 </p>
 ## Project Overview
 
