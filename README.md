@@ -1,4 +1,4 @@
-# Movie-Review-Classification_RNN_LSTM_GRU
+# Movie Review Classification Using RNN/LSTM/GRU
 
 ## Project Overview
 
@@ -6,7 +6,7 @@ The **Movie-Review-Classification_RNN_LSTM_GRU** project aims to perform sentime
 
 ## Problem Statement
 
-Sentiment analysis of movie reviews is crucial for understanding audience reactions and predicting the success of movies. The problem statement for this project involves building a robust deep learning model capable of accurately classifying movie reviews as positive or negative based on the sentiment expressed in the text. This requires training models that can effectively capture the semantic meaning and context of movie reviews, considering factors such as sarcasm, irony, and ambiguity.
+Sentiment analysis of movie reviews is crucial for understanding audience reactions and predicting movie success. The problem statement for this project involves building a robust deep learning model capable of accurately classifying movie reviews as positive or negative based on the sentiment expressed in the text. This requires training models that can effectively capture movie reviews' semantic meaning and context, considering factors such as sarcasm, irony, and ambiguity.
 
 ## Tools and Technologies
 
@@ -36,17 +36,20 @@ The project utilizes pre-trained word embeddings such as Word2Vec or GloVe to re
 Various optimization algorithms are used to train the deep learning models effectively, including:
 
 - **Adam**: An adaptive learning rate optimization algorithm that updates the network weights based on the gradients of the loss function.
-- **RMSprop**: Another adaptive learning rate optimization algorithm that maintains a moving average of the squared gradients, which can help in training deep learning models more efficiently.
+- **RMSprop**: Another adaptive learning rate optimization algorithm that maintains a moving average of the squared gradients, which can help train deep learning models more efficiently.
 
 ## Crossfold
 
-Cross-validation techniques such as k-fold cross-validation are employed to evaluate the model's performance and ensure robustness. By training and testing the model on different subsets of the data, cross-validation provides a more reliable estimate of the model's performance and helps prevent overfitting.
+Cross-validation techniques such as k-fold evaluate the model's performance and ensure robustness. By training and testing the model on different subsets of the data, cross-validation provides a more reliable estimate of the model's performance and helps prevent overfitting.
 
 ## RNN LSTM GRU Project Solution
 
-The project implements RNN variants, including LSTM and GRU, to perform sentiment analysis on movie reviews. These models are trained on labeled movie review data to learn the patterns and associations between words and sentiments. The trained models are then evaluated using metrics such as accuracy, precision, recall, and F1-score to assess their performance in classifying movie reviews accurately.
+The project implements RNN variants, including LSTM and GRU, to perform sentiment analysis on movie reviews. These models are trained on labeled movie review data to learn the patterns and associations between words and sentiments. The trained models are then evaluated using accuracy, precision, recall, and F1-score metrics to assess their performance in accurately classifying movie reviews.
 
 ## Dataset
 
-The dataset used in this project consists of labeled movie reviews, where each review is classified as either positive or negative based on its sentiment. The dataset is typically sourced from publicly available movie review websites or datasets such as IMDb or Rotten Tomatoes. It may include features such as the text of the review, the reviewer's rating, and additional metadata.
+The dataset used in this project consists of labeled movie reviews, each classified as either positive or negative based on its sentiment. The dataset is typically sourced from publicly available movie review websites or datasets such as IMDb or Rotten Tomatoes. It may include features such as the review text, the reviewer's rating, and additional metadata.
+
+## Contact Information
+If you have any difficulty with this project, please contact me using my email, gaddisaolex@gmail.com
 
