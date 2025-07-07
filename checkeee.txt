@@ -1,0 +1,66 @@
+
+    // Impersonation routes
+    Route::impersonate();
+	
+	
+	
+	to header.blade
+	@if (app('impersonate')->isImpersonating())
+                        <a class="dropdown-item police-profile-link" href="{{ route('backend.impersonate.leave') }}">
+                            <i class="fas fa-user-secret text-danger"></i>
+                            &nbsp;Stop Impersonating
+                        </a>
+                    @endif
+					
+	index.blade
+	  @if ($employee->user && auth()->user()->canImpersonate() && $employee->user->canBeImpersonated())
+                                    <a href="{{ route('backend.impersonate', $employee->user->id) }}"
+                                        class="inline-block p-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 transition shadow-sm"
+                                        title="Impersonate">
+                                        <i class="fas fa-user-secret"></i>
+                                    </a>
+                                @endif
+	
+	User.php
+	
+	use Lab404\Impersonate\Models\Impersonate;
+    use Impersonate;
+
+	 // Only admins/cashiers can impersonate
+    public function canImpersonate(): bool
+    {
+        return $this->hasAnyRole(['super admin', 'admin', 'cashier']);
+    }
+
+    // Only tenants can be impersonated
+    public function canBeImpersonated(): bool
+    {
+        return $this->hasRole('tenant');
+    }
+	
+	
+	Index livewire 
+	
+	use App\Models\User;
+
+	public function impersonate($userId)
+    {
+        $user = User::findOrFail($userId);
+
+        if (!auth()->user()->canImpersonate() || !$user->canBeImpersonated()) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not allowed to impersonate this user.'
+            ]);
+            return;
+        }
+
+        auth()->user()->impersonate($user);
+
+        $this->dispatch('showToast', [
+            'type' => 'success',
+            'message' => 'You are now impersonating the tenant.'
+        ]);
+
+        return redirect()->route('backend.payments.paytenant');
+    }
