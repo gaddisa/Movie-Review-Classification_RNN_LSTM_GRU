@@ -1,1449 +1,166 @@
-<?php
-
-namespace App\Livewire\Room;
-
-use App\Models\User;
-use Modules\Room\Models\Room;
-use Modules\Site\Models\Site;
-use App\Notifications\NotifyCeo;
-use Illuminate\Support\Facades\DB;
-use Modules\Room\Models\RoomPrice;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Gate;
-use LivewireUI\Modal\ModalComponent;
-
-class RoomModal extends ModalComponent
-{
-    public $siteId;
-    public $roomId;
-    public $isEdit = false;
-
-    // Form fields
-    public $name;
-    public $description;
-    public $area_square_meters;
-    public $room_status = 0;
-    public $status = 1;
-    public $selected_site_id;
-    public $price_per_sqm;
-
-    protected function authorizeAction(string $action): bool
-    {
-        $response = Gate::inspect('manageSystemSettings', $action);
-
-        if (!$response->allowed()) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => $response->message(),
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            return false;
-        }
-
-        return true;
-    }
-
-    public function mount($siteId = null, $roomId = null)
-    {
-        $action = $roomId ? 'update' : 'create';
-        if (!$this->authorizeAction($action)) {
-            $this->skipRender();
-            return;
-        }
-
-        $this->siteId = $siteId;
-        $this->selected_site_id = $siteId;
-
-        if ($roomId) {
-            $this->isEdit = true;
-            $this->loadRoom($roomId);
-        }
-    }
-
-    public function loadRoom($roomId)
-    {
-
-        try {
-            //$room = Room::with(['currentPrice'])->findOrFail($roomId);
-            //$room = Room::with('prices')->findOrFail($roomId);
-            $room = Room::with('currentPriceModel')->findOrFail($roomId);
-
-            $this->roomId = $roomId;
-            $this->selected_site_id = $room->site_id;
-            $this->name = $room->name;
-            $this->description = $room->description;
-            $this->area_square_meters = $room->area_square_meters;
-            $this->room_status = $room->room_status;
-            $this->status = $room->status;
-
-            // Get the current active price
-            //$currentPrice = $room->prices()->whereNull('effective_to')->latest('effective_from')->first();
-            //$this->price_per_sqm = $currentPrice?->price_per_sqm ?? 0;
-
-            $this->price_per_sqm = $room->currentPriceModel?->price_per_sqm ?? 0;
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'The requested room does not exist',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            $this->closeModal();
-        } catch (\Exception $e) {
-            Log::error('Failed to load room: ' . $e->getMessage(), [
-                'room_id' => $roomId,
-                'user_id' => auth()->id()
-            ]);
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to load room data',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            $this->closeModal();
-        }
-    }
-
-    public function saveRoom()
-    {
-        $action = $this->isEdit ? 'update' : 'create';
-        if (!$this->authorizeAction($action)) {
-            return;
-        }
-
-        $validated = $this->validate([
-            'selected_site_id' => 'required|exists:sites,id',
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'area_square_meters' => 'required|numeric|min:0',
-            'price_per_sqm' => 'required|numeric|min:0',
-            'room_status' => 'required|in:0,1',
-            'status' => 'required|in:0,1,2',
-        ]);
-
-        $validated['site_id'] = $this->selected_site_id;
-
-        try {
-            DB::beginTransaction();
-
-            if ($this->isEdit) {
-                $room = Room::findOrFail($this->roomId);
-                $room->update($validated);
-                $this->notifyCeo('updated', $room);
-
-                // Check if price changed
-                $currentPrice = $room->currentPriceModel;
-                if (!$currentPrice || (float)$currentPrice->price_per_sqm != (float)$this->price_per_sqm) {
-
-                    // Expire old price if exists
-                    if ($currentPrice) {
-                        $currentPrice->update([
-                            'effective_to' => now()->subDay()->toDateString()
-                        ]);
-                    }
-
-                    // Create new price record
-                    RoomPrice::create([
-                        'room_id' => $room->id,
-                        'price_per_sqm' => $this->price_per_sqm,
-                        'total_price' => $this->price_per_sqm * $room->area_square_meters,
-                        'effective_from' => now()->toDateString()
-                    ]);
-                }
-            } else {
-                $room = Room::create($validated);
-                $this->notifyCeo('created', $room);
-
-                // Create initial price record
-                RoomPrice::create([
-                    'room_id' => $room->id,
-                    'price_per_sqm' => $this->price_per_sqm,
-                    'total_price' => $this->price_per_sqm * $room->area_square_meters,
-                    'effective_from' => now()->toDateString()
-                ]);
-            }
-
-            DB::commit();
-
-            $this->dispatch('refreshRooms');
-            $this->closeModal();
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => 'Room saved successfully'
-            ]);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            DB::rollBack();
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Room not found',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Room save failed: ' . $e->getMessage(), [
-                'exception' => $e,
-                'room_id' => $this->roomId ?? null,
-                'user_id' => auth()->id()
-            ]);
-
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to save room. Please try again.',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-        }
-    }
-
-    public function getSitesProperty()
-    {
-        return Site::orderBy('name')->get(['id', 'name']);
-    }
-
-    public function getTotalPriceProperty()
-    {
-        return $this->area_square_meters * $this->price_per_sqm;
-    }
-
-    public function render()
-    {
-        return view('livewire.room.room-modal', [
-            'totalPrice' => $this->totalPrice
-        ]);
-    }
-
-    public static function modalMaxWidth(): string
-    {
-        return '2xl';
-    }
-
-    protected function notifyCeo($action, Room $room)
-    {
-        try {
-            $ceoUsers = User::role(['ceo', 'super admin'])->get();
-
-            $data = [
-                'room_name' => $room->name,
-                'site_name' => $room->site->name,
-                'area_sqm' => $room->area_square_meters,
-                'status' => $room->status ? 'Active' : 'Inactive',
-            ];
-
-            foreach ($ceoUsers as $ceo) {
-                $ceo->notify(new NotifyCeo(
-                    $action,
-                    'Room',
-                    $data
-                ));
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to send CEO notification: ' . $e->getMessage(), [
-                'room_id' => $room->id,
-                'action' => $action
-            ]);
-        }
-    }
-}
-
-
-
-//room
-<?php
-
-namespace Modules\Room\Models;
-
-use Carbon\Carbon;
-use App\Models\BaseModel;
-use App\Models\RentAgreement;
-use Modules\Site\Models\Site;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-// Use the RoomPrice model for price management
-class Room extends BaseModel
-{
-    use HasFactory;
-
-    protected $table = 'rooms';
-
-    protected $fillable = [
-        'site_id',
-        'name',
-        'slug',
-        'description',
-        'area_square_meters',
-        'room_status',
-        'status',
-    ];
-
-    // Constants for room status
-    const ROOM_STATUS_UNOCCUPIED = 0;
-    const ROOM_STATUS_OCCUPIED = 1;
-
-    /**
-     * Relationship to Site
-     */
-    public function site()
-    {
-        return $this->belongsTo(Site::class);
-    }
-
-    /**
-     * All price history for this room
-     */
-    public function prices()
-    {
-        return $this->hasMany(RoomPrice::class)->orderBy('effective_from', 'desc');
-    }
-
-    public function currentPrice()
-    {
-        return $this->hasOne(RoomPrice::class)
-            ->whereNull('effective_to')
-            ->withDefault([
-                'total_price' => null
-            ]);
-    }
-
-    /**
-     * Safe price accessor that will NEVER throw errors
-     */
-
-    /**
-     * Formatted price display
-     */
-    public function getFormattedPriceAttribute()
-    {
-        return $this->current_price
-            ? '$' . number_format($this->current_price, 2)
-            : '(No price)';
-    }
-    public function rentAgreements()
-    {
-        return $this->hasMany(RentAgreement::class);
-    }
-
-
-    /**
-     * Current active price (where effective_to is null)
-     */
-
-    /**
-     * Historical prices (where effective_to is not null)
-     */
-    public function priceHistory()
-    {
-        return $this->hasMany(RoomPrice::class)->whereNotNull('effective_to')->orderBy('effective_from', 'desc');
-    }
-
-    public function current_price_relation()
-    {
-        return $this->hasOne(RoomPrice::class)
-            ->whereNull('effective_to')
-            ->withDefault([
-                'total_price' => null
-            ]);
-    }
-    public function getCurrentPriceAttribute()
-    {
-        return $this->current_price_relation->total_price;
-    }
-
-
-    /**
-     * Accessor for room_status_text
-     */
-    public function getRoomStatusTextAttribute()
-    {
-        return match ($this->room_status) {
-            self::ROOM_STATUS_OCCUPIED => 'Occupied',
-            default => 'Unoccupied',
-        };
-    }
-    public function isOccupied()
-    {
-        return $this->rentAgreements()
-            ->where('end_date', '>=', now()->toDateString())
-            ->exists();
-    }
-    /**
-     * Accessor for current_price (convenience method)
-     */
-
-
-    /**
-     * Factory definition
-     */
-    protected static function newFactory()
-    {
-        return \Modules\Room\database\factories\RoomFactory::new();
-    }
-
-
-    // This is useful for displaying the current price in forms or views
-    // It uses latestOfMany to ensure we always get the most recent price
-    // where effective_to is null, which indicates it's the current active price
-    // This method is used in the RoomModal Livewire component to load the current price
-    // when editing a room, ensuring we always have the latest price data available
-    // It also allows us to easily access the current price without needing to
-    // manually query the prices relationship each time
-    public function currentPriceModel()
-    {
-        return $this->hasOne(RoomPrice::class)
-            ->whereNull('effective_to')
-            ->latestOfMany('effective_from');
-    }
-
-
-
-
-
-    public function calculateExpectedRevenue(Carbon $start, Carbon $end): float
-    {
-        return $this->prices->sum(function ($price) use ($start, $end) {
-            $priceStart = Carbon::parse($price->effective_from)->startOfMonth();
-            $priceEnd = $price->effective_to
-                ? Carbon::parse($price->effective_to)->endOfMonth()
-                : $end->copy();
-
-            $effectiveStart = $priceStart->greaterThan($start) ? $priceStart : $start->copy();
-            $effectiveEnd = $priceEnd->lessThan($end) ? $priceEnd : $end->copy();
-
-            if ($effectiveStart->gt($effectiveEnd)) {
-                return 0;
-            }
-
-            $months = $effectiveStart->diffInMonths($effectiveEnd) + 1;
-
-            return $this->area_square_meters * $price->price_per_sqm * $months;
-        });
-    }
-}
-
-
-
-Backend controller
-<?php
-
-namespace App\Http\Controllers\Backend;
-
-use Carbon\Carbon;
-use App\Models\User;
-use App\Models\Payment;
-use Andegna\DateTimeFactory;
-use App\Models\EmployeeInfo;
-use Illuminate\Http\Request;
-use App\Models\RentAgreement;
-use Modules\Room\Models\Room;
-use Modules\Site\Models\Site;
-use App\Models\PaymentAllocation;
-use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Auth;
-use Modules\Application\Models\Application;
-use Modules\Mainsetting\Models\Mainsetting;
-
-class BackendController extends Controller
-{
-
-    // Add this to your BackendController or a helper class
-
-    private function getEthiopianMonthlyCollections($allocations, $fiscalYearStart, $fiscalYearEnd)
-    {
-        $ethiopianMonths = [
-            1 => 'መስከረም',
-            2 => 'ጥቅምት',
-            3 => 'ኅዳር',
-            4 => 'ታኅሣሥ',
-            5 => 'ጥር',
-            6 => 'የካቲት',
-            7 => 'መጋቢት',
-            8 => 'ሚያዝያ',
-            9 => 'ግንቦት',
-            10 => 'ሰኔ',
-            11 => 'ሐምሌ',
-            12 => 'ነሐሴ',
-            13 => 'ጳጉሜ'
-        ];
-
-        // Initialize monthly data for Ethiopian fiscal year (from ሐምሌ to ሰኔ)
-        $monthlyData = [];
-        for ($month = 11; $month <= 13; $month++) {
-            $monthlyData[$ethiopianMonths[$month]] = 0;
-        }
-        for ($month = 1; $month <= 10; $month++) {
-            $monthlyData[$ethiopianMonths[$month]] = 0;
-        }
-
-        // Group allocations by Ethiopian month
-        foreach ($allocations as $allocation) {
-            $ethiopianDate = DateTimeFactory::fromDateTime($allocation->created_at);
-            $ethiopianMonth = $ethiopianDate->getMonth();
-            $ethiopianYear = $ethiopianDate->getYear();
-
-            // Check if the date falls within the fiscal year
-            $fiscalStartEth = DateTimeFactory::fromDateTime($fiscalYearStart);
-            $fiscalEndEth = DateTimeFactory::fromDateTime($fiscalYearEnd);
-
-            if ($ethiopianDate >= $fiscalStartEth && $ethiopianDate <= $fiscalEndEth) {
-                $monthName = $ethiopianMonths[$ethiopianMonth];
-                $monthlyData[$monthName] += $allocation->total_for_the_month;
-            }
-        }
-
-        // Prepare chart data in the correct order (ሐምሌ to ሰኔ)
-        $orderedMonths = [
-            'ሐምሌ',
-            'ነሐሴ',
-            'ጳጉሜ', // Ethiopian months 11,12,13
-            'መስከረም',
-            'ጥቅምት',
-            'ኅዳር',
-            'ታኅሣሥ',
-            'ጥር',
-            'የካቲት',
-            'መጋቢት',
-            'ሚያዝያ',
-            'ግንቦት',
-            'ሰኔ'  // Months 1-10
-        ];
-
-        $labels = [];
-        $data = [];
-
-        foreach ($orderedMonths as $month) {
-            $labels[] = $month;
-            $data[] = $monthlyData[$month] ?? 0;
-        }
-
-        return [
-            'labels' => $labels,
-            'data' => $data
-        ];
-    }
-    public function index(Request $request)
-    {
-        $user = Auth::user();
-
-        if ($user->hasRole('tenant')) {
-            return redirect()->route('backend.payments.paytenant');
-        }
-
-        // Get current date
-        $today = now();
-        $currentYear = $today->year;
-        $currentMonth = $today->month;
-        $currentDay = $today->day;
-
-        // Fiscal year runs from July 8 to July 7
-        if ($currentMonth < 7 || ($currentMonth == 7 && $currentDay < 8)) {
-            $fiscalYear = $currentYear - 1;
-        } else {
-            $fiscalYear = $currentYear;
-        }
-
-        // Get selected year from request or use current fiscal year
-        $selectedYear = $request->input('year', $fiscalYear);
-
-        // Set fiscal year boundaries (July 8 to July 7)
-        $fiscalYearStart = Carbon::create($selectedYear, 7, 8);
-        $fiscalYearEnd = Carbon::create($selectedYear + 1, 7, 7);
-
-        // Get available years for dropdown (starting from 2024)
-        $availableYears = $this->getAvailableFiscalYears($fiscalYear);
-
-        // Expected annual revenue (dynamically from each room’s price)
-        $rooms = Room::with('currentPriceModel')->get();
-
-
-        $expectedAnnualRevenue = $rooms->sum(fn($room) => $room->calculateExpectedRevenue($fiscalYearStart, $fiscalYearEnd));
-
-
-
-
-        // Get all approved payments (allocations with CEO approval)
-        $ceoUsers = User::role(['super admin', 'ceo'])->pluck('id');
-        $approvedAllocations = PaymentAllocation::where('status', 'approved')
-            ->whereIn('updated_by', $ceoUsers)
-            ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd])
-            ->with(['payment', 'agreement.room.site', 'agreement.tenant'])
-            ->get();
-
-        // Calculate collected amount for current fiscal year
-        $totalCollected = $approvedAllocations->sum('total_for_the_month');
-
-        // Calculate collection rate based on expected revenue
-        $collectionRate = $expectedAnnualRevenue > 0
-            ? round(($totalCollected / $expectedAnnualRevenue) * 100)
-            : 0;
-
-        // Calculate total collected up to now (from July to current month)
-        $collectedUpToNow = $approvedAllocations
-            ->filter(function ($allocation) use ($fiscalYearStart) {
-                return $allocation->created_at >= $fiscalYearStart;
-            })
-            ->sum('total_for_the_month');
-
-        // Calculate total penalties for current fiscal year
-        $totalPenalties = PaymentAllocation::where('status', 'approved')
-            ->whereIn('updated_by', $ceoUsers)
-            ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd])
-            ->sum('penalty_amount');
-
-        // Calculate outstanding amount
-        $totalOutstanding = max(0, $expectedAnnualRevenue - $collectedUpToNow);
-
-        // Get all active rent agreements for tenant info
-        $activeAgreements = RentAgreement::with(['tenant', 'room.site'])
-            ->where(function ($query) {
-                $query->whereNull('end_date')
-                    ->orWhere('end_date', '>=', now());
-            })
-            ->where('start_date', '<=', now())
-            ->get();
-
-        // Gender distribution from active agreements
-        $genderCounts = $activeAgreements->groupBy('tenant.gender')->map->count();
-        $maleCount = $genderCounts['male'] ?? 0;
-        $femaleCount = $genderCounts['female'] ?? 0;
-        $totalTenants = $maleCount + $femaleCount;
-
-        $genderDistribution = [
-            'male' => $totalTenants > 0 ? round(($maleCount / $totalTenants) * 100) : 0,
-            'female' => $totalTenants > 0 ? round(($femaleCount / $totalTenants) * 100) : 0,
-            'male_count' => $maleCount,
-            'female_count' => $femaleCount
-        ];
-
-        // Get top performing sites (by collection rate)
-        // Top sites with collection rate
-        $topSites = Site::with([
-            'rooms.prices', // ✅ load all prices
-            'rooms.rentAgreements.paymentAllocations' => function ($query) use ($ceoUsers, $fiscalYearStart, $fiscalYearEnd) {
-                $query->where('status', 'approved')
-                    ->whereIn('updated_by', $ceoUsers)
-                    ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd]);
-            }
-        ])
-            ->withCount([
-                'rooms',
-                'rooms as occupied_rooms_count' => function ($query) {
-                    $query->whereHas('rentAgreements', function ($q) {
-                        $q->where(function ($q2) {
-                            $q2->whereNull('end_date')
-                                ->orWhere('end_date', '>=', now());
-                        })->where('start_date', '<=', now());
-                    });
-                }
-            ])
-            ->get()
-            ->map(function ($site) use ($fiscalYearStart, $fiscalYearEnd) {
-                $expectedRevenue = $site->rooms->sum(fn($room) => $room->calculateExpectedRevenue($fiscalYearStart, $fiscalYearEnd));
-
-
-                $collectedAmount = $site->rooms->sum(function ($room) use ($fiscalYearStart, $fiscalYearEnd) {
-                    return $room->rentAgreements->sum(function ($agreement) use ($fiscalYearStart, $fiscalYearEnd) {
-                        return $agreement->paymentAllocations
-                            ->where('status', 'approved')
-                            ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd])
-                            ->sum('total_for_the_month');
-                    });
-                });
-
-                $collectionRate = $expectedRevenue > 0
-                    ? round(($collectedAmount / $expectedRevenue) * 100)
-                    : 0;
-
-                return [
-                    'id' => $site->id,
-                    'name' => $site->name,
-                    'collection_rate' => $collectionRate,
-                    'expected_revenue' => $expectedRevenue,
-                    'collected_amount' => $collectedAmount,
-                    'occupied_rooms' => $site->occupied_rooms_count,
-                    'total_rooms' => $site->rooms_count
-                ];
-            })
-            ->sortByDesc('collection_rate')
-            ->take(3);
-
-
-        // Get tenant alerts (overdue payments excluding current month)
-        $currentMonth = now()->month;
-        $currentYear = now()->year;
-
-        $tenantAlerts = RentAgreement::with(['tenant', 'room.site', 'paymentAllocations'])
-            ->whereHas('paymentAllocations', function ($query) use ($currentMonth, $currentYear) {
-                $query->where('status', 'pending')
-                    ->where(function ($q) use ($currentMonth, $currentYear) {
-                        $q->where(function ($q2) use ($currentMonth, $currentYear) {
-                            $q2->where('month_gregorian', '<', $currentMonth)
-                                ->where('year_gregorian', '<=', $currentYear);
-                        })->orWhere(function ($q2) use ($currentYear) {
-                            $q2->where('year_gregorian', '<', $currentYear);
-                        });
-                    });
-            })
-            ->get()
-            ->flatMap(function ($agreement) {
-                return $agreement->paymentAllocations
-                    ->where('status', 'pending')
-                    ->map(function ($allocation) use ($agreement) {
-                        $monthName = Carbon::create()
-                            ->month($allocation->month_gregorian)
-                            ->format('F');
-
-                        return [
-                            'tenant_name' => $agreement->tenant->full_name,
-                            'tenant_uuid' => $agreement->tenant->uuid,
-                            'site_name' => $agreement->room->site->name,
-                            'room_name' => $agreement->room->name,
-                            'month' => $monthName . ' ' . $allocation->year_gregorian,
-                            'rent_amount' => $allocation->rent_amount,
-                            'penalty_amount' => $allocation->penalty_amount,
-                            'total_due' => $allocation->total_for_the_month,
-                            'status' => 'overdue'
-                        ];
-                    });
-            })
-            ->sortByDesc('total_due')
-            ->take(10);
-
-        // Recent payments (approved by CEO)
-        $recentPayments = PaymentAllocation::where('status', 'approved')
-            ->whereIn('updated_by', $ceoUsers)
-            ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd])
-            ->with(['payment', 'agreement.room.site'])
-            ->orderBy('created_at', 'desc')
-            ->limit(3)
-            ->get()
-            ->map(function ($allocation) {
-                return [
-                    'amount' => $allocation->total_for_the_month,
-                    'date' => $allocation->created_at->format('Y-m-d'),
-                    'site_name' => $allocation->agreement->room->site->name,
-                    'room_name' => $allocation->agreement->room->name
-                ];
-            });
-
-        // Site and room statistics
-        $siteCount = Site::count();
-        $roomCount = Room::count();
-        $occupiedRooms = $activeAgreements->count();
-        $occupancyRate = $roomCount > 0 ? round(($occupiedRooms / $roomCount) * 100) : 0;
-
-        // Monthly collections for current fiscal year
-        $monthlyCollections = [];
-        $months = [];
-
-        // Generate all months in fiscal year
-        for ($month = 7; $month <= 12; $month++) {
-            $monthName = Carbon::create()->month($month)->format('F');
-            $months[] = $monthName . ' ' . $selectedYear;
-            $monthlyCollections[$monthName . ' ' . $selectedYear] = 0;
-        }
-        for ($month = 1; $month <= 6; $month++) {
-            $monthName = Carbon::create()->month($month)->format('F');
-            $months[] = $monthName . ' ' . ($selectedYear + 1);
-            $monthlyCollections[$monthName . ' ' . ($selectedYear + 1)] = 0;
-        }
-
-        // Populate with actual data
-        PaymentAllocation::where('status', 'approved')
-            ->whereIn('updated_by', $ceoUsers)
-            ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd])
-            ->get()
-            ->each(function ($allocation) use (&$monthlyCollections) {
-                $monthName = Carbon::create()->month($allocation->month_gregorian)->format('F');
-                $year = $allocation->year_gregorian;
-                $key = $monthName . ' ' . $year;
-
-                if (array_key_exists($key, $monthlyCollections)) {
-                    $monthlyCollections[$key] += $allocation->total_for_the_month;
-                }
-            });
-
-        $monthlyChartData = [
-            'labels' => $months,
-            'data' => array_values($monthlyCollections)
-        ];
-
-        // Monthly collections by payment date
-        $monthlyCollectionsByPaymentDate = [];
-        $monthsByPaymentDate = [];
-
-        for ($month = 7; $month <= 12; $month++) {
-            $monthName = Carbon::create()->month($month)->format('F');
-            $monthsByPaymentDate[] = $monthName . ' ' . $selectedYear;
-            $monthlyCollectionsByPaymentDate[$monthName . ' ' . $selectedYear] = 0;
-        }
-        for ($month = 1; $month <= 6; $month++) {
-            $monthName = Carbon::create()->month($month)->format('F');
-            $monthsByPaymentDate[] = $monthName . ' ' . ($selectedYear + 1);
-            $monthlyCollectionsByPaymentDate[$monthName . ' ' . ($selectedYear + 1)] = 0;
-        }
-
-        PaymentAllocation::where('status', 'approved')
-            ->whereIn('updated_by', $ceoUsers)
-            ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd])
-            ->get()
-            ->each(function ($allocation) use (&$monthlyCollectionsByPaymentDate) {
-                $paymentMonth = $allocation->created_at->month;
-                $paymentYear = $allocation->created_at->year;
-                $monthName = Carbon::create()->month($paymentMonth)->format('F');
-                $key = $monthName . ' ' . $paymentYear;
-
-                if (array_key_exists($key, $monthlyCollectionsByPaymentDate)) {
-                    $monthlyCollectionsByPaymentDate[$key] += $allocation->total_for_the_month;
-                }
-            });
-
-        $monthlyChartDataByPaymentDate = [
-            'labels' => $monthsByPaymentDate,
-            'data' => array_values($monthlyCollectionsByPaymentDate)
-        ];
-
-
-        // Replace the monthlyCollectionsByPaymentDate section with:
-        $approvedAllocationsForEthCalendar = PaymentAllocation::where('status', 'approved')
-            ->whereIn('updated_by', $ceoUsers)
-            ->whereBetween('created_at', [$fiscalYearStart, $fiscalYearEnd])
-            ->get();
-
-        $ethiopianMonthlyChartData = $this->getEthiopianMonthlyCollections(
-            $approvedAllocationsForEthCalendar,
-            $fiscalYearStart,
-            $fiscalYearEnd
-        );
-
-        $weeklyPerformance = $this->getLastEightWeeksPerformance($ceoUsers);
-
-        // Get last 8 weeks performance
-
-
-
-        return view('backend.index', compact(
-            'siteCount',
-            'roomCount',
-            'occupiedRooms',
-            'occupancyRate',
-            'totalCollected',
-            'collectedUpToNow',
-            'monthlyChartData',
-            'monthlyChartDataByPaymentDate',
-            'expectedAnnualRevenue',
-            'collectionRate',
-            'totalPenalties',
-            'totalOutstanding',
-            'topSites',
-            'tenantAlerts',
-            'recentPayments',
-            'genderDistribution',
-            'availableYears',
-            'fiscalYear',
-            'selectedYear',
-            'weeklyPerformance',
-            'ethiopianMonthlyChartData'
-        ));
-    }
-
-
-    private function getAvailableFiscalYears($currentFiscalYear)
-    {
-        $firstHistoricalYear = 2024; // First fiscal year in system
-        $years = range($firstHistoricalYear, $currentFiscalYear);
-        return array_reverse($years); // Newest first
-    }
-    private function getLastEightWeeksPerformance($ceoUsers)
-    {
-        $payments = PaymentAllocation::where('status', 'approved')
-            ->whereIn('updated_by', $ceoUsers)
-            ->where('created_at', '>=', now()->subWeeks(8)->startOfWeek())
-            ->get();
-
-        $weeklyData = [];
-
-        for ($i = 7; $i >= 0; $i--) {
-            $start = now()->subWeeks($i)->startOfWeek();
-            $end = now()->subWeeks($i)->endOfWeek();
-
-            // Convert to Ethiopian dates
-            $ethStart = DateTimeFactory::fromDateTime($start);
-            $ethEnd = DateTimeFactory::fromDateTime($end);
-
-            // Create Amharic label: "ሳምንት 1: ሐምሌ 15-21"
-            $weekNumber = 8 - $i;
-            $monthStart = translate_ethiopian_month($ethStart->format('F'), 'am');
-            $monthEnd = translate_ethiopian_month($ethEnd->format('F'), 'am');
-
-            $label = "ሳምንት $weekNumber: " .
-                $monthStart . ' ' . $ethStart->format('j') . '-' .
-                ($monthStart === $monthEnd ? '' : $monthEnd . ' ') .
-                $ethEnd->format('j');
-
-            $amount = $payments->filter(function ($payment) use ($start, $end) {
-                return $payment->created_at >= $start && $payment->created_at <= $end;
-            })->sum('total_for_the_month');
-
-            $weeklyData[] = [
-                'week_number' => $weekNumber,
-                'label' => $label,
-                'amount' => $amount,
-                'start_date' => $start,
-                'end_date' => $end
-            ];
-        }
-
-        return [
-            'labels' => array_column($weeklyData, 'label'),
-            'data' => array_column($weeklyData, 'amount'),
-            'detailed_data' => $weeklyData
-        ];
-    }
-    // private function getLastEightWeeksPerformance($ceoUsers)
-    // {
-    //     $payments = PaymentAllocation::where('status', 'approved')
-    //         ->whereIn('updated_by', $ceoUsers)
-    //         ->where('created_at', '>=', now()->subWeeks(8)->startOfWeek())
-    //         ->get();
-
-    //     $weeklyData = [];
-
-    //     for ($i = 7; $i >= 0; $i--) {
-    //         $start = now()->subWeeks($i)->startOfWeek();
-    //         $end = now()->subWeeks($i)->endOfWeek();
-
-    //         // Week label format: "Week 1: Jul 1-7" or "ሳምንት 1: Jul 1-7"
-    //         $weekNumber = 8 - $i; // Counts from 1 to 8
-    //         $gregorianLabel = "Week $weekNumber: " . $start->format('M j') . '-' . $end->format('j');
-    //         $amharicLabel = "ሳምንት $weekNumber: " . $start->format('M j') . '-' . $end->format('j');
-
-    //         $amount = $payments->filter(function ($payment) use ($start, $end) {
-    //             return $payment->created_at >= $start && $payment->created_at <= $end;
-    //         })->sum('total_for_the_month');
-
-    //         $weeklyData[] = [
-    //             'week_number' => $weekNumber,
-    //             'gregorian_label' => $gregorianLabel,
-    //             'amharic_label' => $amharicLabel,
-    //             'amount' => $amount,
-    //             'start_date' => $start,
-    //             'end_date' => $end
-    //         ];
-    //     }
-
-    //     return [
-    //         'labels' => array_column($weeklyData, 'gregorian_label'),
-    //         'amharic_labels' => array_column($weeklyData, 'amharic_label'),
-    //         'data' => array_column($weeklyData, 'amount'),
-    //         'detailed_data' => $weeklyData
-    //     ];
-    // }
-}
-
-
-//roommodal
-<div class="p-6 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg shadow-lg border border-gray-200">
-    <div class="flex justify-between items-center pb-4 border-b border-gray-200 mb-4">
-        <h2 class="text-2xl font-bold text-gray-800 flex items-center">
-            <i class="fas fa-door-open mr-2 text-blue-600"></i>
-            {{ $isEdit ? __('Edit Room') : __('Add New Room') }}
-        </h2>
-        <button wire:click="$dispatch('closeModal')"
-            class="text-gray-500 hover:text-red-600 transition-colors duration-200 transform hover:scale-110">
-            <i class="fas fa-times-circle text-xl"></i>
-        </button>
+@props([
+    'data' => '',
+    'toolbar' => '',
+    'title' => '',
+    'subtitle' => '',
+    'module_name' => '',
+    'module_title' => '',
+    'module_icon' => '',
+    'module_action' => '',
+])
+
+<div class="d-flex justify-content-between">
+    <div class="align-self-center">
+        @if ($slot != '')
+            <h4 class="card-title mb-0">
+                {{ $slot }}
+            </h4>
+        @else
+            <h4 class="card-title mb-0">
+                <i class="{{ $module_icon }}"></i>
+                {{ __($module_title) }}
+                <small class="text-muted">{{ __($module_action) }}</small>
+            </h4>
+        @endif
+
+        @if ($subtitle)
+            <div class="small text-medium-emphasis">
+                {{ $subtitle }}
+            </div>
+        @endif
     </div>
-
-    <form wire:submit.prevent="saveRoom" class="space-y-5">
-        <!-- Site Selection -->
-        <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700">
-                <i class="fas fa-building mr-1 text-gray-500"></i> @lang('Site') *
-            </label>
-            <select wire:model="selected_site_id"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                <option value="">-- Select Site --</option>
-                @foreach ($this->sites as $site)
-                    <option value="{{ $site->id }}" @if ($site->id == $siteId) selected @endif>
-                        {{ $site->name }}
-                    </option>
-                @endforeach
-            </select>
-            @error('selected_site_id')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
+    @if ($toolbar)
+        <div class="btn-toolbar d-block text-end" role="toolbar" aria-label="Toolbar with buttons">
+            {{ $toolbar }}
         </div>
+    @else
+        <div class="btn-toolbar d-block text-end" role="toolbar" aria-label="Toolbar with buttons">
+            @if (Str::endsWith(Route::currentRouteName(), 'index'))
+                <x-backend.buttons.return-back />
 
-        <!-- Name -->
-        <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700">
-                <i class="fas fa-signature mr-1 text-gray-500"></i> @lang('Room Name') *
-            </label>
-            <input type="text" wire:model="name"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" />
-            @error('name')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Area -->
-            <div>
-                <label class="block text-sm font-medium mb-1 text-gray-700">
-                    <i class="fas fa-ruler-combined mr-1 text-gray-500"></i> @lang('Area (m²)') *
-                </label>
-                <input type="number" wire:model="area_square_meters" step="0.01"
-                    class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" />
-                @error('area_square_meters')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-
-            <!-- Price per m² -->
-            <div>
-                <label class="block text-sm font-medium mb-1 text-gray-700">
-                    <i class="fas fa-tag mr-1 text-gray-500"></i> @lang('Price per m²') *
-                </label>
-                <input type="number" wire:model="price_per_sqm" step="0.01"
-                    class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" />
-                @error('price_per_sqm')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-        </div>
-
-        <!-- Room Status -->
-        <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700">
-                <i class="fas fa-door-closed mr-1 text-gray-500"></i> @lang('Room Status') *
-            </label>
-            <select wire:model="room_status"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                <option value="0">Unoccupied</option>
-                <option value="1">Occupied</option>
-            </select>
-            @error('room_status')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-        </div>
-
-        <!-- Description -->
-        <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700">
-                <i class="fas fa-align-left mr-1 text-gray-500"></i> @lang('Description')
-            </label>
-            <textarea wire:model="description" rows="3"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"></textarea>
-            @error('description')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-        </div>
-
-        <!-- Status -->
-        <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700">
-                <i class="fas fa-toggle-on mr-1 text-gray-500"></i> @lang('Status') *
-            </label>
-            <select wire:model="status"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                <option value="1">Active</option>
-                <option value="0">Inactive</option>
-                <option value="2">Draft</option>
-            </select>
-            @error('status')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-        </div>
-
-        <!-- Price Calculation -->
-        <div class="bg-blue-50 p-4 rounded-lg">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <p class="text-sm font-medium text-gray-500">Price per m²</p>
-                    <p class="text-lg font-semibold">{{ number_format($price_per_sqm, 2) }} ETB</p>
-                </div>
-                <div>
-                    <p class="text-sm font-medium text-gray-500">Total Area</p>
-                    <p class="text-lg font-semibold">{{ $area_square_meters }} m²</p>
-                </div>
-                <div>
-                    <p class="text-sm font-medium text-gray-500">Total Price</p>
-                    <p class="text-lg font-semibold">{{ number_format($totalPrice, 2) }} ETB</p>
-                </div>
-            </div>
-        </div>
-
-        <div class="flex justify-end space-x-3 pt-4">
-            <button wire:click="$dispatch('closeModal')" type="button"
-                class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center">
-                <i class="fas fa-times mr-2"></i> @lang('Cancel')
-            </button>
-            <button type="submit"
-                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center"
-                wire:loading.attr="disabled">
-                <span wire:loading.remove wire:target="saveRoom">
-                    <i class="fas fa-save mr-2"></i> {{ $isEdit ? __('Update Room') : __('Add Room') }}
-                </span>
-                <span wire:loading wire:target="saveRoom">
-                    <i class="fas fa-spinner fa-spin mr-2"></i> @lang('Saving...')
-                </span>
-            </button>
-        </div>
-    </form>
-</div>
-
-rooms blade
-<div class="max-w-7xl mx-auto space-y-6">
-    <!-- Statistics Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <!-- Total Sites Card -->
-        <div
-            class="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
-            <div class="p-5 flex items-center justify-between">
-                <div>
-                    <div class="text-sm font-medium opacity-80">Total Sites</div>
-                    <div class="text-3xl font-bold mt-1">{{ $stats['totalSites'] }}</div>
-                    <div class="text-xs opacity-80 mt-2 flex items-center">
-                        <i class="fas fa-building mr-1"></i> All locations
-                    </div>
-                </div>
-                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
-                    <i class="fas fa-city text-2xl"></i>
-                </div>
-            </div>
-            <div class="bg-black/10 px-5 py-2 text-xs">
-                <i class="fas fa-sync-alt mr-1"></i> Updated just now
-            </div>
-        </div>
-
-        <!-- Total Rooms Card -->
-        <div
-            class="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
-            <div class="p-5 flex items-center justify-between">
-                <div>
-                    <div class="text-sm font-medium opacity-80">Total Rooms</div>
-                    <div class="text-3xl font-bold mt-1">{{ $stats['totalRooms'] }}</div>
-                    <div class="text-xs opacity-80 mt-2 flex items-center">
-                        <i class="fas fa-door-open mr-1"></i> All spaces
-                    </div>
-                </div>
-                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
-                    <i class="fas fa-door-closed text-2xl"></i>
-                </div>
-            </div>
-            <div class="bg-black/10 px-5 py-2 text-xs">
-                <i class="fas fa-sync-alt mr-1"></i> Updated just now
-            </div>
-        </div>
-
-        <!-- Available Rooms Card -->
-        <div
-            class="bg-gradient-to-br from-green-600 to-green-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
-            <div class="p-5 flex items-center justify-between">
-                <div>
-                    <div class="text-sm font-medium opacity-80">Available</div>
-                    <div class="text-3xl font-bold mt-1">{{ $stats['availableRooms'] }}</div>
-                    <div class="text-xs opacity-80 mt-2 flex items-center">
-                        <span class="w-2 h-2 bg-green-300 rounded-full mr-1 animate-pulse"></span>
-                        {{ $stats['totalRooms'] > 0 ? number_format(($stats['availableRooms'] / $stats['totalRooms']) * 100, 1) : 0 }}%
-                        of total
-                    </div>
-                </div>
-                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
-                    <i class="fas fa-unlock text-2xl"></i>
-                </div>
-            </div>
-            <div class="bg-black/10 px-5 py-2 text-xs">
-                <i class="fas fa-clock mr-1"></i> Ready to book
-            </div>
-        </div>
-
-        <!-- Occupied Rooms Card -->
-        <div
-            class="bg-gradient-to-br from-red-600 to-red-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
-            <div class="p-5 flex items-center justify-between">
-                <div>
-                    <div class="text-sm font-medium opacity-80">Occupied</div>
-                    <div class="text-3xl font-bold mt-1">{{ $stats['occupiedRooms'] }}</div>
-                    <div class="text-xs opacity-80 mt-2 flex items-center">
-                        <span class="w-2 h-2 bg-red-300 rounded-full mr-1 animate-pulse"></span>
-                        {{ $stats['totalRooms'] > 0 ? number_format(($stats['occupiedRooms'] / $stats['totalRooms']) * 100, 1) : 0 }}%
-                        of total
-                    </div>
-                </div>
-                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
-                    <i class="fas fa-lock text-2xl"></i>
-                </div>
-            </div>
-            <div class="bg-black/10 px-5 py-2 text-xs">
-                <i class="fas fa-clock mr-1"></i> Currently in use
-            </div>
-        </div>
-    </div>
-
-    <!-- Main Room Management Card -->
-    <div
-        class="bg-white rounded-xl overflow-hidden shadow-2xl border border-gray-200 transform transition-all duration-300 hover:shadow-xl">
-        <!-- Header with Gradient Background -->
-        <div class="px-6 py-4 bg-gradient-to-r from-purple-800 to-indigo-900 text-white">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
-                <div class="flex items-center space-x-4">
-                    <div class="bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-lg">
-                        <i class="fas fa-door-open text-2xl text-white"></i>
-                    </div>
-                    <div>
-                        <h3 class="text-2xl font-bold tracking-wide">@lang('Room Management')</h3>
-                        <p class="text-sm text-purple-100">@lang('Manage all rooms across your sites')</p>
-                    </div>
-                </div>
-                @can('manageSystemSettings', 'create')
-                    <button wire:click="openAddModal"
-                        class="px-5 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white rounded-lg shadow-md transition-all duration-300 flex items-center transform hover:scale-105"
-                        wire:loading.attr="disabled" wire:target="openAddModal">
-
-                        <span wire:loading.remove wire:target="openAddModal">
-                            <i class="fas fa-plus-circle mr-2"></i> @lang('Add New Room')
-                        </span>
-
-                        <span wire:loading wire:target="openAddModal">
-                            <i class="fas fa-spinner fa-spin mr-2"></i> @lang('Opening...')
-                        </span>
-                    </button>
-                @endcan
-
-            </div>
-        </div>
-
-        <!-- Filters and Search Bar -->
-        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- Site Filter -->
-
-                <!-- Site Filter -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">@lang('Filter by Site')</label>
-                    <select wire:model.live="siteFilter"
-                        class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all">
-                        <option value="">@lang('All Sites')</option>
-                        @foreach ($sites as $site)
-                            <option value="{{ $site->id }}">{{ $site->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <!-- Status Filter -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">@lang('Filter by Status')</label>
-                    <select wire:model.live="statusFilter"
-                        class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all">
-                        <option value="">@lang('All Statuses')</option>
-                        <option value="0">@lang('Available')</option>
-                        <option value="1">@lang('Occupied')</option>
-                    </select>
-                </div>
-
-                <!-- Search Box -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">@lang('Search Rooms')</label>
-                    <div class="relative">
-                        <input type="text" wire:model.live.debounce.300ms="searchTerm"
-                            placeholder="@lang('Search by room name...')"
-                            class="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-search text-gray-400"></i>
-                        </div>
-                    </div>
-                </div>
-
-
-
-            </div>
-        </div>
-        <!-- Add this right before the table -->
-
-        <!-- Body -->
-        <div class="p-6 bg-gradient-to-br from-gray-50 to-indigo-50">
-            @if ($rooms->isEmpty())
-                <!-- Empty State with Animation -->
-                <div
-                    class="text-center py-16 text-gray-600 bg-white border-2 border-dashed border-indigo-400 rounded-lg shadow-inner transform transition-all hover:scale-[1.01] duration-300">
-                    <div class="animate-bounce mb-4">
-                        <i class="fas fa-door-closed text-5xl text-indigo-500"></i>
-                    </div>
-                    <h4 class="text-xl font-semibold mb-2">@lang('NO ROOMS FOUND')</h4>
-                    <p class="text-gray-500 mb-4">@lang('Try adjusting your filters or add your first room')</p>
-                    <button wire:click="resetFilters"
-                        class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition flex items-center mx-auto">
-                        <i class="fas fa-sync-alt mr-2"></i> @lang('Reset Filters')
-                    </button>
-                </div>
-            @else
-                <!-- Rooms Table -->
-                <div class="overflow-x-auto rounded-xl shadow-lg border border-gray-200 bg-white">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gradient-to-r from-gray-100 to-gray-200">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer"
-                                    wire:click="sortBy('name')">
-                                    <div class="flex items-center">
-                                        @lang('Room Name')
-                                        <i class="fas fa-sort ml-1 text-gray-400"></i>
-                                    </div>
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer"
-                                    wire:click="sortBy('sites.name')">
-                                    <div class="flex items-center">
-                                        @lang('Site')
-                                        <i class="fas fa-sort ml-1 text-gray-400"></i>
-                                    </div>
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer"
-                                    wire:click="sortBy('area_square_meters')">
-                                    <div class="flex items-center">
-                                        @lang('Area')
-                                        <i class="fas fa-sort ml-1 text-gray-400"></i>
-                                    </div>
-                                </th>
-
-
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                                    @lang('Status')
-                                </th>
-                                <th
-                                    class="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                                    @lang('Actions')
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            @foreach ($rooms as $room)
-                                <tr class="hover:bg-indigo-50 transition-colors duration-150">
-                                    <!-- Room Name -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="flex items-center">
-                                            <div
-                                                class="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
-                                                <i class="fas fa-door-open text-indigo-600"></i>
-                                            </div>
-                                            <div>
-                                                <div class="font-medium text-gray-900">{{ $room->name }}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-
-                                    <!-- Site -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="flex items-center">
-                                            <div
-                                                class="flex-shrink-0 h-9 w-9 bg-purple-100 rounded-full flex items-center justify-center mr-3">
-                                                <i class="fas fa-building text-purple-600 text-sm"></i>
-                                            </div>
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ $room->site->name ?? 'N/A' }}
-                                            </div>
-                                        </div>
-                                    </td>
-
-                                    <!-- Area -->
-                                    <!-- Area -->
-                                    <!-- Area -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900 flex items-center">
-                                            <span class="font-mono bg-indigo-50 px-2 py-1 rounded mr-2">
-                                                {{ $room->area_square_meters }} m²
-                                                <span class="text-indigo-600">
-                                                    ({{ $room->formatted_price }})
-                                                </span>
-
-                                            </span>
-
-                                        </div>
-                                    </td>
-
-                                    <!-- Status -->
-                                    <!-- Status -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if ($room->rentAgreements->where('end_date', '>=', now()->toDateString())->count())
-                                            <span
-                                                class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 border border-red-200 animate-pulse">
-                                                <i class="fas fa-lock mr-1"></i> Occupied
-                                            </span>
-                                        @else
-                                            <span
-                                                class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200">
-                                                <i class="fas fa-unlock mr-1"></i> Available
-                                            </span>
-                                        @endif
-                                    </td>
-
-                                    <!-- Actions -->
-                                    @can('manageSystemSettings', 'create')
-                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <div class="flex justify-end space-x-2">
-                                                <!-- Edit Button -->
-                                                <button wire:click="openEditModal({{ $room->id }})"
-                                                    class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 p-2 rounded-full transition-all duration-300 transform hover:scale-110"
-                                                    title="@lang('Edit Room')" wire:loading.attr="disabled"
-                                                    wire:target="openEditModal({{ $room->id }})">
-
-                                                    <span wire:loading.remove
-                                                        wire:target="openEditModal({{ $room->id }})">
-                                                        <i class="fas fa-edit"></i>
-                                                    </span>
-
-                                                    <span wire:loading wire:target="openEditModal({{ $room->id }})">
-                                                        <i class="fas fa-spinner fa-spin"></i>
-                                                    </span>
-                                                </button>
-
-                                                <!-- Delete Button -->
-                                                <button wire:click="deleteRoom({{ $room->id }})"
-                                                    onclick="return confirm('Are you sure you want to delete this room?')"
-                                                    class="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 p-2 rounded-full transition-all duration-300 transform hover:scale-110"
-                                                    title="@lang('Delete Room')" wire:loading.attr="disabled"
-                                                    wire:target="deleteRoom({{ $room->id }})">
-
-                                                    <span wire:loading.remove
-                                                        wire:target="deleteRoom({{ $room->id }})">
-                                                        <i class="fas fa-trash-alt"></i>
-                                                    </span>
-
-                                                    <span wire:loading wire:target="deleteRoom({{ $room->id }})">
-                                                        <i class="fas fa-spinner fa-spin"></i>
-                                                    </span>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    @endcan
-
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                @if ($rooms->hasPages())
-                    <div class="mt-4 px-4 py-3 bg-white border-t border-gray-200 rounded-b-lg">
-                        {{ $rooms->links() }}
+                @if (auth()->user()->can('add_' . $module_name) && Route::has('backend.' . $module_name . '.create'))
+                    <div class="btn-group">
+                        <button class="btn btn-secondary btn-sm dropdown-toggle" data-coreui-toggle="dropdown"
+                            type="button" aria-expanded="false">
+                            <i class="fas fa-plus"></i>
+                            {{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="min-width: 220px; border: none; background-color: #2c3e50;">
+                            {{-- <li>
+                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
+                                   href="{{ route('backend.' . $module_name . '.createAssessors') }}"
+                                   style="transition: all 0.3s ease;">
+                                    <i class="fas fa-user me-2"></i>
+                                    <span>Assessors</span>
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider bg-light opacity-25 my-1"></li>
+                            <li>
+                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
+                                   href="{{ route('backend.' . $module_name . '.createAccreditationExperts') }}"
+                                   style="transition: all 0.3s ease;">
+                                    <i class="fas fa-user-tie me-2"></i>
+                                    <span>Accreditation Experts</span>
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider bg-light opacity-25 my-1"></li>--}}
+                            <li>
+                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
+                                   href="{{ route('backend.' . $module_name . '.create') }}"
+                                   style="transition: all 0.3s ease;">
+                                    <i class="fas fa-users me-2"></i>
+                                    <span>General Users</span>
+                                </a>
+                            </li>
+                        </ul>
                     </div>
                 @endif
+
+                @if (auth()->user()->can('restore_' . $module_name) && Route::has('backend.' . $module_name . '.create'))
+                    <div class="btn-group ms-1">
+                        <button class="btn btn-secondary btn-sm dropdown-toggle" data-coreui-toggle="dropdown"
+                            type="button" aria-expanded="false">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="min-width: 180px; border: none; background-color: #2c3e50;">
+                            <li>
+                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
+                                   href="{{ route("backend.$module_name.trashed") }}"
+                                   style="transition: all 0.3s ease;">
+                                    <i class="fas fa-eye-slash me-2"></i>
+                                    <span>@lang('View trash')</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                @endif
+            @elseif (Str::endsWith(Route::currentRouteName(), 'create'))
+                <a class="btn btn-secondary btn-sm ms-1" data-toggle="tooltip"
+                    href="{{ route("backend.$module_name.index") }}" title="{{ __($module_title) }} List">
+                    <i class="fas fa-list-ul"></i>
+                    List
+                </a>
+            @elseif (Str::endsWith(Route::currentRouteName(), 'edit'))
+                <x-buttons.show class="ms-1" title="{{ __('Show') }} {{ ucwords(Str::singular($module_name)) }}"
+                    route='{!! route("backend.$module_name.show", $data) !!}' small="true" />
+            @elseif (Str::endsWith(Route::currentRouteName(), 'show'))
+                @if (Route::has("frontend.$module_name.show"))
+                    <x-backend.buttons.public class="" title="{{ __('Public') }}"
+                        route='{!! route("frontend.$module_name.show", encode_id($data->id)) !!}' small="true" />
+                @endif
+
+                @if (auth()->user()->can('edit_' . $module_name) && Route::has('backend.' . $module_name . '.edit'))
+                    <x-buttons.edit class="m-1"
+                        title="{{ __('Edit') }} {{ ucwords(Str::singular($module_name)) }}"
+                        route='{!! route("backend.$module_name.edit", $data) !!}' small="true" />
+                @endif
+
+                <a class="btn btn-secondary btn-sm" data-toggle="tooltip"
+                    href="{{ route("backend.$module_name.index") }}" title="{{ ucwords($module_name) }} List">
+                    <i class="fas fa-list"></i>
+                    {{ __('List') }}
+                </a>
             @endif
         </div>
-    </div>
+    @endif
 </div>
+
+<hr />
+
+@push('after-styles')
+<style>
+    /* Dropdown menu styling */
+    .dropdown-menu {
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        padding: 0.5rem 0;
+    }
+
+    .dropdown-item {
+        border-radius: 4px;
+        margin: 0.15rem 0.5rem;
+        width: auto;
+    }
+
+    .dropdown-item:hover,
+    .dropdown-item:focus {
+        background-color: rgba(255, 255, 255, 0.15);
+        color: #fff;
+    }
+
+    .dropdown-divider {
+        margin: 0.25rem 0;
+    }
+
+    /* Dropdown toggle arrow color */
+    .dropdown-toggle::after {
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* Button hover effects */
+    .btn-group .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+</style>
+@endpush
