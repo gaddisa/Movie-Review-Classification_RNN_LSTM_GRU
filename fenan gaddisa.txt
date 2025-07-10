@@ -1,125 +1,1660 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Server Maintenance - Shade Rental Management System</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        .maintenance-container {
-            max-width: 800px;
-            margin: 100px auto;
-            padding: 40px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-            text-align: center;
-        }
-        .logo {
-            margin-bottom: 30px;
-            max-width: 200px;
-        }
-        .countdown {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: #0d6efd;
-            margin: 30px 0;
-        }
-        .progress {
-            height: 10px;
-            margin: 20px 0;
-        }
-        .status-message {
-            font-size: 1.2rem;
-            margin-bottom: 20px;
-        }
-        .fa-spin {
-            margin-right: 10px;
-        }
-        .btn-refresh {
-            margin-top: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="maintenance-container">
-            <img src="https://via.placeholder.com/200x60?text=Shade+Rental" alt="Shade Rental Management System" class="logo">
-            <h1 class="mb-4">Server Maintenance in Progress</h1>
-            
-            <div class="status-message">
-                <i class="fas fa-sync-alt fa-spin text-primary"></i>
-                The Shade Rental Management System server has been restarted and is currently initializing.
-            </div>
-            
-            <p class="lead">We're almost ready! The system will automatically refresh at 8:00 PM.</p>
-            
-            <div class="countdown" id="countdown-timer">
-                --:--:--
-            </div>
-            
-            <div class="progress">
-                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
-            </div>
-            
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i> All your data is safe. This is just a temporary interruption while we improve our services.
-            </div>
-            
-            <button class="btn btn-primary btn-refresh" onclick="window.location.reload()">
-                <i class="fas fa-sync-alt"></i> Try Now (Not Recommended)
-            </button>
-        </div>
-    </div>
+<?php
 
-    <!-- jQuery and Bootstrap JS -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <script>
-        function updateCountdown() {
-            // Get current time
-            const now = new Date();
-            
-            // Set target time to 8:00 PM today
-            const target = new Date();
-            target.setHours(20, 0, 0, 0); // 8:00 PM
-            
-            // If it's already past 8:00 PM, set for next day
-            if (now > target) {
-                target.setDate(target.getDate() + 1);
-            }
-            
-            // Calculate difference in seconds
-            const diff = (target - now) / 1000;
-            
-            // Calculate hours, minutes, seconds
-            const hours = Math.floor(diff / 3600);
-            const minutes = Math.floor((diff % 3600) / 60);
-            const seconds = Math.floor(diff % 60);
-            
-            // Format with leading zeros
-            const formatted = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            
-            // Update countdown display
-            document.getElementById('countdown-timer').textContent = formatted;
-            
-            // If countdown reaches zero, refresh the page
-            if (diff <= 0) {
-                window.location.reload();
-            }
+namespace App\Providers;
+
+use App\Models\EmployeeInfo;
+use App\Policies\DeskPolicy;
+use Modules\Desk\Models\Desk;
+use Modules\Room\Models\Room;
+use Modules\Site\Models\Site;
+use Modules\Room\Models\RoomPrice;
+use App\Policies\ApplicationPolicy;
+use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Event;
+use App\Policies\SystemSettingsPolicy;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\ServiceProvider;
+use Modules\DeskReview\Models\DeskReview;
+use Modules\Application\Models\Application;
+use App\Policies\DeskReviewApplicationPolicy;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        //
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+
+        // Clear permission cache whenever roles/permissions change
+        Role::updated(function () {
+            app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        });
+
+        Permission::updated(function () {
+            app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        });
+
+
+        Schema::defaultStringLength(125);
+
+        /**
+         * Register Event Listeners.
+         */
+        $this->registerEventListeners();
+        $this->configureCommands();
+
+
+        /**
+         * Implicitly grant "Super Admin" role all permissions
+         * This works in the app by using gate-related functions like auth()->user->can() and @can().
+         */
+        Gate::before(function ($user, $ability) {
+            return $user->hasRole('super admin') ? true : null;
+        });
+
+        Gate::policy(Site::class, SystemSettingsPolicy::class);
+        Gate::policy(Room::class, SystemSettingsPolicy::class);
+        Gate::policy(RoomPrice::class, SystemSettingsPolicy::class);
+        Gate::policy(EmployeeInfo::class, SystemSettingsPolicy::class);
+    }
+
+    public function registerEventListeners()
+    {
+        /**
+         * Auth Event Listeners.
+         */
+        // Event::listen(
+        //     'App\Events\Auth\UserLoginSuccess',
+        //     'App\Listeners\Auth\UpdateLoginData',
+        //     'App\Listeners\Auth\SendPodcastNotification'
+        // );
+        /**
+         * Frontend Event Listeners.
+         */
+        // Event::listen('App\Events\Frontend\UserRegistered',
+        //     'App\Listeners\Frontend\UserRegistered\EmailNotificationOnUserRegistered'
+        // );
+
+        /**
+         * Backend Event Listeners.
+         */
+        // Event::listen(
+        //     'App\Events\Backend\UserCreated',
+        //     'App\Listeners\Backend\UserCreated\UserCreatedProfileCreate',
+        //     'App\Listeners\Backend\UserCreated\UserCreatedNotifySuperUser'
+        // );
+
+        // Event::listen(
+        //     'App\Events\Backend\UserUpdated',
+        //     'App\Listeners\Backend\UserUpdated\UserUpdatedNotifyUser'
+        // );
+    }
+    /**
+     * Restrict destructive commands in production.
+     */
+    private function configureCommands(): void
+    {
+        // if (App::environment('production')) {
+        //     Artisan::command('migrate:fresh', function () {
+        //         $this->error('The migrate:fresh command is disabled in production.');
+        //         return 1;
+        //     });
+
+        //     Artisan::command('migrate:reset', function () {
+        //         $this->error('The migrate:reset command is disabled in production.');
+        //         return 1;
+        //     });
+
+        //     Artisan::command('migrate:rollback', function () {
+        //         $this->error('The migrate:rollback command is disabled in production.');
+        //         return 1;
+        //     });
+
+        //     Artisan::command('db:wipe', function () {
+        //         $this->error('The db:wipe command is disabled in production');
+        //         return 1;
+        //     });
+
+        //     Artisan::command('queue:restart', function () {
+        //         $this->error('The queue:restart command is disabled in production');
+        //         return 1;
+        //     });
+
+        //     Artisan::command('event:clear', function () {
+        //         $this->error('The event:clear command is disabled in production');
+        //         return 1;
+        //     });
+        // }
+    }
+}
+
+
+user controller
+<?php
+
+namespace App\Http\Controllers\Backend;
+
+use Exception;
+use Carbon\Carbon;
+use App\Models\Role;
+use App\Models\User;
+use App\Authorizable;
+use App\Models\Permission;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
+use App\Models\UserProvider;
+use Illuminate\Http\Request;
+use Yajra\DataTables\DataTables;
+use App\Events\Backend\UserCreated;
+use App\Events\Backend\UserUpdated;
+use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Artisan;
+use RealRashid\SweetAlert\Facades\Alert;
+use App\Notifications\UserAccountCreated;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+
+
+
+class UserController extends Controller
+{
+    use Authorizable;
+
+    public $module_title;
+
+    public $module_name;
+
+    public $module_path;
+
+    public $module_icon;
+
+    public $module_model;
+
+    public function __construct()
+    {
+        // Page Title
+        $this->module_title = 'Users';
+
+        // module name
+        $this->module_name = 'users';
+
+        // directory path of the module
+        $this->module_path = 'backend';
+
+        // module icon
+        $this->module_icon = 'fa-solid fa-user-group';
+
+        // module model name, path
+        $this->module_model = "App\Models\User";
+    }
+
+    /**
+     * Retrieves the index page for the module.
+     *
+     * @return \Illuminate\Contracts\View\Factory|\Illuminate\View\View
+     */
+    public function index()
+    {
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+
+        $page_heading = ucfirst($module_title);
+        $title = $page_heading . ' ' . ucfirst($module_action);
+
+        $$module_name = $module_model::paginate();
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.index",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', 'page_heading', 'title')
+        );
+    }
+
+    public function index_data()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+
+        $$module_name = $module_model::select('id', 'name', 'username', 'email', 'email_verified_at', 'updated_at', 'status');
+
+        $data = $$module_name;
+
+        return Datatables::of($$module_name)
+            ->addColumn('action', function ($data) {
+                $module_name = $this->module_name;
+
+                return view('backend.includes.user_actions', compact('module_name', 'data'));
+            })
+            ->addColumn('user_roles', function ($data) {
+                $module_name = $this->module_name;
+
+                return view('backend.includes.user_roles', compact('module_name', 'data'));
+            })
+            ->editColumn('name', '<strong>{{$name}}</strong>')
+            ->editColumn('status', function ($data) {
+                $return_data = $data->status_label;
+                $return_data .= '<br>' . $data->confirmed_label;
+
+                return $return_data;
+            })
+            ->editColumn('updated_at', function ($data) {
+                $module_name = $this->module_name;
+
+                $diff = Carbon::now()->diffInHours($data->updated_at);
+
+                if ($diff < 25) {
+                    return $data->updated_at->diffForHumans();
+                }
+
+                return $data->updated_at->isoFormat('LLLL');
+            })
+            ->rawColumns(['name', 'action', 'status', 'user_roles'])
+            ->orderColumns(['id'], '-:column $1')
+            ->make(true);
+    }
+
+    /**
+     * Retrieves a list of items based on the search term.
+     *
+     * @param  Request  $request  The HTTP request object.
+     * @return JsonResponse The JSON response containing the list of items.
+     *
+     * @throws None
+     */
+    public function index_list(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Index List';
+
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
+
+        $term = trim($request->q);
+
+        if (empty($term)) {
+            return response()->json([]);
         }
-        
-        // Update countdown every second
-        updateCountdown();
-        setInterval(updateCountdown, 1000);
-    </script>
-</body>
-</html>
+
+        $query_data = $module_model::where('name', 'LIKE', "%{$term}%")->orWhere('email', 'LIKE', "%{$term}%")->limit(10)->get();
+
+        $$module_name = [];
+
+        foreach ($query_data as $row) {
+            $$module_name[] = [
+                'id' => $row->id,
+                'text' => $row->name . ' (Email: ' . $row->email . ')',
+            ];
+        }
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return response()->json($$module_name);
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     *
+     * @return Response
+     */
+    public function create()
+    {
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Create';
+
+        $roles = Role::get();
+        $permissions = Permission::select('name', 'id')->orderBy('id')->get();
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.create",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', 'roles', 'permissions')
+        );
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     *
+     * @return \Illuminate\Contracts\View\View
+     */
+
+    public function store(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Details';
+
+        // Validate input
+        $validated_data = $request->validate([
+            'first_name' => 'required|min:2|max:191',
+            'last_name' => 'required|min:2|max:191',
+            'email' => 'required|email:rfc|regex:/(.+)@(.+)\.(.+)/i|max:191|unique:users',
+            'password' => 'required|confirmed|min:6',
+            'roles' => 'nullable|array',
+            'permissions' => 'nullable|array',
+        ]);
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Prepare data
+            $data_array = Arr::except($validated_data, ['_token', 'roles', 'permissions', 'password_confirmation']);
+            $data_array['name'] = $request->first_name . ' ' . $request->last_name;
+            $data_array['password'] = Hash::make($request->password);
+
+            if ($request->confirmed === 1) {
+                $data_array['email_verified_at'] = Carbon::now();
+            } else {
+                $data_array['email_verified_at'] = null;
+            }
+
+            // Create a User
+            $$module_name_singular = User::create($data_array);
+
+            // Sync Roles
+            $$module_name_singular->syncRoles($validated_data['roles'] ?? []);
+
+            // Sync Permissions
+            $$module_name_singular->syncPermissions($validated_data['permissions'] ?? []);
+
+            // Set Username
+            $id = $$module_name_singular->id;
+            $username = config('app.initial_username') + $id;
+            $$module_name_singular->username = $username;
+            $$module_name_singular->save();
+
+            // Trigger UserCreated event
+            event(new UserCreated($$module_name_singular));
+
+            // Send email credentials if requested
+            if ($request->email_credentials == 1) {
+                $data = ['password' => $request->password];
+                $$module_name_singular->notify(new UserAccountCreated($data));
+                Alert::toast('Account Credentials Sent to User.', 'success');
+            }
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast("New '" . Str::singular($module_title) . "' Created", 'success');
+
+            // Log the action
+            Log::info(label_case("{$module_title} {$module_action}") . ' | User:' . Auth::user()->name . ' (ID:' . Auth::user()->id . ')');
+
+            // Clear cache
+            Artisan::call('cache:clear');
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error creating user: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to create user!', 'error');
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create user.']);
+        }
+    }
+    public function createAssessors()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_action = 'Register External Assessors';
+
+        $roles = Role::get();
+        $permissions = Permission::select('name', 'id')->orderBy('id')->get();
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.create_assessors",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'roles', 'permissions')
+        );
+    }
+
+
+    public function storeAssessors(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Details';
+
+        // Validate input
+        $validated_data = $request->validate([
+            'first_name' => ['required', 'string', 'regex:/^[A-Za-z]+$/', 'min:1', 'max:50'],
+            'middle_name' => ['required', 'string', 'regex:/^[A-Za-z]+$/', 'min:1', 'max:50'],
+            'last_name' => ['required', 'string', 'regex:/^[A-Za-z]+$/', 'min:1', 'max:50'],
+
+            'email' => ['required', 'email:rfc', 'max:191', 'unique:users'],
+            'password' => ['required', 'min:6'],
+
+            'salutation' => ['required', 'in:Mr,Mrs,Miss,Ms,Dr,Prof,Eng,Hon,Rev'], // Add any more valid salutations
+
+            'gender' => ['required', 'in:Male,Female'],
+
+            'mobile' => ['required', 'regex:/^(?:\+251[1-9]\d{8}|0[1-9]\d{8})$/'], // Ensures it starts with +251 or 0 and follows Ethiopian number format
+
+            'bio' => ['nullable', 'string'],
+            'address' => ['required', 'string', 'max:255'],
+
+            'degree_university' => ['required', 'string', 'max:191'],
+            'degree_department' => ['required', 'string', 'max:191'],
+
+            'masters_university' => ['nullable', 'string', 'max:191'],
+            'masters_department' => ['nullable', 'string', 'max:191'],
+
+            'phd_university' => ['nullable', 'string', 'max:191'],
+            'phd_department' => ['nullable', 'string', 'max:191'],
+
+            'roles' => ['nullable', 'array'],
+            'permissions' => ['nullable', 'array'],
+        ]);
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Prepare data
+            $data_array = Arr::except($validated_data, ['_token', 'roles', 'permissions']);
+            $data_array['name'] = $request->salutation . ' ' . $request->first_name . ' ' . $request->middle_name . ' ' . $request->last_name;
+            $data_array['password'] = Hash::make($request->password);
+
+            if ($request->confirmed === 1) {
+                $data_array['email_verified_at'] = Carbon::now();
+            } else {
+                $data_array['email_verified_at'] = null;
+            }
+
+            // Create a User
+            $assessor = User::create($data_array);
+
+            // Sync Roles
+            $assessor->syncRoles(['assessor']);
+
+            // Sync Permissions
+            $assessor->syncPermissions($validated_data['permissions'] ?? []);
+
+            // Set Username
+            $id = $assessor->id;
+            $username = config('app.initial_username') + $id;
+            $assessor->username = $username;
+            $assessor->save();
+
+            // Send email credentials if requested
+            if ($request->email_credentials == 1) {
+                $assessor->notify(new UserAccountCreated(['password' => $request->password]));
+                Alert::toast('Account Credentials Sent to User.', 'success');
+            }
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast('New Assessor created successfully! 🎉', 'success');
+
+            // Log the action
+            Log::info(label_case("{$module_title} {$module_action}") . ' | User:' . Auth::user()->name . ' (ID:' . Auth::user()->id . ')');
+
+            // Clear cache
+            Artisan::call('cache:clear');
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error creating assessor: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to create assessor!', 'error');
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create assessor.']);
+        }
+    }
+
+
+
+    public function createAccreditationExperts()
+    {
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_action = 'Register Accreditation experts';
+
+        $roles = Role::get();
+        $permissions = Permission::select('name', 'id')->orderBy('id')->get();
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.create_accreditation_experts",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'roles', 'permissions')
+        );
+    }
+
+
+    public function storeAccreditationExperts(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Details';
+
+        // Validate input
+        $validated_data = $request->validate([
+            'first_name' => ['required', 'string', 'regex:/^[A-Za-z]+$/', 'min:1', 'max:50'],
+            'last_name' => ['required', 'string', 'regex:/^[A-Za-z]+$/', 'min:1', 'max:50'],
+            'email' => 'required|email:rfc|regex:/(.+)@(.+)\.(.+)/i|max:191|unique:users',
+            'mobile' => ['required', 'regex:/^(?:\+251[1-9]\d{8}|0[1-9]\d{8})$/'], // Ensures it starts with +251 or 0 and follows Ethiopian number format
+            'password' => 'required|confirmed|min:6',
+            'roles' => 'nullable|array',
+            'permissions' => 'nullable|array',
+        ]);
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Prepare data
+            $data_array = Arr::except($validated_data, ['_token', 'roles', 'permissions', 'password_confirmation']);
+            $data_array['name'] = $request->first_name . ' ' . $request->last_name;
+            $data_array['password'] = Hash::make($request->password);
+
+            if ($request->confirmed === 1) {
+                $data_array['email_verified_at'] = Carbon::now();
+            } else {
+                $data_array['email_verified_at'] = null;
+            }
+
+            // Create a User
+            $$module_name_singular = User::create($data_array);
+
+            // Sync Roles
+            $$module_name_singular->syncRoles(['accreditation expert', 'assessor']);
+
+            // Sync Permissions
+            $$module_name_singular->syncPermissions($validated_data['permissions'] ?? []);
+
+            // Set Username
+            $id = $$module_name_singular->id;
+            $username = config('app.initial_username') + $id;
+            $$module_name_singular->username = $username;
+            $$module_name_singular->save();
+
+            // Send email credentials if requested
+            if ($request->email_credentials == 1) {
+                $data = ['password' => $request->password];
+                $$module_name_singular->notify(new UserAccountCreated($data));
+                Alert::toast('Account Credentials Sent to User.', 'success');
+            }
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast('New Accreditation Expert created successfully! 🎉', 'success');
+
+            // Log the action
+            Log::info(label_case("{$module_title} {$module_action}") . ' | User:' . Auth::user()->name . ' (ID:' . Auth::user()->id . ')');
+
+            // Clear cache
+            Artisan::call('cache:clear');
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error creating accreditation expert: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to create accreditation expert!', 'error');
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create accreditation expert.']);
+        }
+    }
+
+    public function show($uuid)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Show';
+
+        $$module_name_singular = $module_model::where('uuid', $uuid)->firstOrFail();
+        $id = $$module_name_singular->id;
+
+        logUserAccess(__METHOD__ . " | {$$module_name_singular->name} ($id)");
+
+        return view(
+            "{$module_path}.{$module_name}.show",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
+    }
+
+
+    /**
+     * Updates the password for a user.
+     *
+     * @param  int  $id  The ID of the user whose password will be changed.
+     * @return \Illuminate\Contracts\View\View The view for the "Change Password" page.
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the user cannot be found.
+     */
+
+
+    public function changePassword($uuid)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Change Password';
+
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
+
+        if (! auth()->user()->can('edit_users')) {
+            $id = auth()->user()->id;
+        }
+
+        $$module_name_singular = $module_model::where('uuid', $uuid)->firstOrFail();
+        $id = $$module_name_singular->id;
+
+
+        logUserAccess("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+        return view(
+            "{$module_path}.{$module_name}.changePassword",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
+    }
+
+
+
+
+    /**
+     * Updates the password for a user.
+     *
+     * @param  Request  $request  The request object containing the new password.
+     * @param  int  $id  The ID of the user whose password is being updated.
+     * @return \Illuminate\Http\RedirectResponse The response object redirecting to the admin module.
+     *
+     * @throws \Illuminate\Validation\ValidationException If the validation fails.
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the user with the given ID is not found.
+     */
+
+
+    public function changePasswordUpdate(Request $request, $id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Change Password Update';
+
+        // Validate input
+        $request->validate([
+            'password' => 'required|confirmed|min:6',
+        ]);
+
+        // Ensure only authorized users can change passwords
+        if (!auth()->user()->can('edit_users')) {
+            $id = auth()->user()->id;
+        }
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Find the user
+            $$module_name_singular = User::findOrFail($id);
+
+            // Update the password
+            $request_data = $request->only('password');
+            $request_data['password'] = Hash::make($request_data['password']);
+            $$module_name_singular->update($request_data);
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast(Str::singular($module_title) . "' Updated Successfully", 'success');
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+            return redirect("admin/{$module_name}/{$id}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error updating password: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to update password!', 'error');
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update password.']);
+        }
+    }
+
+    //USER SELF CHANGE THEIR PASSWORD AFTER LOG IN
+    public function userchangePassword()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Change Password';
+
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
+
+        // Get the currently authenticated user
+        $id = auth()->user()->id;
+        $$module_name_singular = $module_model::findOrFail($id);
+
+        logUserAccess("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+        return view(
+            "{$module_path}.{$module_name}.userchangePassword",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
+    }
+
+    public function userchangePasswordUpdate(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Change Password Update';
+
+        // Validate input
+        $request->validate([
+            'password' => 'required|confirmed|min:6',
+        ]);
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Get the currently authenticated user
+            $id = auth()->user()->id;
+            $$module_name_singular = User::findOrFail($id);
+
+            // Update the password
+            $request_data = $request->only('password');
+            $request_data['password'] = Hash::make($request_data['password']);
+            $$module_name_singular->update($request_data);
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast(Str::singular($module_title) . "' You password is Updated Successfully", 'success');
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+            return redirect()->route('backend.dashboard');
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error updating password: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to update password!', 'error');
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update password.']);
+        }
+    }
+
+
+    /**
+     * Edit a record in the database.
+     *
+     * @param  int  $id  The ID of the record to be edited.
+     * @return \Illuminate\View\View The view for editing the record.
+     *
+     * @throws \Illuminate\Auth\Access\AuthorizationException If the user does not have the permission to edit users.
+     */
+    public function edit($uuid)
+    {
+        // If the user doesn't have permission, default to their own account
+        if (!auth()->user()->can('edit_users')) {
+            $uuid = auth()->user()->uuid;
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Edit';
+
+        // Get the user by UUID
+        $$module_name_singular = $module_model::where('uuid', $uuid)->firstOrFail();
+        $id = $$module_name_singular->id;
+
+        // Get user roles and permissions
+        $userRoles = $$module_name_singular->roles->pluck('name')->all();
+        $userPermissions = $$module_name_singular->permissions->pluck('name')->all();
+
+        // Load all available roles and permissions
+        $roles = Role::get();
+        $permissions = Permission::select('name', 'id')->orderBy('id')->get();
+
+        // Log access
+        logUserAccess("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+        return view(
+            "{$module_path}.{$module_name}.edit",
+            compact(
+                'module_title',
+                'module_name',
+                'module_path',
+                'module_icon',
+                'module_action',
+                'module_name_singular',
+                "{$module_name_singular}",
+                'uuid',
+                'roles',
+                'permissions',
+                'userRoles',
+                'userPermissions'
+            )
+        );
+    }
+
+
+    /**
+     * Updates a user with the given ID.
+     *
+     * @param  Request  $request  The HTTP request object.
+     * @param  int  $id  The ID of the user to update.
+     * @return RedirectResponse The redirect response to the admin module.
+     *
+     * @throws NotFoundHttpException If the authenticated user does not have the 'edit_users' permission.
+     */
+
+
+    public function update(Request $request, $id)
+    {
+        // Ensure only authorized users can update
+        if (!auth()->user()->can('edit_users')) {
+            $id = auth()->user()->id;
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Update';
+
+        // Validate input
+        $validated_data = $request->validate([
+            'first_name' => 'required|min:3|max:191',
+            'last_name' => 'required|min:3|max:191',
+            'email' => 'required|email:rfc|regex:/(.+)@(.+)\.(.+)/i|max:191|unique:users,email,' . $id,
+            'roles' => 'nullable|array',
+            'permissions' => 'nullable|array',
+        ]);
+
+        $validated_data['name'] = $validated_data['first_name'] . ' ' . $validated_data['last_name'];
+
+        // Start a database transaction
+        DB::beginTransaction();
+        try {
+            $user = User::findOrFail($id);
+            $user->update($request->except('roles', 'permissions'));
+
+            // Add these 3 lines - THE CRITICAL FIX
+            if ($request->has('roles')) {
+                app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+                $user->syncRoles($request->roles);
+            }
+
+            if ($request->has('permissions')) {
+                app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+                $user->syncPermissions($request->permissions);
+            }
+
+            DB::commit();
+
+            // Optional but recommended
+            Artisan::call('permission:cache-reset');
+
+            Alert::toast('User updated successfully!', 'success');
+            return redirect()->route('backend.users.index');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Alert::toast('Error: ' . $e->getMessage(), 'error');
+            return back()->withInput();
+        }
+        // try {
+        //     // Find the user
+        //     $$module_name_singular = User::findOrFail($id);
+
+        //     // Update user data
+        //     $$module_name_singular->update(Arr::except($validated_data, ['roles', 'permissions']));
+
+        //     // Sync Roles and Permissions
+        //     if ($id === 1) {
+        //         $$module_name_singular->syncRoles(['super admin']);
+        //     } else {
+        //         $$module_name_singular->syncRoles($validated_data['roles'] ?? []);
+        //         $$module_name_singular->syncPermissions($validated_data['permissions'] ?? []);
+        //     }
+
+        //     // Commit the transaction
+        //     DB::commit();
+
+        //     // Flash success message
+        //     Alert::toast(Str::singular($module_title) . "' Updated Successfully", 'success');
+
+        //     // Log the action
+        //     Log::info("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+        //     // Clear cache
+        //     Artisan::call('cache:clear');
+
+        //     return redirect("admin/{$module_name}");
+        // } catch (\Exception $e) {
+        //     // Rollback the transaction on error
+        //     DB::rollBack();
+
+        //     // Log the error
+        //     Log::error("Error updating user: " . $e->getMessage());
+
+        //     // Flash error message
+        //     Alert::toast('Failed to update user!', 'error');
+
+        //     return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update user.']);
+        // }
+    }
+
+    /**
+     * Deletes a user by their ID.
+     *
+     * @param  int  $id  The ID of the user to be deleted.
+     * @return Illuminate\Http\RedirectResponse
+     *
+     * @throws Illuminate\Database\Eloquent\ModelNotFoundException If the user with the given ID is not found.
+     */
+
+
+    public function destroy($uuid)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Destroy';
+
+        // Find the user by UUID
+        $$module_name_singular = $module_model::where('uuid', $uuid)->firstOrFail();
+        $id = $$module_name_singular->id;
+
+        // Prevent deletion of specific users
+        if (auth()->user()->id === $id || $id === 1) {
+            Alert::toast('You cannot delete this user!', 'warning');
+            Log::notice("{$module_title} {$module_action} Failed! User ID: {$id}");
+            return redirect()->back();
+        }
+
+        // Ensure only authorized users can delete
+        if (!auth()->user()->can('delete_users')) {
+            abort(403);
+        }
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Delete the user
+            $$module_name_singular->delete();
+
+            // Commit the transaction
+            DB::commit();
+
+            // Trigger UserUpdated event
+            event(new UserUpdated($$module_name_singular));
+
+            // Flash success message
+            Alert::toast($$module_name_singular->name . ' User Successfully Deleted!', 'success');
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error deleting user: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to delete user!', 'error');
+
+            return redirect()->back();
+        }
+    }
+
+    /**
+     * Retrieves and displays a list of deleted records for the specified module.
+     *
+     * @return \Illuminate\View\View the view for the list of deleted records
+     */
+    public function trashed()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Trash List';
+
+        $$module_name = $module_model::onlyTrashed()->orderBy('deleted_at', 'desc')->paginate();
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        logUserAccess("{$module_title} {$module_action}");
+
+        return view(
+            "{$module_path}.{$module_name}.trash",
+            compact('module_title', 'module_name', 'module_path', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
+        );
+    }
+
+    /**
+     * Restores a record in the database.
+     *
+     * @param  int  $id  The ID of the record to be restored.
+     * @return Illuminate\Http\RedirectResponse The redirect response to the admin module page.
+     */
+
+
+    public function restore($id)
+    {
+        // Ensure only authorized users can restore
+        if (!auth()->user()->can('restore_users')) {
+            abort(403);
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Restore';
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Find the user (including soft-deleted)
+            $$module_name_singular = $module_model::withTrashed()->findOrFail($id);
+
+            // Restore the user
+            $$module_name_singular->restore();
+
+            // Commit the transaction
+            DB::commit();
+
+            // Trigger UserUpdated event
+            event(new UserUpdated($$module_name_singular));
+
+            // Flash success message
+            Alert::toast($$module_name_singular->name . ' Successfully Restored!', 'success');
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error restoring user: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to restore user!', 'error');
+
+            return redirect()->back();
+        }
+    }
+
+    /**
+     * Block a user.
+     *
+     * @param  int  $id  The ID of the user to block.
+     * @return Illuminate\Http\RedirectResponse
+     *
+     * @throws Exception There was a problem updating this user. Please try again.
+     */
+
+
+    public function block($uuid)
+    {
+        // Ensure only authorized users can block
+        if (!auth()->user()->can('delete_users')) {
+            abort(403);
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Block';
+
+        // Resolve the user by UUID (include soft deleted users)
+        $$module_name_singular = $module_model::withTrashed()->where('uuid', $uuid)->firstOrFail();
+        $id = $$module_name_singular->id;
+
+        // Prevent blocking specific users
+        if (auth()->user()->id == $id || $id == 1) {
+            Alert::toast("You cannot block this user!", 'warning');
+            Log::notice("{$module_title} {$module_action} Failed | User ID: {$id}");
+            return redirect()->back();
+        }
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Block the user (e.g., setting status to 'blocked')
+            $$module_name_singular->status = 2;
+            $$module_name_singular->save();
+
+            // Commit the transaction
+            DB::commit();
+
+            // Trigger UserUpdated event
+            event(new UserUpdated($$module_name_singular));
+
+            // Flash success message
+            Alert::toast($$module_name_singular->name . ' User Successfully Blocked!', 'success');
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+            return redirect()->back();
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error blocking user: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to block user!', 'error');
+
+            return redirect()->back();
+        }
+    }
+
+
+    /**
+     * Unblock a user.
+     *
+     * @param  int  $id  The ID of the user to unblock.
+     * @return RedirectResponse The redirect back to the previous page.
+     *
+     * @throws Exception If there is a problem updating the user.
+     */
+
+
+    public function unblock($uuid)
+    {
+        // Ensure only authorized users can unblock
+        if (!auth()->user()->can('delete_users')) {
+            abort(403);
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Unblock';
+
+        // Resolve the user by UUID (with soft-deleted included)
+        $$module_name_singular = $module_model::withTrashed()->where('uuid', $uuid)->firstOrFail();
+        $id = $$module_name_singular->id;
+
+        // Prevent unblocking specific users
+        if (auth()->user()->id == $id || $id == 1) {
+            Alert::toast("You cannot unblock this user!", 'warning');
+            Log::notice("{$module_title} {$module_action} Failed | User ID: {$id}");
+            return redirect()->back();
+        }
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Unblock the user (e.g., setting status to 'active')
+            $$module_name_singular->status = 1;
+            $$module_name_singular->save();
+
+            // Commit the transaction
+            DB::commit();
+
+            // Trigger UserUpdated event
+            event(new UserUpdated($$module_name_singular));
+
+            // Flash success message
+            Alert::toast($$module_name_singular->name . ' User Successfully Unblocked!', 'success');
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} {$$module_name_singular->name} ($id)");
+
+            return redirect()->back();
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error unblocking user: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to unblock user!', 'error');
+
+            return redirect()->back();
+        }
+    }
+
+    /**
+     * Destroy a user provider.
+     *
+     * @param  Request  $request  The request object.
+     * @return void
+     *
+     * @throws Exception There was a problem updating this user. Please try again.
+     */
+    public function userProviderDestroy(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $user_provider_id = $request->user_provider_id;
+        $user_id = $request->user_id;
+
+        if (! $user_provider_id > 0 || ! $user_id > 0) {
+            flash('Invalid Request. Please try again.')->error()->important();
+
+            return redirect()->back();
+        }
+        $user_provider = UserProvider::findOrFail($user_provider_id);
+
+        if ($user_id == $user_provider->user->id) {
+            $user_provider->delete();
+
+            flash('Unlinked from User, "' . $user_provider->user->name . '"!')->success()->important();
+
+            return redirect()->back();
+        }
+        flash('Request rejected. Please contact the Administrator!')->warning()->important();
+
+        event(new UserUpdated($$module_name_singular));
+
+        throw new Exception('There was a problem updating this user. Please try again.');
+    }
+
+    /**
+     * Resends the email confirmation for a user.
+     *
+     * @param  int  $id  The ID of the user.
+     * @return \Illuminate\Http\RedirectResponse Returns a redirect response.
+     *
+     * @throws \Illuminate\Http\Client\RequestException If the user is not authorized to resend the email confirmation.
+     */
+
+
+    public function emailConfirmationResend($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Email Confirmation Resend';
+
+        // Ensure only authorized users can resend email confirmation
+        if (!auth()->user()->can('edit_users')) {
+            $id = auth()->user()->id;
+        }
+
+        // Find the user
+        $user = User::where('id', '=', $id)->first();
+
+        if ($user) {
+            if ($user->email_verified_at === null) {
+                // Log the action
+                Log::info($user->name . ' (' . $user->id . ') - User Requested for Email Verification.');
+
+                // Send Email To Registered User
+                $user->sendEmailVerificationNotification();
+
+                // Flash success message
+                Alert::toast('Email Sent! Please Check Your Inbox.', 'success');
+
+                return redirect()->back();
+            }
+
+            // Log if email is already verified
+            Log::info($user->name . ' (' . $user->id . ') - User Requested but Email already verified at ' . $user->email_verified_at);
+
+            // Flash message for already verified email
+            Alert::toast($user->name . ', You already confirmed your email address at ' . $user->email_verified_at->isoFormat('LL'), 'success');
+
+            return redirect()->back();
+        }
+
+        // Flash error message if user not found
+        Alert::toast('User not found!', 'error');
+        return redirect()->back();
+    }
+}
+
+
+user model
+<?php
+
+namespace App\Models;
+
+use App\Models\Presenters\UserPresenter;
+use App\Models\Traits\HasHashedMediaTrait;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Auth;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\Permission\Traits\HasRoles;
+use Illuminate\Support\Str;
+
+use Lab404\Impersonate\Models\Impersonate;
+
+
+class User extends Authenticatable implements HasMedia, MustVerifyEmail
+{
+    use HasFactory;
+    use HasHashedMediaTrait;
+    use HasRoles;
+    use Notifiable;
+    use SoftDeletes;
+    use UserPresenter;
+    use Notifiable;
+    use Impersonate;
+
+
+    protected $guarded = [
+        'id',
+        'updated_at',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var array<int, string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+            'date_of_birth' => 'datetime',
+            'last_login' => 'datetime',
+            'deleted_at' => 'datetime',
+            'social_profiles' => 'array',
+        ];
+    }
+
+    /**
+     * Boot the model.
+     *
+     * Register the model's event listeners.
+     *
+     * @return void
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        // create a event to happen on creating
+        static::creating(function ($table) {
+            $table->created_by = Auth::id();
+        });
+
+        // create a event to happen on updating
+        static::updating(function ($user) {
+            // Your existing code (track who updated)
+            $user->updated_by = Auth::id();
+
+            // Add this for Super Admin protection
+            if ($user->id === 1) {
+                abort_if(
+                    $user->isDirty('roles') || $user->isDirty('permissions'),
+                    403,
+                    'Cannot modify Super Admin permissions'
+                );
+            }
+        });
+
+        // create a event to happen on saving
+        static::saving(function ($table) {
+            $table->updated_by = Auth::id();
+        });
+
+        // create a event to happen on deleting
+        static::deleting(function ($table) {
+            $table->deleted_by = Auth::id();
+            $table->save();
+        });
+
+        static::creating(function ($model) {
+            if (empty($model->uuid)) {
+                $model->uuid = (string) Str::uuid();
+            }
+        });
+    }
+
+    /**
+     * Retrieve the providers associated with the user.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function providers()
+    {
+        return $this->hasMany('App\Models\UserProvider');
+    }
+
+    /**
+     * Get the list of users related to the current User.
+     */
+    public function getRolesListAttribute()
+    {
+        return array_map('intval', $this->roles->pluck('id')->toArray());
+    }
+
+    /**
+     * Increment tasks when assigned
+     */
+    public function assignTask()
+    {
+        $this->increment('tasks_assigned');
+        $this->increment('tasks_in_progress');
+    }
+
+
+    /**
+     * Mark a task as completed
+     */
+    public function completeTask($isOverdue = false)
+    {
+        $this->decrement('tasks_in_progress');
+        $this->increment('tasks_completed');
+
+        if ($isOverdue) {
+            $this->increment('overdue_completed');
+        }
+    }
+
+    /**
+     * Cancel a task
+     */
+    public function cancelTask()
+    {
+        $this->decrement('tasks_in_progress');
+        $this->increment('tasks_cancelled');
+    }
+    //cancel due to conflict of interest
+    public function cancelForConflict()
+    {
+        $this->decrement('tasks_assigned');
+        $this->decrement('tasks_in_progress');
+    }
+
+
+    // Relationship: User has one EmployeeInfo
+    public function employeeInfo()
+    {
+        return $this->hasOne(EmployeeInfo::class, 'user_id', 'id');
+    }
+
+    // Only admins/cashiers can impersonate
+    public function canImpersonate(): bool
+    {
+        return $this->hasAnyRole(['super admin', 'admin', 'cashier']);
+    }
+
+    // Only tenants can be impersonated
+    public function canBeImpersonated(): bool
+    {
+        return $this->hasRole('tenant');
+    }
+}
