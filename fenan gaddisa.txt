@@ -1,166 +1,829 @@
-@props([
-    'data' => '',
-    'toolbar' => '',
-    'title' => '',
-    'subtitle' => '',
-    'module_name' => '',
-    'module_title' => '',
-    'module_icon' => '',
-    'module_action' => '',
-])
+<?php
 
-<div class="d-flex justify-content-between">
-    <div class="align-self-center">
-        @if ($slot != '')
-            <h4 class="card-title mb-0">
-                {{ $slot }}
-            </h4>
-        @else
-            <h4 class="card-title mb-0">
-                <i class="{{ $module_icon }}"></i>
-                {{ __($module_title) }}
-                <small class="text-muted">{{ __($module_action) }}</small>
-            </h4>
-        @endif
+namespace App\Livewire\Rentagreement;
 
-        @if ($subtitle)
-            <div class="small text-medium-emphasis">
-                {{ $subtitle }}
-            </div>
-        @endif
-    </div>
-    @if ($toolbar)
-        <div class="btn-toolbar d-block text-end" role="toolbar" aria-label="Toolbar with buttons">
-            {{ $toolbar }}
-        </div>
-    @else
-        <div class="btn-toolbar d-block text-end" role="toolbar" aria-label="Toolbar with buttons">
-            @if (Str::endsWith(Route::currentRouteName(), 'index'))
-                <x-backend.buttons.return-back />
+use Carbon\Carbon;
+use App\Models\User;
+use App\Models\EmployeeInfo;
+use App\Models\RentAgreement;
+use Livewire\WithFileUploads;
+use Modules\Room\Models\Room;
+use App\Notifications\NotifyCeo;
+use Illuminate\Support\Facades\DB;
+use Modules\Room\Models\RoomPrice;
+use Illuminate\Support\Facades\Gate;
+use LivewireUI\Modal\ModalComponent;
 
-                @if (auth()->user()->can('add_' . $module_name) && Route::has('backend.' . $module_name . '.create'))
-                    <div class="btn-group">
-                        <button class="btn btn-secondary btn-sm dropdown-toggle" data-coreui-toggle="dropdown"
-                            type="button" aria-expanded="false">
-                            <i class="fas fa-plus"></i>
-                            {{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="min-width: 220px; border: none; background-color: #2c3e50;">
-                            {{-- <li>
-                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
-                                   href="{{ route('backend.' . $module_name . '.createAssessors') }}"
-                                   style="transition: all 0.3s ease;">
-                                    <i class="fas fa-user me-2"></i>
-                                    <span>Assessors</span>
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider bg-light opacity-25 my-1"></li>
-                            <li>
-                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
-                                   href="{{ route('backend.' . $module_name . '.createAccreditationExperts') }}"
-                                   style="transition: all 0.3s ease;">
-                                    <i class="fas fa-user-tie me-2"></i>
-                                    <span>Accreditation Experts</span>
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider bg-light opacity-25 my-1"></li>--}}
-                            <li>
-                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
-                                   href="{{ route('backend.' . $module_name . '.create') }}"
-                                   style="transition: all 0.3s ease;">
-                                    <i class="fas fa-users me-2"></i>
-                                    <span>General Users</span>
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
-                @endif
+class RentAgreementModal extends ModalComponent
+{
+    use WithFileUploads;
 
-                @if (auth()->user()->can('restore_' . $module_name) && Route::has('backend.' . $module_name . '.create'))
-                    <div class="btn-group ms-1">
-                        <button class="btn btn-secondary btn-sm dropdown-toggle" data-coreui-toggle="dropdown"
-                            type="button" aria-expanded="false">
-                            <i class="fas fa-cog"></i>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="min-width: 180px; border: none; background-color: #2c3e50;">
-                            <li>
-                                <a class="dropdown-item text-white py-2 px-3 d-flex align-items-center"
-                                   href="{{ route("backend.$module_name.trashed") }}"
-                                   style="transition: all 0.3s ease;">
-                                    <i class="fas fa-eye-slash me-2"></i>
-                                    <span>@lang('View trash')</span>
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
-                @endif
-            @elseif (Str::endsWith(Route::currentRouteName(), 'create'))
-                <a class="btn btn-secondary btn-sm ms-1" data-toggle="tooltip"
-                    href="{{ route("backend.$module_name.index") }}" title="{{ __($module_title) }} List">
-                    <i class="fas fa-list-ul"></i>
-                    List
-                </a>
-            @elseif (Str::endsWith(Route::currentRouteName(), 'edit'))
-                <x-buttons.show class="ms-1" title="{{ __('Show') }} {{ ucwords(Str::singular($module_name)) }}"
-                    route='{!! route("backend.$module_name.show", $data) !!}' small="true" />
-            @elseif (Str::endsWith(Route::currentRouteName(), 'show'))
-                @if (Route::has("frontend.$module_name.show"))
-                    <x-backend.buttons.public class="" title="{{ __('Public') }}"
-                        route='{!! route("frontend.$module_name.show", encode_id($data->id)) !!}' small="true" />
-                @endif
+    public $agreementId;
+    public $isEdit = false;
 
-                @if (auth()->user()->can('edit_' . $module_name) && Route::has('backend.' . $module_name . '.edit'))
-                    <x-buttons.edit class="m-1"
-                        title="{{ __('Edit') }} {{ ucwords(Str::singular($module_name)) }}"
-                        route='{!! route("backend.$module_name.edit", $data) !!}' small="true" />
-                @endif
+    public $tenant_id = '';
+    public $room_id = '';
+    public $start_date = '';
+    public $end_date = '';
+    public $purpose = '';
+    public $rent_amount = '';
+    public $agreement_file;
+    public $existing_file;
+    public $agreement;
 
-                <a class="btn btn-secondary btn-sm" data-toggle="tooltip"
-                    href="{{ route("backend.$module_name.index") }}" title="{{ ucwords($module_name) }} List">
-                    <i class="fas fa-list"></i>
-                    {{ __('List') }}
-                </a>
+
+    protected $rules = [
+        'tenant_id' => 'required|exists:employee_infos,id',
+        'room_id' => 'required|exists:rooms,id',
+        'start_date' => 'required|date',
+        'end_date' => 'required|date|after:start_date',
+        'purpose' => 'nullable|string|max:500',
+        'rent_amount' => 'required|numeric|min:0',
+        'agreement_file' => 'nullable|file|mimes:pdf|max:8200',
+    ];
+
+    protected function authorizeAction(string $action): bool
+    {
+        $permission = match ($action) {
+            'create' => 'add_rentagreements',
+            'update' => 'edit_rentagreements',
+            default => 'view_rentagreements'
+        };
+
+        if (!auth()->user()->can($permission)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not authorized to perform this action',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+    public function mount($agreementId = null)
+    {
+        $action = $agreementId ? 'update' : 'create';
+        if (!$this->authorizeAction($action)) {
+            $this->skipRender();
+            return;
+        }
+
+        if ($agreementId) {
+            $this->agreementId = $agreementId;
+            $this->isEdit = true;
+            $this->loadAgreement();
+        } else {
+            $this->start_date = now()->format('Y-m-d');
+            $this->end_date = now()->addYear()->format('Y-m-d');
+        }
+    }
+
+    public function loadAgreement()
+    {
+        $this->agreement = RentAgreement::find($this->agreementId);
+
+        if ($this->agreement) {
+            $this->tenant_id = $this->agreement->tenant_id;
+            $this->room_id = $this->agreement->room_id;
+            $this->start_date = $this->agreement->start_date->format('Y-m-d');
+            $this->end_date = $this->agreement->end_date->format('Y-m-d');
+            $this->purpose = $this->agreement->purpose;
+            $this->rent_amount = $this->agreement->rent_amount;
+        }
+    }
+
+    public function updatedRoomId($value)
+    {
+        if ($value) {
+            $roomPrice = RoomPrice::where('room_id', $value)
+                ->whereNull('effective_to')
+                ->latest()
+                ->first();
+
+            if ($roomPrice) {
+                $this->rent_amount = $roomPrice->total_price;
+            }
+        }
+    }
+
+    public function save()
+    {
+        $action = $this->isEdit ? 'update' : 'create';
+        if (!$this->authorizeAction($action)) {
+            return;
+        }
+
+        $this->validate();
+
+        // Check room availability
+        if (!RentAgreement::isRoomAvailable(
+            $this->room_id,
+            $this->start_date,
+            $this->end_date,
+            $this->isEdit ? $this->agreementId : null
+        )) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The room is already occupied during the selected period'
+            ]);
+            return;
+        }
+
+        // Get current room price
+        $roomPrice = RoomPrice::where('room_id', $this->room_id)
+            ->whereNull('effective_to')
+            ->latest()
+            ->first();
+
+        if (!$roomPrice) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'No active price found for this room'
+            ]);
+            return;
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $data = [
+                'tenant_id' => $this->tenant_id,
+                'room_id' => $this->room_id,
+                'start_date' => $this->start_date,
+                'end_date' => $this->end_date,
+                'purpose' => $this->purpose,
+                'rent_amount' => $roomPrice->total_price,
+            ];
+
+            if ($this->isEdit) {
+                $agreement = RentAgreement::find($this->agreementId);
+                $agreement->update($data);
+
+                // Handle file upload for edit
+                if ($this->agreement_file) {
+                    $agreement->clearMediaCollection('agreement_files');
+                    $agreement->addMedia($this->agreement_file->getRealPath())
+                        ->usingName($this->agreement_file->getClientOriginalName())
+                        ->toMediaCollection('agreement_files');
+                }
+                $this->notifyCeo('updated', $agreement);
+
+
+                $message = 'Rent agreement updated successfully!';
+            } else {
+                $agreement = RentAgreement::create($data);
+
+                // Handle file upload for create
+                if ($this->agreement_file) {
+                    $agreement->addMedia($this->agreement_file->getRealPath())
+                        ->usingName($this->agreement_file->getClientOriginalName())
+                        ->toMediaCollection('agreement_files');
+                }
+                $this->notifyCeo('created', $agreement);
+
+                $message = 'Rent agreement created successfully!';
+            }
+
+            DB::commit();
+
+            $this->dispatch('refresh-rent-agreements');
+            $this->closeModal();
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => $message
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to save rent agreement: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    public function render()
+    {
+        $tenants = EmployeeInfo::orderBy('first_name')->get();
+        $rooms = Room::orderBy('name')->get();
+
+        return view('livewire.rentagreement.rent-agreement-modal', [
+            'tenants' => $tenants,
+            'rooms' => $rooms
+        ]);
+    }
+
+    public static function modalMaxWidth(): string
+    {
+        return '4xl';
+    }
+
+
+
+    protected function notifyCeo($action, RentAgreement $agreement)
+    {
+        $ceoUsers = User::role(['ceo', 'super admin'])->get();
+
+        $data = [
+            'tenant_name' => $agreement->tenant->full_name,
+            'room_name' => $agreement->room->name,
+            'rent_amount' => $agreement->rent_amount,
+        ];
+
+        foreach ($ceoUsers as $ceo) {
+            $ceo->notify(new NotifyCeo(
+                $action,
+                'Rent Agreement',
+                $data
+            ));
+        }
+    }
+}
+
+
+
+<div class="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-lg border border-gray-200">
+    <div class="flex justify-between items-center pb-4 border-b border-gray-200 mb-4">
+        <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+            <i class="fas fa-file-contract mr-2 text-blue-600"></i>
+            @if ($isEdit)
+                @lang('Edit Rental Agreement')
+            @else
+                @lang('Create New Rental Agreement')
             @endif
+        </h2>
+        <button wire:click="$dispatch('closeModal')"
+            class="text-gray-500 hover:text-red-600 transition-colors duration-200 transform hover:scale-110">
+            <i class="fas fa-times-circle text-xl"></i>
+        </button>
+    </div>
+
+    <form wire:submit.prevent="save" class="space-y-5">
+        <!-- Tenant and Room Selection -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Tenant Selection -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-user-tie mr-2 text-blue-500"></i> @lang('Tenant Information')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <select wire:model="tenant_id"
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
+                        <option value="">@lang('Select Tenant')</option>
+                        @foreach ($tenants as $tenant)
+                            <option value="{{ $tenant->id }}">{{ $tenant->full_name }} ({{ $tenant->employee_id }})
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                @error('tenant_id')
+                    <span class="text-sm text-red-500 flex items-center mt-1">
+                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                    </span>
+                @enderror
+            </div>
+
+            <!-- Room Selection -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-door-open mr-2 text-blue-500"></i> @lang('Room Information')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <select wire:model="room_id"
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
+                        <option value="">@lang('Select Room')</option>
+                        @foreach ($rooms as $room)
+                            <option value="{{ $room->id }}">{{ $room->name }} ({{ $room->site->name ?? 'N/A' }})
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                @error('room_id')
+                    <span class="text-sm text-red-500 flex items-center mt-1">
+                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                    </span>
+                @enderror
+            </div>
+        </div>
+
+        <!-- Dates and Price -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Start Date -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-calendar-day mr-2 text-blue-500"></i> @lang('Start Date')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-calendar"></i>
+                    </span>
+                    <input type="date" wire:model="start_date"
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+                @error('start_date')
+                    <span class="text-sm text-red-500 flex items-center mt-1">
+                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                    </span>
+                @enderror
+            </div>
+
+            <!-- End Date -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-calendar-times mr-2 text-blue-500"></i> @lang('End Date')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-calendar"></i>
+                    </span>
+                    <input type="date" wire:model="end_date" min="{{ now()->addDay()->format('Y-m-d') }}"
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+                @error('end_date')
+                    <span class="text-sm text-red-500 flex items-center mt-1">
+                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                    </span>
+                @enderror
+            </div>
+
+            <!-- Room Price Display -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-money-bill-wave mr-2 text-blue-500"></i> @lang('Monthly Rent')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-dollar-sign"></i>
+                    </span>
+                    <input type="text" wire:model="rent_amount" readonly
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 bg-gray-100 font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                    @lang('Current room price (automatically set)')
+                </div>
+            </div>
+        </div>
+
+        <!-- Purpose -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                <i class="fas fa-info-circle mr-2 text-blue-500"></i> @lang('Intended Use')
+            </h3>
+            <div class="mb-2 text-sm text-gray-600">
+                @lang('Please describe how the room will be used (e.g., office, storage, meeting room)')
+            </div>
+            <textarea wire:model="purpose" rows="3"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                placeholder="@lang('Example: Office space for IT department')"></textarea>
+            @error('purpose')
+                <span class="text-sm text-red-500 flex items-center mt-1">
+                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                </span>
+            @enderror
+        </div>
+
+        <!-- Agreement File -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                <i class="fas fa-file-pdf mr-2 text-blue-500"></i> @lang('Agreement Document')
+            </h3>
+            <div class="mb-2 text-sm text-gray-600">
+                @lang('Upload the signed agreement document (PDF format, max 50MB)')
+            </div>
+
+            <!-- File Upload Input -->
+            <div class="relative">
+                <input type="file" wire:model="agreement_file" id="agreement_file" accept="application/pdf"
+                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                <div
+                    class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center transition hover:border-blue-500 hover:bg-blue-50">
+                    <div class="flex items-center justify-center">
+                        <i class="fas fa-cloud-upload-alt text-blue-500 text-2xl mr-2"></i>
+                        <span class="text-gray-700">
+                            @if ($agreement_file)
+                                {{ $agreement_file->getClientOriginalName() }}
+                            @else
+                                @lang('Click to select PDF file')
+                            @endif
+                        </span>
+                    </div>
+                    @if ($agreement_file)
+                        <button type="button" wire:click="$set('agreement_file', null)"
+                            class="mt-2 text-red-500 hover:text-red-700 text-sm">
+                            <i class="fas fa-times mr-1"></i> @lang('Remove file')
+                        </button>
+                    @endif
+                </div>
+            </div>
+
+            @error('agreement_file')
+                <span class="text-sm text-red-500 flex items-center mt-1">
+                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                </span>
+            @enderror
+
+            <!-- Show existing file -->
+            @if ($agreement?->hasMedia('agreement_files'))
+                <div class="mt-3 bg-blue-50 p-2 rounded flex items-center">
+                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
+                    <span class="text-blue-800">
+                        {{ $agreement->getFirstMedia('agreement_files')->name }}
+                    </span>
+                    <span class="ml-auto text-blue-600 hover:text-blue-800">
+                        <a href="{{ route('backend.rentagreements.viewAgreement', $agreement->id) }}" target="_blank"
+                            title="@lang('View current file')">
+                            <i class="fas fa-eye"></i>
+                        </a>
+                    </span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">
+                    @lang('Uploading a new file will replace the existing one')
+                </p>
+            @endif
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex justify-end space-x-3 pt-4">
+            <button type="button" wire:click="$dispatch('closeModal')" wire:loading.attr="disabled"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                @lang('Cancel')
+            </button>
+            <button type="submit" wire:loading.attr="disabled"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                <span wire:loading.remove>
+                    @if ($isEdit)
+                        @lang('Update Agreement')
+                    @else
+                        @lang('Create Agreement')
+                    @endif
+                </span>
+                <span wire:loading>
+                    <i class="fas fa-spinner fa-spin me-1"></i> @lang('Processing...')
+                </span>
+            </button>
+        </div>
+    </form>
+</div>
+
+
+
+
+Rentagreement
+<?php
+
+namespace App\Livewire\RentAgreement;
+
+use Livewire\Component;
+use App\Models\EmployeeInfo;
+use Livewire\WithPagination;
+use App\Models\RentAgreement;
+use Modules\Room\Models\Room;
+use Modules\Site\Models\Site;
+use Illuminate\Support\Facades\Auth;
+
+class RentAgreements extends Component
+{
+    use WithPagination;
+
+    protected $listeners = ['refresh-rent-agreements' => '$refresh'];
+
+    public $search = '';
+    public $statusFilter = 'active';
+    public $perPage = 2;
+    public $siteFilter = '';
+    public $dateFilter = '';
+    public $deleteId = null;
+
+    public function render()
+    {
+        $rentAgreements = RentAgreement::query()
+            ->with(['tenant', 'room.site', 'updater'])
+            ->when($this->search, function ($q) {
+                $q->whereHas('tenant', function ($query) {
+                    $query->where('first_name', 'like', "%{$this->search}%")
+                        ->orWhere('last_name', 'like', "%{$this->search}%")
+                        ->orWhere('employee_id', 'like', "%{$this->search}%");
+                });
+            })
+            ->when($this->siteFilter, function ($q) {
+                $q->whereHas('room.site', function ($query) {
+                    $query->where('id', $this->siteFilter);
+                });
+            })
+            ->when($this->dateFilter, function ($q) {
+                $q->whereDate('start_date', '<=', $this->dateFilter)
+                    ->whereDate('end_date', '>=', $this->dateFilter);
+            })
+            ->when($this->statusFilter === 'active', function ($q) {
+                $q->whereDate('start_date', '<=', now())
+                    ->whereDate('end_date', '>=', now());
+            })
+            ->when($this->statusFilter === 'expired', function ($q) {
+                $q->whereDate('end_date', '<', now());
+            })
+            ->when($this->statusFilter === 'upcoming', function ($q) {
+                $q->whereDate('start_date', '>', now());
+            })
+            ->join('employee_infos', 'rent_agreements.tenant_id', '=', 'employee_infos.id')
+            ->orderBy('employee_infos.employee_id')
+            ->orderBy('start_date', 'desc')
+            ->select('rent_agreements.*')
+            ->paginate($this->perPage);
+
+        $sites = Site::orderBy('name')->get();
+        $tenants = EmployeeInfo::orderBy('first_name')->get();
+
+        return view('livewire.rentagreement.rent-agreements', [
+            'rentAgreements' => $rentAgreements,
+            'sites' => $sites,
+            'tenants' => $tenants
+        ]);
+    }
+
+    // ... rest of your methods remain the same ...
+    public function createAgreement()
+    {
+        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal');
+    }
+
+    public function viewAgreement($agreementId)
+    {
+        $agreement = RentAgreement::findOrFail($agreementId);
+
+        if (!$agreement->hasMedia('agreement_files')) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'No agreement file found'
+            ]);
+            return;
+        }
+
+        $media = $agreement->getFirstMedia('agreement_files');
+        return response()->file($media->getPath());
+    }
+
+    public function editAgreement($agreementId)
+    {
+        $agreement = RentAgreement::find($agreementId);
+
+        if (!$this->canEditOrDelete($agreement)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not authorized to edit this agreement'
+            ]);
+            return;
+        }
+
+        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal', [
+            'agreementId' => $agreementId
+        ]);
+    }
+
+    public function confirmDelete($agreementId)
+    {
+        $agreement = RentAgreement::find($agreementId);
+
+        if (!$this->canEditOrDelete($agreement)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not authorized to delete this agreement'
+            ]);
+            return;
+        }
+
+        $this->dispatch('openModal', 'rentagreement.delete-confirmation-modal', [
+            'agreementId' => $agreementId
+        ]);
+    }
+
+    protected function canEditOrDelete($agreement)
+    {
+        $user = Auth::user();
+
+        if ($agreement->updated_by) {
+            $updater = $agreement->updater;
+            if ($updater && in_array($updater->roles->pluck('name')->first(), ['super admin', 'cashier', 'ceo'])) {
+                return $user->hasAnyRole(['super admin', 'cashier', 'ceo']);
+            }
+        }
+
+        return true;
+    }
+}
+
+<div class="container-fluid p-4 bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-blue-900 to-blue-800 rounded-xl shadow-lg mb-6 p-4 border-b-4 border-yellow-500">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-white/20 p-3 rounded-full backdrop-blur-sm">
+                    <i class="fas fa-file-contract text-2xl text-white"></i>
+                </div>
+                <div>
+                    <h4 class="text-2xl font-bold text-white tracking-wide">@lang('RENTAL AGREEMENTS MANAGEMENT')</h4>
+                </div>
+            </div>
+            <button wire:click="createAgreement"
+                class="bg-yellow-500 hover:bg-yellow-600 text-blue-900 px-4 py-2 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 font-bold border-2 border-yellow-400">
+                <i class="fas fa-plus"></i> @lang('CREATE NEW AGREEMENT')
+                <span wire:loading class="text-sm">@lang('LOADING...')</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Search + Filters -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-white p-4 rounded-lg shadow-md border border-blue-200">
+        <div class="col-span-1">
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
+                    <i class="fas fa-search"></i>
+                </div>
+                <input type="text" wire:model.live.debounce.300ms="search" placeholder="@lang('Search by tenant name...')"
+                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 transition font-mono text-blue-900">
+            </div>
+        </div>
+
+        <div>
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
+                    <i class="fas fa-building"></i>
+                </div>
+                <select wire:model.live="siteFilter"
+                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 appearance-none transition font-mono text-blue-900">
+                    <option value="">@lang('ALL SITES')</option>
+                    @foreach ($sites as $site)
+                        <option value="{{ $site->id }}">{{ $site->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
+                    <i class="fas fa-filter"></i>
+                </div>
+                <select wire:model.live="statusFilter"
+                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 appearance-none transition font-mono text-blue-900">
+                    <option value="active">@lang('ACTIVE')</option>
+                    <option value="upcoming">@lang('UPCOMING')</option>
+                    <option value="expired">@lang('EXPIRED')</option>
+                    <option value="">@lang('ALL')</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
+                    <i class="fas fa-calendar"></i>
+                </div>
+                <input type="date" wire:model.live="dateFilter"
+                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 transition font-mono text-blue-900">
+            </div>
+        </div>
+    </div>
+
+    <!-- Agreements Table -->
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-blue-300">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-blue-200">
+                <thead class="bg-gradient-to-r from-blue-900 to-blue-800 text-xs uppercase tracking-wider text-white">
+                    <tr>
+                        <th class="px-6 py-4 text-left font-bold">#</th>
+                        <th class="px-6 py-4 text-left font-bold">@lang('TENANT')</th>
+                        <th class="px-6 py-4 text-left font-bold">@lang('SITE')</th>
+                        <th class="px-6 py-4 text-left font-bold">@lang('ROOM')</th>
+                        <th class="px-6 py-4 text-left font-bold">@lang('PERIOD')</th>
+                        <th class="px-6 py-4 text-left font-bold">@lang('RENT AMOUNT')</th>
+                        <th class="px-6 py-4 text-left font-bold">@lang('STATUS')</th>
+                        <th class="px-6 py-4 text-right font-bold">@lang('ACTIONS')</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-blue-100 text-sm text-gray-800">
+                    @php
+                        $groupedAgreements = $rentAgreements->groupBy(function ($item) {
+                            return optional($item->room->site)->name ?? 'Unknown Site';
+                        });
+                        $counter = 1;
+                    @endphp
+
+                    @foreach ($groupedAgreements as $siteName => $siteAgreements)
+                        <tr class="bg-blue-50">
+                            <td colspan="8" class="px-6 py-2 font-bold text-blue-900">
+                                <i class="fas fa-building mr-2"></i> {{ $siteName }}
+                            </td>
+                        </tr>
+
+                        @foreach ($siteAgreements as $agreement)
+                            <tr class="hover:bg-blue-50 transition-colors duration-150">
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500">
+                                    {{ $counter++ }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <div
+                                            class="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                            <i class="fas fa-user text-blue-600"></i>
+                                        </div>
+                                        <div class="ml-4">
+                                            <div class="font-medium text-gray-900">
+                                                {{ $agreement->tenant->full_name }}
+                                            </div>
+                                            <div class="text-gray-500 text-xs">
+                                                {{ $agreement->tenant->employee_id }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-blue-900">{{ optional($agreement->room->site)->name ?? 'N/A' }}
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-blue-900">{{ $agreement->room->name }}</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-gray-900">
+                                        {{ $agreement->start_date->format('M d, Y') }} -
+                                        {{ $agreement->end_date->format('M d, Y') }}
+                                    </div>
+                                    @if (App::getLocale() !== 'en')
+                                        <div class="text-gray-500 text-xs">
+                                            ({{ gregorian_to_ethiopian($agreement->start_date) }} -
+                                            {{ gregorian_to_ethiopian($agreement->end_date) }})
+                                        </div>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap font-mono">
+                                    ${{ number_format($agreement->rent_amount, 2) }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    @if ($agreement->isActive())
+                                        <span
+                                            class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                            @lang('ACTIVE')
+                                        </span>
+                                    @elseif($agreement->start_date > now())
+                                        <span
+                                            class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                            @lang('UPCOMING')
+                                        </span>
+                                    @else
+                                        <span
+                                            class="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                                            @lang('EXPIRED')
+                                        </span>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right space-x-1">
+                                    <button wire:click="editAgreement({{ $agreement->id }})"
+                                        class="inline-block p-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition shadow-sm"
+                                        title="@lang('Edit Agreement')">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    @if ($agreement->hasMedia('agreement_files'))
+                                        <a href="{{ route('backend.rentagreements.viewAgreement', $agreement->id) }}"
+                                            target="_blank"
+                                            class="inline-block p-2 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 transition shadow-sm"
+                                            title="@lang('View Agreement')">
+                                            <i class="fas fa-file-pdf"></i>
+                                        </a>
+                                    @else
+                                        <span
+                                            class="inline-block p-2 bg-gray-100 text-gray-400 rounded-lg cursor-not-allowed"
+                                            title="@lang('No agreement file available')">
+                                            <i class="fas fa-file-pdf"></i>
+                                        </span>
+                                    @endif
+                                    <button wire:click="confirmDelete({{ $agreement->id }})"
+                                        class="inline-block p-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 transition shadow-sm"
+                                        title="@lang('Delete Agreement')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        @endforeach
+                    @endforeach
+
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    @if ($rentAgreements->hasPages())
+        <div class="mt-6 flex justify-center">
+            <nav class="flex items-center space-x-1">
+                {{ $rentAgreements->onEachSide(1)->links('vendor.pagination.tailwind-police') }}
+            </nav>
         </div>
     @endif
 </div>
-
-<hr />
-
-@push('after-styles')
-<style>
-    /* Dropdown menu styling */
-    .dropdown-menu {
-        border-radius: 8px;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        padding: 0.5rem 0;
-    }
-
-    .dropdown-item {
-        border-radius: 4px;
-        margin: 0.15rem 0.5rem;
-        width: auto;
-    }
-
-    .dropdown-item:hover,
-    .dropdown-item:focus {
-        background-color: rgba(255, 255, 255, 0.15);
-        color: #fff;
-    }
-
-    .dropdown-divider {
-        margin: 0.25rem 0;
-    }
-
-    /* Dropdown toggle arrow color */
-    .dropdown-toggle::after {
-        color: rgba(255, 255, 255, 0.7);
-    }
-
-    /* Button hover effects */
-    .btn-group .btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    }
-</style>
-@endpush
