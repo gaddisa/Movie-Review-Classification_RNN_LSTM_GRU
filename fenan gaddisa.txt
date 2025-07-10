@@ -1,53 +1,38 @@
 <?php
 
-namespace App\Livewire\Rentagreement;
+namespace App\Livewire\Room;
 
-use Carbon\Carbon;
 use App\Models\User;
-use App\Models\EmployeeInfo;
-use App\Models\RentAgreement;
-use Livewire\WithFileUploads;
 use Modules\Room\Models\Room;
+use Modules\Site\Models\Site;
 use App\Notifications\NotifyCeo;
 use Illuminate\Support\Facades\DB;
 use Modules\Room\Models\RoomPrice;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
 use LivewireUI\Modal\ModalComponent;
 
-class RentAgreementModal extends ModalComponent
+class RoomModal extends ModalComponent
 {
-    use WithFileUploads;
-
-    public $agreementId;
+    public $siteId;
+    public $roomId;
     public $isEdit = false;
 
-    public $tenant_id = '';
-    public $room_id = '';
-    public $start_date = '';
-    public $end_date = '';
-    public $purpose = '';
-    public $rent_amount = '';
-    public $agreement_file;
-    public $existing_file;
-    public $agreement;
-
-
-    protected $rules = [
-        'tenant_id' => 'required|exists:employee_infos,id',
-        'room_id' => 'required|exists:rooms,id',
-        'start_date' => 'required|date',
-        'end_date' => 'required|date|after:start_date',
-        'purpose' => 'nullable|string|max:500',
-        'rent_amount' => 'required|numeric|min:0',
-        'agreement_file' => 'nullable|file|mimes:pdf|max:8200',
-    ];
+    // Form fields
+    public $name;
+    public $description;
+    public $area_square_meters;
+    public $room_status = 0;
+    public $status = 1;
+    public $selected_site_id;
+    public $price_per_sqm;
 
     protected function authorizeAction(string $action): bool
     {
         $permission = match ($action) {
-            'create' => 'add_rentagreements',
-            'update' => 'edit_rentagreements',
-            default => 'view_rentagreements'
+            'create' => 'add_rooms',
+            'update' => 'edit_rooms',
+            default => 'view_rooms',
         };
 
         if (!auth()->user()->can($permission)) {
@@ -62,768 +47,549 @@ class RentAgreementModal extends ModalComponent
 
         return true;
     }
-    public function mount($agreementId = null)
+
+    public function mount($siteId = null, $roomId = null)
     {
-        $action = $agreementId ? 'update' : 'create';
+        $action = $roomId ? 'update' : 'create';
         if (!$this->authorizeAction($action)) {
             $this->skipRender();
             return;
         }
 
-        if ($agreementId) {
-            $this->agreementId = $agreementId;
+        $this->siteId = $siteId;
+        $this->selected_site_id = $siteId;
+
+        if ($roomId) {
             $this->isEdit = true;
-            $this->loadAgreement();
-        } else {
-            $this->start_date = now()->format('Y-m-d');
-            $this->end_date = now()->addYear()->format('Y-m-d');
+            $this->loadRoom($roomId);
         }
     }
 
-    public function loadAgreement()
+    public function loadRoom($roomId)
     {
-        $this->agreement = RentAgreement::find($this->agreementId);
 
-        if ($this->agreement) {
-            $this->tenant_id = $this->agreement->tenant_id;
-            $this->room_id = $this->agreement->room_id;
-            $this->start_date = $this->agreement->start_date->format('Y-m-d');
-            $this->end_date = $this->agreement->end_date->format('Y-m-d');
-            $this->purpose = $this->agreement->purpose;
-            $this->rent_amount = $this->agreement->rent_amount;
+        try {
+            //$room = Room::with(['currentPrice'])->findOrFail($roomId);
+            //$room = Room::with('prices')->findOrFail($roomId);
+            $room = Room::with('currentPriceModel')->findOrFail($roomId);
+
+            $this->roomId = $roomId;
+            $this->selected_site_id = $room->site_id;
+            $this->name = $room->name;
+            $this->description = $room->description;
+            $this->area_square_meters = $room->area_square_meters;
+            $this->room_status = $room->room_status;
+            $this->status = $room->status;
+
+            // Get the current active price
+            //$currentPrice = $room->prices()->whereNull('effective_to')->latest('effective_from')->first();
+            //$this->price_per_sqm = $currentPrice?->price_per_sqm ?? 0;
+
+            $this->price_per_sqm = $room->currentPriceModel?->price_per_sqm ?? 0;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The requested room does not exist',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            $this->closeModal();
+        } catch (\Exception $e) {
+            Log::error('Failed to load room: ' . $e->getMessage(), [
+                'room_id' => $roomId,
+                'user_id' => auth()->id()
+            ]);
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to load room data',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            $this->closeModal();
         }
     }
 
-    public function updatedRoomId($value)
-    {
-        if ($value) {
-            $roomPrice = RoomPrice::where('room_id', $value)
-                ->whereNull('effective_to')
-                ->latest()
-                ->first();
-
-            if ($roomPrice) {
-                $this->rent_amount = $roomPrice->total_price;
-            }
-        }
-    }
-
-    public function save()
+    public function saveRoom()
     {
         $action = $this->isEdit ? 'update' : 'create';
         if (!$this->authorizeAction($action)) {
             return;
         }
 
-        $this->validate();
+        $validated = $this->validate([
+            'selected_site_id' => 'required|exists:sites,id',
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'area_square_meters' => 'required|numeric|min:0',
+            'price_per_sqm' => 'required|numeric|min:0',
+            'room_status' => 'required|in:0,1',
+            'status' => 'required|in:0,1,2',
+        ]);
 
-        // Check room availability
-        if (!RentAgreement::isRoomAvailable(
-            $this->room_id,
-            $this->start_date,
-            $this->end_date,
-            $this->isEdit ? $this->agreementId : null
-        )) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'The room is already occupied during the selected period'
-            ]);
-            return;
-        }
-
-        // Get current room price
-        $roomPrice = RoomPrice::where('room_id', $this->room_id)
-            ->whereNull('effective_to')
-            ->latest()
-            ->first();
-
-        if (!$roomPrice) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'No active price found for this room'
-            ]);
-            return;
-        }
-
-        DB::beginTransaction();
+        $validated['site_id'] = $this->selected_site_id;
 
         try {
-            $data = [
-                'tenant_id' => $this->tenant_id,
-                'room_id' => $this->room_id,
-                'start_date' => $this->start_date,
-                'end_date' => $this->end_date,
-                'purpose' => $this->purpose,
-                'rent_amount' => $roomPrice->total_price,
-            ];
+            DB::beginTransaction();
 
             if ($this->isEdit) {
-                $agreement = RentAgreement::find($this->agreementId);
-                $agreement->update($data);
+                $room = Room::findOrFail($this->roomId);
+                $room->update($validated);
+                $this->notifyCeo('updated', $room);
 
-                // Handle file upload for edit
-                if ($this->agreement_file) {
-                    $agreement->clearMediaCollection('agreement_files');
-                    $agreement->addMedia($this->agreement_file->getRealPath())
-                        ->usingName($this->agreement_file->getClientOriginalName())
-                        ->toMediaCollection('agreement_files');
+                // Check if price changed
+                $currentPrice = $room->currentPriceModel;
+                if (!$currentPrice || (float)$currentPrice->price_per_sqm != (float)$this->price_per_sqm) {
+
+                    // Expire old price if exists
+                    if ($currentPrice) {
+                        $currentPrice->update([
+                            'effective_to' => now()->subDay()->toDateString()
+                        ]);
+                    }
+
+                    // Create new price record
+                    RoomPrice::create([
+                        'room_id' => $room->id,
+                        'price_per_sqm' => $this->price_per_sqm,
+                        'total_price' => $this->price_per_sqm * $room->area_square_meters,
+                        'effective_from' => now()->toDateString()
+                    ]);
                 }
-                $this->notifyCeo('updated', $agreement);
-
-
-                $message = 'Rent agreement updated successfully!';
             } else {
-                $agreement = RentAgreement::create($data);
+                $room = Room::create($validated);
+                $this->notifyCeo('created', $room);
 
-                // Handle file upload for create
-                if ($this->agreement_file) {
-                    $agreement->addMedia($this->agreement_file->getRealPath())
-                        ->usingName($this->agreement_file->getClientOriginalName())
-                        ->toMediaCollection('agreement_files');
-                }
-                $this->notifyCeo('created', $agreement);
-
-                $message = 'Rent agreement created successfully!';
+                // Create initial price record
+                RoomPrice::create([
+                    'room_id' => $room->id,
+                    'price_per_sqm' => $this->price_per_sqm,
+                    'total_price' => $this->price_per_sqm * $room->area_square_meters,
+                    'effective_from' => now()->toDateString()
+                ]);
             }
 
             DB::commit();
 
-            $this->dispatch('refresh-rent-agreements');
+            $this->dispatch('refreshRooms');
             $this->closeModal();
             $this->dispatch('showToast', [
                 'type' => 'success',
-                'message' => $message
+                'message' => 'Room saved successfully'
             ]);
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Failed to save rent agreement: ' . $e->getMessage()
+                'message' => 'Room not found',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Room save failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'room_id' => $this->roomId ?? null,
+                'user_id' => auth()->id()
+            ]);
+
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to save room. Please try again.',
+                'position' => 'top-end',
+                'duration' => 5000
             ]);
         }
     }
 
+    public function getSitesProperty()
+    {
+        return Site::orderBy('name')->get(['id', 'name']);
+    }
+
+    public function getTotalPriceProperty()
+    {
+        return $this->area_square_meters * $this->price_per_sqm;
+    }
+
     public function render()
     {
-        $tenants = EmployeeInfo::orderBy('first_name')->get();
-        $rooms = Room::orderBy('name')->get();
-
-        return view('livewire.rentagreement.rent-agreement-modal', [
-            'tenants' => $tenants,
-            'rooms' => $rooms
+        return view('livewire.room.room-modal', [
+            'totalPrice' => $this->totalPrice
         ]);
     }
 
     public static function modalMaxWidth(): string
     {
-        return '4xl';
+        return '2xl';
     }
 
-
-
-    protected function notifyCeo($action, RentAgreement $agreement)
+    protected function notifyCeo($action, Room $room)
     {
-        $ceoUsers = User::role(['ceo', 'super admin'])->get();
+        try {
+            $ceoUsers = User::role(['ceo', 'super admin'])->get();
 
-        $data = [
-            'tenant_name' => $agreement->tenant->full_name,
-            'room_name' => $agreement->room->name,
-            'rent_amount' => $agreement->rent_amount,
-        ];
+            $data = [
+                'room_name' => $room->name,
+                'site_name' => $room->site->name,
+                'area_sqm' => $room->area_square_meters,
+                'status' => $room->status ? 'Active' : 'Inactive',
+            ];
 
-        foreach ($ceoUsers as $ceo) {
-            $ceo->notify(new NotifyCeo(
-                $action,
-                'Rent Agreement',
-                $data
-            ));
-        }
-    }
-}
-
-
-
-<div class="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-lg border border-gray-200">
-    <div class="flex justify-between items-center pb-4 border-b border-gray-200 mb-4">
-        <h2 class="text-2xl font-bold text-gray-800 flex items-center">
-            <i class="fas fa-file-contract mr-2 text-blue-600"></i>
-            @if ($isEdit)
-                @lang('Edit Rental Agreement')
-            @else
-                @lang('Create New Rental Agreement')
-            @endif
-        </h2>
-        <button wire:click="$dispatch('closeModal')"
-            class="text-gray-500 hover:text-red-600 transition-colors duration-200 transform hover:scale-110">
-            <i class="fas fa-times-circle text-xl"></i>
-        </button>
-    </div>
-
-    <form wire:submit.prevent="save" class="space-y-5">
-        <!-- Tenant and Room Selection -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Tenant Selection -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-user-tie mr-2 text-blue-500"></i> @lang('Tenant Information')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-search"></i>
-                    </span>
-                    <select wire:model="tenant_id"
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
-                        <option value="">@lang('Select Tenant')</option>
-                        @foreach ($tenants as $tenant)
-                            <option value="{{ $tenant->id }}">{{ $tenant->full_name }} ({{ $tenant->employee_id }})
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                @error('tenant_id')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-
-            <!-- Room Selection -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-door-open mr-2 text-blue-500"></i> @lang('Room Information')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-search"></i>
-                    </span>
-                    <select wire:model="room_id"
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
-                        <option value="">@lang('Select Room')</option>
-                        @foreach ($rooms as $room)
-                            <option value="{{ $room->id }}">{{ $room->name }} ({{ $room->site->name ?? 'N/A' }})
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                @error('room_id')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-        </div>
-
-        <!-- Dates and Price -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- Start Date -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-calendar-day mr-2 text-blue-500"></i> @lang('Start Date')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-calendar"></i>
-                    </span>
-                    <input type="date" wire:model="start_date"
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                </div>
-                @error('start_date')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-
-            <!-- End Date -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-calendar-times mr-2 text-blue-500"></i> @lang('End Date')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-calendar"></i>
-                    </span>
-                    <input type="date" wire:model="end_date" min="{{ now()->addDay()->format('Y-m-d') }}"
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                </div>
-                @error('end_date')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-
-            <!-- Room Price Display -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-money-bill-wave mr-2 text-blue-500"></i> @lang('Monthly Rent')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-dollar-sign"></i>
-                    </span>
-                    <input type="text" wire:model="rent_amount" readonly
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 bg-gray-100 font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                </div>
-                <div class="text-xs text-gray-500 mt-1">
-                    @lang('Current room price (automatically set)')
-                </div>
-            </div>
-        </div>
-
-        <!-- Purpose -->
-        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                <i class="fas fa-info-circle mr-2 text-blue-500"></i> @lang('Intended Use')
-            </h3>
-            <div class="mb-2 text-sm text-gray-600">
-                @lang('Please describe how the room will be used (e.g., office, storage, meeting room)')
-            </div>
-            <textarea wire:model="purpose" rows="3"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                placeholder="@lang('Example: Office space for IT department')"></textarea>
-            @error('purpose')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-        </div>
-
-        <!-- Agreement File -->
-        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                <i class="fas fa-file-pdf mr-2 text-blue-500"></i> @lang('Agreement Document')
-            </h3>
-            <div class="mb-2 text-sm text-gray-600">
-                @lang('Upload the signed agreement document (PDF format, max 50MB)')
-            </div>
-
-            <!-- File Upload Input -->
-            <div class="relative">
-                <input type="file" wire:model="agreement_file" id="agreement_file" accept="application/pdf"
-                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                <div
-                    class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center transition hover:border-blue-500 hover:bg-blue-50">
-                    <div class="flex items-center justify-center">
-                        <i class="fas fa-cloud-upload-alt text-blue-500 text-2xl mr-2"></i>
-                        <span class="text-gray-700">
-                            @if ($agreement_file)
-                                {{ $agreement_file->getClientOriginalName() }}
-                            @else
-                                @lang('Click to select PDF file')
-                            @endif
-                        </span>
-                    </div>
-                    @if ($agreement_file)
-                        <button type="button" wire:click="$set('agreement_file', null)"
-                            class="mt-2 text-red-500 hover:text-red-700 text-sm">
-                            <i class="fas fa-times mr-1"></i> @lang('Remove file')
-                        </button>
-                    @endif
-                </div>
-            </div>
-
-            @error('agreement_file')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-
-            <!-- Show existing file -->
-            @if ($agreement?->hasMedia('agreement_files'))
-                <div class="mt-3 bg-blue-50 p-2 rounded flex items-center">
-                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
-                    <span class="text-blue-800">
-                        {{ $agreement->getFirstMedia('agreement_files')->name }}
-                    </span>
-                    <span class="ml-auto text-blue-600 hover:text-blue-800">
-                        <a href="{{ route('backend.rentagreements.viewAgreement', $agreement->id) }}" target="_blank"
-                            title="@lang('View current file')">
-                            <i class="fas fa-eye"></i>
-                        </a>
-                    </span>
-                </div>
-                <p class="text-xs text-gray-500 mt-1">
-                    @lang('Uploading a new file will replace the existing one')
-                </p>
-            @endif
-        </div>
-
-        <!-- Form Actions -->
-        <div class="flex justify-end space-x-3 pt-4">
-            <button type="button" wire:click="$dispatch('closeModal')" wire:loading.attr="disabled"
-                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
-                @lang('Cancel')
-            </button>
-            <button type="submit" wire:loading.attr="disabled"
-                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                <span wire:loading.remove>
-                    @if ($isEdit)
-                        @lang('Update Agreement')
-                    @else
-                        @lang('Create Agreement')
-                    @endif
-                </span>
-                <span wire:loading>
-                    <i class="fas fa-spinner fa-spin me-1"></i> @lang('Processing...')
-                </span>
-            </button>
-        </div>
-    </form>
-</div>
-
-
-
-
-Rentagreement
-<?php
-
-namespace App\Livewire\RentAgreement;
-
-use Livewire\Component;
-use App\Models\EmployeeInfo;
-use Livewire\WithPagination;
-use App\Models\RentAgreement;
-use Modules\Room\Models\Room;
-use Modules\Site\Models\Site;
-use Illuminate\Support\Facades\Auth;
-
-class RentAgreements extends Component
-{
-    use WithPagination;
-
-    protected $listeners = ['refresh-rent-agreements' => '$refresh'];
-
-    public $search = '';
-    public $statusFilter = 'active';
-    public $perPage = 2;
-    public $siteFilter = '';
-    public $dateFilter = '';
-    public $deleteId = null;
-
-    public function render()
-    {
-        $rentAgreements = RentAgreement::query()
-            ->with(['tenant', 'room.site', 'updater'])
-            ->when($this->search, function ($q) {
-                $q->whereHas('tenant', function ($query) {
-                    $query->where('first_name', 'like', "%{$this->search}%")
-                        ->orWhere('last_name', 'like', "%{$this->search}%")
-                        ->orWhere('employee_id', 'like', "%{$this->search}%");
-                });
-            })
-            ->when($this->siteFilter, function ($q) {
-                $q->whereHas('room.site', function ($query) {
-                    $query->where('id', $this->siteFilter);
-                });
-            })
-            ->when($this->dateFilter, function ($q) {
-                $q->whereDate('start_date', '<=', $this->dateFilter)
-                    ->whereDate('end_date', '>=', $this->dateFilter);
-            })
-            ->when($this->statusFilter === 'active', function ($q) {
-                $q->whereDate('start_date', '<=', now())
-                    ->whereDate('end_date', '>=', now());
-            })
-            ->when($this->statusFilter === 'expired', function ($q) {
-                $q->whereDate('end_date', '<', now());
-            })
-            ->when($this->statusFilter === 'upcoming', function ($q) {
-                $q->whereDate('start_date', '>', now());
-            })
-            ->join('employee_infos', 'rent_agreements.tenant_id', '=', 'employee_infos.id')
-            ->orderBy('employee_infos.employee_id')
-            ->orderBy('start_date', 'desc')
-            ->select('rent_agreements.*')
-            ->paginate($this->perPage);
-
-        $sites = Site::orderBy('name')->get();
-        $tenants = EmployeeInfo::orderBy('first_name')->get();
-
-        return view('livewire.rentagreement.rent-agreements', [
-            'rentAgreements' => $rentAgreements,
-            'sites' => $sites,
-            'tenants' => $tenants
-        ]);
-    }
-
-    // ... rest of your methods remain the same ...
-    public function createAgreement()
-    {
-        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal');
-    }
-
-    public function viewAgreement($agreementId)
-    {
-        $agreement = RentAgreement::findOrFail($agreementId);
-
-        if (!$agreement->hasMedia('agreement_files')) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'No agreement file found'
-            ]);
-            return;
-        }
-
-        $media = $agreement->getFirstMedia('agreement_files');
-        return response()->file($media->getPath());
-    }
-
-    public function editAgreement($agreementId)
-    {
-        $agreement = RentAgreement::find($agreementId);
-
-        if (!$this->canEditOrDelete($agreement)) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You are not authorized to edit this agreement'
-            ]);
-            return;
-        }
-
-        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal', [
-            'agreementId' => $agreementId
-        ]);
-    }
-
-    public function confirmDelete($agreementId)
-    {
-        $agreement = RentAgreement::find($agreementId);
-
-        if (!$this->canEditOrDelete($agreement)) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You are not authorized to delete this agreement'
-            ]);
-            return;
-        }
-
-        $this->dispatch('openModal', 'rentagreement.delete-confirmation-modal', [
-            'agreementId' => $agreementId
-        ]);
-    }
-
-    protected function canEditOrDelete($agreement)
-    {
-        $user = Auth::user();
-
-        if ($agreement->updated_by) {
-            $updater = $agreement->updater;
-            if ($updater && in_array($updater->roles->pluck('name')->first(), ['super admin', 'cashier', 'ceo'])) {
-                return $user->hasAnyRole(['super admin', 'cashier', 'ceo']);
+            foreach ($ceoUsers as $ceo) {
+                $ceo->notify(new NotifyCeo(
+                    $action,
+                    'Room',
+                    $data
+                ));
             }
+        } catch (\Exception $e) {
+            Log::error('Failed to send CEO notification: ' . $e->getMessage(), [
+                'room_id' => $room->id,
+                'action' => $action
+            ]);
         }
-
-        return true;
     }
 }
 
-<div class="container-fluid p-4 bg-gray-100 min-h-screen">
-    <!-- Header -->
-    <div class="bg-gradient-to-r from-blue-900 to-blue-800 rounded-xl shadow-lg mb-6 p-4 border-b-4 border-yellow-500">
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div class="flex items-center space-x-3">
-                <div class="bg-white/20 p-3 rounded-full backdrop-blur-sm">
-                    <i class="fas fa-file-contract text-2xl text-white"></i>
-                </div>
+
+and inside rooms.blade
+<div class="max-w-7xl mx-auto space-y-6">
+    <!-- Statistics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <!-- Total Sites Card -->
+        <div
+            class="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
+            <div class="p-5 flex items-center justify-between">
                 <div>
-                    <h4 class="text-2xl font-bold text-white tracking-wide">@lang('RENTAL AGREEMENTS MANAGEMENT')</h4>
+                    <div class="text-sm font-medium opacity-80">Total Sites</div>
+                    <div class="text-3xl font-bold mt-1">{{ $stats['totalSites'] }}</div>
+                    <div class="text-xs opacity-80 mt-2 flex items-center">
+                        <i class="fas fa-building mr-1"></i> All locations
+                    </div>
+                </div>
+                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
+                    <i class="fas fa-city text-2xl"></i>
                 </div>
             </div>
-            <button wire:click="createAgreement"
-                class="bg-yellow-500 hover:bg-yellow-600 text-blue-900 px-4 py-2 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 font-bold border-2 border-yellow-400">
-                <i class="fas fa-plus"></i> @lang('CREATE NEW AGREEMENT')
-                <span wire:loading class="text-sm">@lang('LOADING...')</span>
-            </button>
+            <div class="bg-black/10 px-5 py-2 text-xs">
+                <i class="fas fa-sync-alt mr-1"></i> Updated just now
+            </div>
+        </div>
+
+        <!-- Total Rooms Card -->
+        <div
+            class="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
+            <div class="p-5 flex items-center justify-between">
+                <div>
+                    <div class="text-sm font-medium opacity-80">Total Rooms</div>
+                    <div class="text-3xl font-bold mt-1">{{ $stats['totalRooms'] }}</div>
+                    <div class="text-xs opacity-80 mt-2 flex items-center">
+                        <i class="fas fa-door-open mr-1"></i> All spaces
+                    </div>
+                </div>
+                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
+                    <i class="fas fa-door-closed text-2xl"></i>
+                </div>
+            </div>
+            <div class="bg-black/10 px-5 py-2 text-xs">
+                <i class="fas fa-sync-alt mr-1"></i> Updated just now
+            </div>
+        </div>
+
+        <!-- Available Rooms Card -->
+        <div
+            class="bg-gradient-to-br from-green-600 to-green-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
+            <div class="p-5 flex items-center justify-between">
+                <div>
+                    <div class="text-sm font-medium opacity-80">Available</div>
+                    <div class="text-3xl font-bold mt-1">{{ $stats['availableRooms'] }}</div>
+                    <div class="text-xs opacity-80 mt-2 flex items-center">
+                        <span class="w-2 h-2 bg-green-300 rounded-full mr-1 animate-pulse"></span>
+                        {{ $stats['totalRooms'] > 0 ? number_format(($stats['availableRooms'] / $stats['totalRooms']) * 100, 1) : 0 }}%
+                        of total
+                    </div>
+                </div>
+                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
+                    <i class="fas fa-unlock text-2xl"></i>
+                </div>
+            </div>
+            <div class="bg-black/10 px-5 py-2 text-xs">
+                <i class="fas fa-clock mr-1"></i> Ready to book
+            </div>
+        </div>
+
+        <!-- Occupied Rooms Card -->
+        <div
+            class="bg-gradient-to-br from-red-600 to-red-800 rounded-xl shadow-lg overflow-hidden text-white transform transition-all hover:scale-[1.02] duration-300">
+            <div class="p-5 flex items-center justify-between">
+                <div>
+                    <div class="text-sm font-medium opacity-80">Occupied</div>
+                    <div class="text-3xl font-bold mt-1">{{ $stats['occupiedRooms'] }}</div>
+                    <div class="text-xs opacity-80 mt-2 flex items-center">
+                        <span class="w-2 h-2 bg-red-300 rounded-full mr-1 animate-pulse"></span>
+                        {{ $stats['totalRooms'] > 0 ? number_format(($stats['occupiedRooms'] / $stats['totalRooms']) * 100, 1) : 0 }}%
+                        of total
+                    </div>
+                </div>
+                <div class="bg-white/20 p-4 rounded-full backdrop-blur-sm">
+                    <i class="fas fa-lock text-2xl"></i>
+                </div>
+            </div>
+            <div class="bg-black/10 px-5 py-2 text-xs">
+                <i class="fas fa-clock mr-1"></i> Currently in use
+            </div>
         </div>
     </div>
 
-    <!-- Search + Filters -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-white p-4 rounded-lg shadow-md border border-blue-200">
-        <div class="col-span-1">
-            <div class="relative">
-                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
-                    <i class="fas fa-search"></i>
+    <!-- Main Room Management Card -->
+    <div
+        class="bg-white rounded-xl overflow-hidden shadow-2xl border border-gray-200 transform transition-all duration-300 hover:shadow-xl">
+        <!-- Header with Gradient Background -->
+        <div class="px-6 py-4 bg-gradient-to-r from-purple-800 to-indigo-900 text-white">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+                <div class="flex items-center space-x-4">
+                    <div class="bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-lg">
+                        <i class="fas fa-door-open text-2xl text-white"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-2xl font-bold tracking-wide">@lang('Room Management')</h3>
+                        <p class="text-sm text-purple-100">@lang('Manage all rooms across your sites')</p>
+                    </div>
                 </div>
-                <input type="text" wire:model.live.debounce.300ms="search" placeholder="@lang('Search by tenant name...')"
-                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 transition font-mono text-blue-900">
+                @if (app(\App\Policies\SystemSettingsPolicy::class)->manageSystemSettings('create')->allowed())
+                <button wire:click="openAddModal"
+                        class="px-5 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white rounded-lg shadow-md transition-all duration-300 flex items-center transform hover:scale-105"
+                        wire:loading.attr="disabled" wire:target="openAddModal">
+
+                        <span wire:loading.remove wire:target="openAddModal">
+                            <i class="fas fa-plus-circle mr-2"></i> @lang('Add New Room')
+                        </span>
+
+                        <span wire:loading wire:target="openAddModal">
+                            <i class="fas fa-spinner fa-spin mr-2"></i> @lang('Opening...')
+                        </span>
+                    </button>
+                @endif
+
             </div>
         </div>
 
-        <div>
-            <div class="relative">
-                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
-                    <i class="fas fa-building"></i>
-                </div>
-                <select wire:model.live="siteFilter"
-                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 appearance-none transition font-mono text-blue-900">
-                    <option value="">@lang('ALL SITES')</option>
-                    @foreach ($sites as $site)
-                        <option value="{{ $site->id }}">{{ $site->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-        </div>
+        <!-- Filters and Search Bar -->
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Site Filter -->
 
-        <div>
-            <div class="relative">
-                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
-                    <i class="fas fa-filter"></i>
-                </div>
-                <select wire:model.live="statusFilter"
-                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 appearance-none transition font-mono text-blue-900">
-                    <option value="active">@lang('ACTIVE')</option>
-                    <option value="upcoming">@lang('UPCOMING')</option>
-                    <option value="expired">@lang('EXPIRED')</option>
-                    <option value="">@lang('ALL')</option>
-                </select>
-            </div>
-        </div>
-
-        <div>
-            <div class="relative">
-                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-600">
-                    <i class="fas fa-calendar"></i>
-                </div>
-                <input type="date" wire:model.live="dateFilter"
-                    class="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 transition font-mono text-blue-900">
-            </div>
-        </div>
-    </div>
-
-    <!-- Agreements Table -->
-    <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-blue-300">
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-blue-200">
-                <thead class="bg-gradient-to-r from-blue-900 to-blue-800 text-xs uppercase tracking-wider text-white">
-                    <tr>
-                        <th class="px-6 py-4 text-left font-bold">#</th>
-                        <th class="px-6 py-4 text-left font-bold">@lang('TENANT')</th>
-                        <th class="px-6 py-4 text-left font-bold">@lang('SITE')</th>
-                        <th class="px-6 py-4 text-left font-bold">@lang('ROOM')</th>
-                        <th class="px-6 py-4 text-left font-bold">@lang('PERIOD')</th>
-                        <th class="px-6 py-4 text-left font-bold">@lang('RENT AMOUNT')</th>
-                        <th class="px-6 py-4 text-left font-bold">@lang('STATUS')</th>
-                        <th class="px-6 py-4 text-right font-bold">@lang('ACTIONS')</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-blue-100 text-sm text-gray-800">
-                    @php
-                        $groupedAgreements = $rentAgreements->groupBy(function ($item) {
-                            return optional($item->room->site)->name ?? 'Unknown Site';
-                        });
-                        $counter = 1;
-                    @endphp
-
-                    @foreach ($groupedAgreements as $siteName => $siteAgreements)
-                        <tr class="bg-blue-50">
-                            <td colspan="8" class="px-6 py-2 font-bold text-blue-900">
-                                <i class="fas fa-building mr-2"></i> {{ $siteName }}
-                            </td>
-                        </tr>
-
-                        @foreach ($siteAgreements as $agreement)
-                            <tr class="hover:bg-blue-50 transition-colors duration-150">
-                                <td class="px-6 py-4 whitespace-nowrap text-gray-500">
-                                    {{ $counter++ }}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        <div
-                                            class="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                            <i class="fas fa-user text-blue-600"></i>
-                                        </div>
-                                        <div class="ml-4">
-                                            <div class="font-medium text-gray-900">
-                                                {{ $agreement->tenant->full_name }}
-                                            </div>
-                                            <div class="text-gray-500 text-xs">
-                                                {{ $agreement->tenant->employee_id }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-blue-900">{{ optional($agreement->room->site)->name ?? 'N/A' }}
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-blue-900">{{ $agreement->room->name }}</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-gray-900">
-                                        {{ $agreement->start_date->format('M d, Y') }} -
-                                        {{ $agreement->end_date->format('M d, Y') }}
-                                    </div>
-                                    @if (App::getLocale() !== 'en')
-                                        <div class="text-gray-500 text-xs">
-                                            ({{ gregorian_to_ethiopian($agreement->start_date) }} -
-                                            {{ gregorian_to_ethiopian($agreement->end_date) }})
-                                        </div>
-                                    @endif
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap font-mono">
-                                    ${{ number_format($agreement->rent_amount, 2) }}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    @if ($agreement->isActive())
-                                        <span
-                                            class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                            @lang('ACTIVE')
-                                        </span>
-                                    @elseif($agreement->start_date > now())
-                                        <span
-                                            class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                                            @lang('UPCOMING')
-                                        </span>
-                                    @else
-                                        <span
-                                            class="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                                            @lang('EXPIRED')
-                                        </span>
-                                    @endif
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-right space-x-1">
-                                    <button wire:click="editAgreement({{ $agreement->id }})"
-                                        class="inline-block p-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition shadow-sm"
-                                        title="@lang('Edit Agreement')">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    @if ($agreement->hasMedia('agreement_files'))
-                                        <a href="{{ route('backend.rentagreements.viewAgreement', $agreement->id) }}"
-                                            target="_blank"
-                                            class="inline-block p-2 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 transition shadow-sm"
-                                            title="@lang('View Agreement')">
-                                            <i class="fas fa-file-pdf"></i>
-                                        </a>
-                                    @else
-                                        <span
-                                            class="inline-block p-2 bg-gray-100 text-gray-400 rounded-lg cursor-not-allowed"
-                                            title="@lang('No agreement file available')">
-                                            <i class="fas fa-file-pdf"></i>
-                                        </span>
-                                    @endif
-                                    <button wire:click="confirmDelete({{ $agreement->id }})"
-                                        class="inline-block p-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 transition shadow-sm"
-                                        title="@lang('Delete Agreement')">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
+                <!-- Site Filter -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">@lang('Filter by Site')</label>
+                    <select wire:model.live="siteFilter"
+                        class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all">
+                        <option value="">@lang('All Sites')</option>
+                        @foreach ($sites as $site)
+                            <option value="{{ $site->id }}">{{ $site->name }}</option>
                         @endforeach
-                    @endforeach
+                    </select>
+                </div>
 
-                </tbody>
-            </table>
+                <!-- Status Filter -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">@lang('Filter by Status')</label>
+                    <select wire:model.live="statusFilter"
+                        class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all">
+                        <option value="">@lang('All Statuses')</option>
+                        <option value="0">@lang('Available')</option>
+                        <option value="1">@lang('Occupied')</option>
+                    </select>
+                </div>
+
+                <!-- Search Box -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">@lang('Search Rooms')</label>
+                    <div class="relative">
+                        <input type="text" wire:model.live.debounce.300ms="searchTerm"
+                            placeholder="@lang('Search by room name...')"
+                            class="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-search text-gray-400"></i>
+                        </div>
+                    </div>
+                </div>
+
+
+
+            </div>
+        </div>
+        <!-- Add this right before the table -->
+
+        <!-- Body -->
+        <div class="p-6 bg-gradient-to-br from-gray-50 to-indigo-50">
+            @if ($rooms->isEmpty())
+                <!-- Empty State with Animation -->
+                <div
+                    class="text-center py-16 text-gray-600 bg-white border-2 border-dashed border-indigo-400 rounded-lg shadow-inner transform transition-all hover:scale-[1.01] duration-300">
+                    <div class="animate-bounce mb-4">
+                        <i class="fas fa-door-closed text-5xl text-indigo-500"></i>
+                    </div>
+                    <h4 class="text-xl font-semibold mb-2">@lang('NO ROOMS FOUND')</h4>
+                    <p class="text-gray-500 mb-4">@lang('Try adjusting your filters or add your first room')</p>
+                    <button wire:click="resetFilters"
+                        class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition flex items-center mx-auto">
+                        <i class="fas fa-sync-alt mr-2"></i> @lang('Reset Filters')
+                    </button>
+                </div>
+            @else
+                <!-- Rooms Table -->
+                <div class="overflow-x-auto rounded-xl shadow-lg border border-gray-200 bg-white">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gradient-to-r from-gray-100 to-gray-200">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer"
+                                    wire:click="sortBy('name')">
+                                    <div class="flex items-center">
+                                        @lang('Room Name')
+                                        <i class="fas fa-sort ml-1 text-gray-400"></i>
+                                    </div>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer"
+                                    wire:click="sortBy('sites.name')">
+                                    <div class="flex items-center">
+                                        @lang('Site')
+                                        <i class="fas fa-sort ml-1 text-gray-400"></i>
+                                    </div>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer"
+                                    wire:click="sortBy('area_square_meters')">
+                                    <div class="flex items-center">
+                                        @lang('Area')
+                                        <i class="fas fa-sort ml-1 text-gray-400"></i>
+                                    </div>
+                                </th>
+
+
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                                    @lang('Status')
+                                </th>
+                                <th
+                                    class="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                                    @lang('Actions')
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            @foreach ($rooms as $room)
+                                <tr class="hover:bg-indigo-50 transition-colors duration-150">
+                                    <!-- Room Name -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="flex items-center">
+                                            <div
+                                                class="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
+                                                <i class="fas fa-door-open text-indigo-600"></i>
+                                            </div>
+                                            <div>
+                                                <div class="font-medium text-gray-900">{{ $room->name }}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <!-- Site -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="flex items-center">
+                                            <div
+                                                class="flex-shrink-0 h-9 w-9 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                                                <i class="fas fa-building text-purple-600 text-sm"></i>
+                                            </div>
+                                            <div class="text-sm font-medium text-gray-900">
+                                                {{ $room->site->name ?? 'N/A' }}
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <!-- Area -->
+                                    <!-- Area -->
+                                    <!-- Area -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm text-gray-900 flex items-center">
+                                            <span class="font-mono bg-indigo-50 px-2 py-1 rounded mr-2">
+                                                {{ $room->area_square_meters }} m²
+                                                <span class="text-indigo-600">
+                                                    ({{ $room->formatted_price }})
+                                                </span>
+
+                                            </span>
+
+                                        </div>
+                                    </td>
+
+                                    <!-- Status -->
+                                    <!-- Status -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        @if ($room->rentAgreements->where('end_date', '>=', now()->toDateString())->count())
+                                            <span
+                                                class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 border border-red-200 animate-pulse">
+                                                <i class="fas fa-lock mr-1"></i> Occupied
+                                            </span>
+                                        @else
+                                            <span
+                                                class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200">
+                                                <i class="fas fa-unlock mr-1"></i> Available
+                                            </span>
+                                        @endif
+                                    </td>
+
+                                    <!-- Actions -->
+                                    @can('manageSystemSettings', 'create')
+                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <div class="flex justify-end space-x-2">
+                                                <!-- Edit Button -->
+                                                <button wire:click="openEditModal({{ $room->id }})"
+                                                    class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 p-2 rounded-full transition-all duration-300 transform hover:scale-110"
+                                                    title="@lang('Edit Room')" wire:loading.attr="disabled"
+                                                    wire:target="openEditModal({{ $room->id }})">
+
+                                                    <span wire:loading.remove
+                                                        wire:target="openEditModal({{ $room->id }})">
+                                                        <i class="fas fa-edit"></i>
+                                                    </span>
+
+                                                    <span wire:loading wire:target="openEditModal({{ $room->id }})">
+                                                        <i class="fas fa-spinner fa-spin"></i>
+                                                    </span>
+                                                </button>
+
+                                                <!-- Delete Button -->
+                                                <button wire:click="deleteRoom({{ $room->id }})"
+                                                    onclick="return confirm('Are you sure you want to delete this room?')"
+                                                    class="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 p-2 rounded-full transition-all duration-300 transform hover:scale-110"
+                                                    title="@lang('Delete Room')" wire:loading.attr="disabled"
+                                                    wire:target="deleteRoom({{ $room->id }})">
+
+                                                    <span wire:loading.remove
+                                                        wire:target="deleteRoom({{ $room->id }})">
+                                                        <i class="fas fa-trash-alt"></i>
+                                                    </span>
+
+                                                    <span wire:loading wire:target="deleteRoom({{ $room->id }})">
+                                                        <i class="fas fa-spinner fa-spin"></i>
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    @endcan
+
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                @if ($rooms->hasPages())
+                    <div class="mt-4 px-4 py-3 bg-white border-t border-gray-200 rounded-b-lg">
+                        {{ $rooms->links() }}
+                    </div>
+                @endif
+            @endif
         </div>
     </div>
-
-    <!-- Pagination -->
-    @if ($rentAgreements->hasPages())
-        <div class="mt-6 flex justify-center">
-            <nav class="flex items-center space-x-1">
-                {{ $rentAgreements->onEachSide(1)->links('vendor.pagination.tailwind-police') }}
-            </nav>
-        </div>
-    @endif
 </div>
