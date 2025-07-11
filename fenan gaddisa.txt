@@ -1,421 +1,389 @@
 <?php
 
-namespace App\Livewire\Room;
+namespace App\Livewire\Employee;
 
 use Livewire\Component;
 use Livewire\WithPagination;
-use Modules\Room\Models\Room;
-use Modules\Site\Models\Site;
+use App\Models\EmployeeInfo;
 
-class Rooms extends Component
+use App\Models\User;
+use Lab404\Impersonate\Services\ImpersonateManager;
+
+class Index extends Component
 {
     use WithPagination;
-
-    public $siteId;
-    public $siteFilter = '';
+    protected $listeners = ['refresh-employees' => '$refresh'];
+    public $search = '';
     public $statusFilter = '';
-    public $searchTerm = '';
-    public $sortField = 'name';
-    public $sortDirection = 'asc';
     public $perPage = 10;
-
-    protected $listeners = ['refreshRooms' => '$refresh'];
-
-    public function mount($site_id = null)
-    {
-        $this->siteId = $site_id;
-        if ($site_id) {
-            $this->siteFilter = $site_id;
-        }
-    }
-
-    public function sortBy($field)
-    {
-        if ($this->sortField === $field) {
-            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            $this->sortDirection = 'asc';
-        }
-        $this->sortField = $field;
-    }
-
-    public function resetFilters()
-    {
-        $this->reset(['siteFilter', 'statusFilter', 'searchTerm']);
-        $this->resetPage();
-    }
-
-    // Update the getSitesProperty method
-    public function getSitesProperty()
-    {
-        return Site::where('created_by', auth()->id())
-            ->orderBy('name')
-            ->get();
-    }
-
-    public function getStatsProperty()
-    {
-        $roomsQuery = Room::query()
-            ->whereHas('site', function ($query) {
-                $query->where('created_by', auth()->id());
-            })
-            ->when($this->siteFilter, function ($query) {
-                return $query->where('site_id', $this->siteFilter);
-            });
-
-        $totalRooms = $roomsQuery->count();
-
-        // Get rooms with active rent agreements (where end_date is in the future)
-        $occupiedRooms = $roomsQuery->whereHas('rentAgreements', function ($query) {
-            $query->where('end_date', '>=', now()->toDateString());
-        })->count();
-
-        // Available rooms are those without active rent agreements
-        $availableRooms = $totalRooms - $occupiedRooms;
-
-        return [
-            'totalSites' => Site::count(),
-            'totalRooms' => $totalRooms,
-            'availableRooms' => $availableRooms,
-            'occupiedRooms' => $occupiedRooms,
-            'validation' => ($availableRooms + $occupiedRooms) == $totalRooms
-        ];
-    }
 
     public function render()
     {
-        $rooms = Room::query()
-            ->with(['site', 'current_price_relation', 'rentAgreements'])
-            ->whereHas('site', function ($query) {
-                $query->where('created_by', auth()->id());
+        $employees = EmployeeInfo::query()
+            ->where('created_by', auth()->id()) // Add this line
+            ->when($this->search, function ($q) {
+                $q->where(function ($query) {
+                    $query->where('first_name', 'like', "%{$this->search}%")
+                        ->orWhere('last_name', 'like', "%{$this->search}%")
+                        ->orWhere('email', 'like', "%{$this->search}%")
+                        ->orWhere('phone', 'like', "%{$this->search}%")
+                        ->orWhere('national_id', 'like', "%{$this->search}%");
+                });
             })
-            ->when($this->siteFilter, function ($query) {
-                return $query->where('site_id', $this->siteFilter);
+            ->when($this->statusFilter, function ($q) {
+                $q->where('status', $this->statusFilter);
             })
-            // ... rest of your existing query conditions ...
+            ->orderBy('first_name')
             ->paginate($this->perPage);
 
-        return view('livewire.room.rooms', [
-            'rooms' => $rooms,
-            'sites' => $this->sites,
-            'stats' => $this->stats
-        ]);
+        return view('livewire.employee.index', compact('employees'));
     }
 
-
-
-    public function openAddModal()
+    public function registerEmployee()
     {
-        $this->dispatch('openModal', 'room.room-modal', [
-            'siteId' => $this->siteFilter ?: $this->siteId
-        ]);
+        $this->dispatch('openModal', 'employee.employee-info-modal');
     }
 
-    public function openEditModal($roomId)
+    public function editEmployee($employeeId)
     {
-        $this->dispatch('openModal', 'room.room-modal', [
-            'roomId' => $roomId
-        ]);
-    }
+        // Add ownership check
+        $employee = EmployeeInfo::where('id', $employeeId)
+            ->where('created_by', auth()->id())
+            ->first();
 
-    public function deleteRoom($roomId)
-    {
-        $room = Room::find($roomId);
-        if ($room) {
-            $room->delete();
-            $this->dispatch('refreshRooms');
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => 'Room deleted successfully'
-            ]);
-        }
-    }
-}
-
-
-<?php
-
-namespace App\Livewire\Room;
-
-use App\Models\User;
-use Modules\Room\Models\Room;
-use Modules\Site\Models\Site;
-use Illuminate\Validation\Rule;
-use App\Notifications\NotifyCeo;
-use Illuminate\Support\Facades\DB;
-use Modules\Room\Models\RoomPrice;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Gate;
-use LivewireUI\Modal\ModalComponent;
-
-class RoomModal extends ModalComponent
-{
-    public $siteId;
-    public $roomId;
-    public $isEdit = false;
-
-    // Form fields
-    public $name;
-    public $description;
-    public $area_square_meters;
-    public $room_status = 0;
-    public $status = 1;
-    public $selected_site_id;
-    public $price_per_sqm;
-
-    protected function authorizeAction(string $action): bool
-    {
-        $permission = match ($action) {
-            'create' => 'add_rooms',
-            'update' => 'edit_rooms',
-            default => 'view_rooms',
-        };
-
-        if (!auth()->user()->can($permission)) {
+        if (!$employee) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'You are not authorized to perform this action',
-                'position' => 'top-end',
-                'duration' => 5000
+                'message' => 'You can only edit employees you created'
             ]);
-            return false;
-        }
-
-        return true;
-    }
-
-    public function mount($siteId = null, $roomId = null)
-    {
-        $action = $roomId ? 'update' : 'create';
-        if (!$this->authorizeAction($action)) {
-            $this->skipRender();
             return;
         }
 
-        $this->siteId = $siteId;
-        $this->selected_site_id = $siteId;
+        $this->dispatch('openModal', 'employee.employee-info-modal', [
+            'employeeId' => $employeeId
+        ]);
+    }
+    public function impersonate($userId)
+    {
+        $user = User::findOrFail($userId);
 
-        if ($roomId) {
+        if (!auth()->user()->canImpersonate() || !$user->canBeImpersonated()) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not allowed to impersonate this user.'
+            ]);
+            return;
+        }
+
+        auth()->user()->impersonate($user);
+
+        $this->dispatch('showToast', [
+            'type' => 'success',
+            'message' => 'You are now impersonating the tenant.'
+        ]);
+
+        return redirect()->route('backend.payments.paytenant');
+    }
+}
+
+<?php
+
+namespace App\Livewire\Employee;
+
+use Carbon\Carbon;
+use App\Models\User;
+use App\Models\EmployeeInfo;
+use App\Notifications\NotifyCeo;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Hash;
+use LivewireUI\Modal\ModalComponent;
+use Illuminate\Support\Facades\Artisan;
+use App\Notifications\UserAccountCreated;
+
+class EmployeeInfoModal extends ModalComponent
+{
+    public $employeeId;
+    public $isEdit = false;
+
+    public array $employee = [
+        // English Names
+        'first_name' => '',
+        'middle_name' => '',
+        'last_name' => '',
+
+        // Amharic Names
+        'first_name_am' => '',
+        'middle_name_am' => '',
+        'last_name_am' => '',
+
+        // Personal Info
+        'gender' => '',
+        'birth_date' => '',
+        'national_id' => '',
+        'phone' => '',
+        'email' => '',
+    ];
+
+    public function mount($employeeId = null)
+    {
+        if ($employeeId) {
+            $this->employeeId = $employeeId;
             $this->isEdit = true;
-            $this->loadRoom($roomId);
+            $this->loadEmployee();
         }
     }
 
-    public function loadRoom($roomId)
+    public function loadEmployee()
     {
+        $employee = EmployeeInfo::where('id', $this->employeeId)
+            ->where('created_by', auth()->id())
+            ->first();
 
-        try {
-            //$room = Room::with(['currentPrice'])->findOrFail($roomId);
-            //$room = Room::with('prices')->findOrFail($roomId);
-            $room = Room::with('currentPriceModel')
-                ->whereHas('site', function ($query) {
-                    $query->where('created_by', auth()->id());
-                })
-                ->findOrFail($roomId);
-            $this->roomId = $roomId;
-            $this->selected_site_id = $room->site_id;
-            $this->name = $room->name;
-            $this->description = $room->description;
-            $this->area_square_meters = $room->area_square_meters;
-            $this->room_status = $room->room_status;
-            $this->status = $room->status;
-
-            // Get the current active price
-            //$currentPrice = $room->prices()->whereNull('effective_to')->latest('effective_from')->first();
-            //$this->price_per_sqm = $currentPrice?->price_per_sqm ?? 0;
-
-            $this->price_per_sqm = $room->currentPriceModel?->price_per_sqm ?? 0;
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        if (!$employee) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'The requested room does not exist',
+                'message' => 'Employee not found or you don\'t have permission',
                 'position' => 'top-end',
                 'duration' => 5000
             ]);
             $this->closeModal();
-        } catch (\Exception $e) {
-            Log::error('Failed to load room: ' . $e->getMessage(), [
-                'room_id' => $roomId,
-                'user_id' => auth()->id()
-            ]);
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to load room data',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            $this->closeModal();
+            return;
         }
+
+        $this->employee = [
+            'first_name' => $employee->first_name,
+            // ... rest of your existing assignments ...
+        ];
     }
 
-    public function saveRoom()
+    protected function prepareForValidation($attributes)
+    {
+        // Trim all string fields
+        $attributes['employee'] = array_map(function ($value) {
+            return is_string($value) ? trim($value) : $value;
+        }, $attributes['employee'] ?? []);
+
+        // Process phone number
+        if (!empty($attributes['employee']['phone'])) {
+            // Remove all non-digit characters
+            $phone = preg_replace('/[^0-9]/', '', $attributes['employee']['phone']);
+
+            // If phone is 9 digits and doesn't start with 0, add 0
+            if (strlen($phone) === 9 && !str_starts_with($phone, '0')) {
+                $phone = '0' . $phone;
+            }
+
+            $attributes['employee']['phone'] = $phone;
+        }
+
+        return $attributes; // Must return the modified attributes
+    }
+    protected function rules(): array
     {
 
-        // Add this check at the beginning of saveRoom
+        $rules = [
+            // Names
+            'employee.first_name' => 'required|string|max:255',
+            'employee.middle_name' => 'required|string|max:255',
+            'employee.last_name' => 'required|string|max:255',
+            'employee.first_name_am' => 'nullable|string|max:255',
+            'employee.middle_name_am' => 'nullable|string|max:255',
+            'employee.last_name_am' => 'nullable|string|max:255',
+
+            // Personal info
+            'employee.gender' => 'required|in:male,female,other',
+            'employee.birth_date' => 'nullable|date',
+
+            // Phone validation - mandatory, 10 digits, starts with 0
+            'employee.phone' => [
+                'required',
+                'string',
+                'regex:/^0\d{9}$/',
+                function ($attribute, $value, $fail) {
+                    $query = $this->isEdit
+                        ? EmployeeInfo::where('phone', $value)->where('id', '!=', $this->employeeId)
+                        : EmployeeInfo::where('phone', $value);
+
+                    if ($query->exists()) {
+                        $fail('This phone number is already registered');
+                    }
+                }
+            ],
+
+            // Email validation - optional but must be valid if provided
+            'employee.email' => [
+                'nullable',
+                'email',
+                function ($attribute, $value, $fail) {
+                    if (!empty($value)) {
+                        $query = $this->isEdit
+                            ? EmployeeInfo::where('email', $value)->where('id', '!=', $this->employeeId)
+                            : EmployeeInfo::where('email', $value);
+
+                        if ($query->exists()) {
+                            $fail('This email is already registered');
+                        }
+                    }
+                }
+            ],
+        ];
+
+        // Modified national_id validation
+        $rules['employee.national_id'] = [
+            'nullable',
+            'string',
+            'max:50',
+            function ($attribute, $value, $fail) {
+                if (!empty($value)) {
+                    $query = $this->isEdit
+                        ? EmployeeInfo::where('national_id', $value)->where('id', '!=', $this->employeeId)
+                        : EmployeeInfo::where('national_id', $value);
+
+                    if ($query->exists()) {
+                        $fail('This national ID is already registered');
+                    }
+                }
+            }
+        ];
+
+        return $rules;
+    }
+
+    protected function generateEmail(): string
+    {
+        // If email is provided and valid, use it
+        if (!empty($this->employee['email']) && filter_var($this->employee['email'], FILTER_VALIDATE_EMAIL)) {
+            return $this->employee['email'];
+        }
+
+        // Otherwise use phone number (already validated to be 10 digits starting with 0)
+        return $this->employee['phone'] . '@shaderms.com';
+    }
+
+    public function save()
+    {
         if ($this->isEdit) {
-            $exists = Room::where('id', $this->roomId)
-                ->whereHas('site', function ($query) {
-                    $query->where('created_by', auth()->id());
-                })
+            // Verify ownership before editing
+            $exists = EmployeeInfo::where('id', $this->employeeId)
+                ->where('created_by', auth()->id())
                 ->exists();
 
             if (!$exists) {
                 $this->dispatch('showToast', [
                     'type' => 'error',
-                    'message' => 'You can only edit rooms you created',
+                    'message' => 'You can only edit employees you created',
                     'position' => 'top-end',
                     'duration' => 5000
                 ]);
                 return;
             }
         }
-
-        $action = $this->isEdit ? 'update' : 'create';
-        if (!$this->authorizeAction($action)) {
-            return;
+        if (isset($this->employee['national_id']) && trim($this->employee['national_id']) === '') {
+            $this->employee['national_id'] = null;
         }
+        $validated = $this->validate();
 
-        $validated = $this->validate([
-            'selected_site_id' => 'required|exists:sites,id',
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('rooms')->where(function ($query) {
-                    return $query->where('site_id', $this->selected_site_id);
-                })->ignore($this->roomId)
-            ],
-            'description' => 'nullable|string',
-            'area_square_meters' => 'required|numeric|min:0',
-            'price_per_sqm' => 'required|numeric|min:0',
-            'room_status' => 'required|in:0,1',
-            'status' => 'required|in:0,1,2',
-        ]);
+        // Generate email based on rules
+        $email = $this->generateEmail();
+        $validated['employee']['email'] = $email;
 
-        $validated['site_id'] = $this->selected_site_id;
+        DB::beginTransaction();
 
         try {
-            DB::beginTransaction();
-
             if ($this->isEdit) {
-                $room = Room::findOrFail($this->roomId);
-                $room->update($validated);
-                $this->notifyCeo('updated', $room);
+                // Update existing employee
+                $employee = EmployeeInfo::find($this->employeeId);
+                $employee->update($validated['employee']);
 
-                // Check if price changed
-                $currentPrice = $room->currentPriceModel;
-                if (!$currentPrice || (float)$currentPrice->price_per_sqm != (float)$this->price_per_sqm) {
-
-                    // Expire old price if exists
-                    if ($currentPrice) {
-                        $currentPrice->update([
-                            'effective_to' => now()->subDay()->toDateString()
-                        ]);
-                    }
-
-                    // Create new price record
-                    RoomPrice::create([
-                        'room_id' => $room->id,
-                        'price_per_sqm' => $this->price_per_sqm,
-                        'total_price' => $this->price_per_sqm * $room->area_square_meters,
-                        'effective_from' => now()->toDateString()
+                // Update user if needed
+                $user = $employee->user;
+                if ($user) {
+                    $user->update([
+                        'first_name' => $validated['employee']['first_name'],
+                        'middle_name' => $validated['employee']['middle_name'],
+                        'last_name' => $validated['employee']['last_name'],
+                        'name' => $validated['employee']['first_name'] . ' ' . $validated['employee']['middle_name'],
+                        'email' => $email,
                     ]);
+                    $this->notifyCeo('updated', $employee);
                 }
-            } else {
-                $room = Room::create($validated);
-                $this->notifyCeo('created', $room);
 
-                // Create initial price record
-                RoomPrice::create([
-                    'room_id' => $room->id,
-                    'price_per_sqm' => $this->price_per_sqm,
-                    'total_price' => $this->price_per_sqm * $room->area_square_meters,
-                    'effective_from' => now()->toDateString()
+                $message = 'Tenant updated successfully!';
+            } else {
+                // Create new employee
+                $user = User::create([
+                    'first_name' => $validated['employee']['first_name'],
+                    'middle_name' => $validated['employee']['middle_name'],
+                    'last_name' => $validated['employee']['last_name'],
+                    'name' => $validated['employee']['first_name'] . ' ' . $validated['employee']['last_name'],
+                    'email' => $email,
+                    'password' => Hash::make($email),
+                    'email_verified_at' => now(),
                 ]);
+
+                $user->syncRoles(['tenant']);
+                $user->syncPermissions([]);
+
+                $employeeData = $validated['employee'];
+                $employeeData['user_id'] = $user->id;
+                $employee = EmployeeInfo::create($employeeData);
+                $this->notifyCeo('created', $employee);
+
+                $user->notify(new UserAccountCreated([
+                    'password' => $email,
+                ]));
+
+                $message = 'Tenant record created successfully!';
             }
 
             DB::commit();
+            Artisan::call('cache:clear');
 
-            $this->dispatch('refreshRooms');
+            $this->dispatch('refresh-employees');
+
             $this->closeModal();
             $this->dispatch('showToast', [
                 'type' => 'success',
-                'message' => 'Room saved successfully'
-            ]);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            DB::rollBack();
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Room not found',
-                'position' => 'top-end',
-                'duration' => 5000
+                'message' => $message
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Room save failed: ' . $e->getMessage(), [
-                'exception' => $e,
-                'room_id' => $this->roomId ?? null,
-                'user_id' => auth()->id()
-            ]);
-
+            Log::error("Tenant record " . ($this->isEdit ? "update" : "creation") . " failed: " . $e->getMessage());
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Failed to save room. Please try again.',
-                'position' => 'top-end',
-                'duration' => 5000
+                'message' => 'Failed to ' . ($this->isEdit ? "update" : "create") . ' employee: ' . $e->getMessage()
             ]);
         }
-    }
-
-    // Update getSitesProperty
-    public function getSitesProperty()
-    {
-        return Site::where('created_by', auth()->id())
-            ->orderBy('name')
-            ->get(['id', 'name']);
-    }
-
-    public function getTotalPriceProperty()
-    {
-        return $this->area_square_meters * $this->price_per_sqm;
     }
 
     public function render()
     {
-        return view('livewire.room.room-modal', [
-            'totalPrice' => $this->totalPrice
-        ]);
+        return view('livewire.employee.modal.employee-info-modal');
     }
 
     public static function modalMaxWidth(): string
     {
-        return '2xl';
+        return '4xl';
     }
 
-    protected function notifyCeo($action, Room $room)
+    protected function notifyCeo($action, EmployeeInfo $employee)
     {
-        try {
-            $ceoUsers = User::role(['ceo', 'super admin'])->get();
+        $ceoUsers = User::role(['ceo', 'super admin'])->get();
 
-            $data = [
-                'room_name' => $room->name,
-                'site_name' => $room->site->name,
-                'area_sqm' => $room->area_square_meters,
-                'status' => $room->status ? 'Active' : 'Inactive',
-            ];
+        $data = [
+            'employee_name' => $employee->full_name,
+            'employee_id' => $employee->employee_id,
+            'email' => $employee->email,
+            'phone' => $employee->phone,
+        ];
 
-            foreach ($ceoUsers as $ceo) {
-                $ceo->notify(new NotifyCeo(
-                    $action,
-                    'Room',
-                    $data
-                ));
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to send CEO notification: ' . $e->getMessage(), [
-                'room_id' => $room->id,
-                'action' => $action
-            ]);
+        foreach ($ceoUsers as $ceo) {
+            $ceo->notify(new NotifyCeo(
+                $action,
+                'Tenant',
+                $data
+            ));
         }
     }
 }
