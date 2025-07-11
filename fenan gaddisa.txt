@@ -1,347 +1,378 @@
 <?php
 
-namespace App\Livewire\Employee;
+namespace App\Livewire\RentAgreement;
 
 use Livewire\Component;
-use Livewire\WithPagination;
 use App\Models\EmployeeInfo;
+use Livewire\WithPagination;
+use App\Models\RentAgreement;
+use Modules\Room\Models\Room;
+use Modules\Site\Models\Site;
+use Illuminate\Support\Facades\Auth;
 
-use App\Models\User;
-use Lab404\Impersonate\Services\ImpersonateManager;
-
-class Index extends Component
+class RentAgreements extends Component
 {
     use WithPagination;
-    protected $listeners = ['refresh-employees' => '$refresh'];
+
+    protected $listeners = ['refresh-rent-agreements' => '$refresh'];
+
     public $search = '';
-    public $statusFilter = '';
+    public $statusFilter = 'active';
     public $perPage = 10;
+    public $siteFilter = '';
+    public $dateFilter = '';
+    public $deleteId = null;
 
     public function render()
     {
-        $employees = EmployeeInfo::query()
-            ->where('created_by', auth()->id()) // Add this line
+        $rentAgreements = RentAgreement::query()
+            ->with(['tenant', 'room.site', 'updater'])
+            ->where('rent_agreements.created_by', auth()->id()) // Specify table name
             ->when($this->search, function ($q) {
-                $q->where(function ($query) {
+                $q->whereHas('tenant', function ($query) {
                     $query->where('first_name', 'like', "%{$this->search}%")
                         ->orWhere('last_name', 'like', "%{$this->search}%")
-                        ->orWhere('email', 'like', "%{$this->search}%")
-                        ->orWhere('phone', 'like', "%{$this->search}%")
-                        ->orWhere('national_id', 'like', "%{$this->search}%");
+                        ->orWhere('employee_id', 'like', "%{$this->search}%");
                 });
             })
-            ->when($this->statusFilter, function ($q) {
-                $q->where('status', $this->statusFilter);
+            ->when($this->siteFilter, function ($q) {
+                $q->whereHas('room.site', function ($query) {
+                    $query->where('id', $this->siteFilter);
+                });
             })
-            ->orderBy('first_name')
+            ->when($this->dateFilter, function ($q) {
+                $q->whereDate('rent_agreements.start_date', '<=', $this->dateFilter)
+                    ->whereDate('rent_agreements.end_date', '>=', $this->dateFilter);
+            })
+            ->when($this->statusFilter === 'active', function ($q) {
+                $q->whereDate('rent_agreements.start_date', '<=', now())
+                    ->whereDate('rent_agreements.end_date', '>=', now());
+            })
+            ->when($this->statusFilter === 'expired', function ($q) {
+                $q->whereDate('rent_agreements.end_date', '<', now());
+            })
+            ->when($this->statusFilter === 'upcoming', function ($q) {
+                $q->whereDate('rent_agreements.start_date', '>', now());
+            })
+            ->join('employee_infos', 'rent_agreements.tenant_id', '=', 'employee_infos.id')
+            ->orderBy('employee_infos.employee_id')
+            ->orderBy('rent_agreements.start_date', 'desc')
+            ->select('rent_agreements.*')
             ->paginate($this->perPage);
 
-        return view('livewire.employee.index', compact('employees'));
+        $sites = Site::where('created_by', auth()->id())->orderBy('name')->get();
+        $tenants = EmployeeInfo::where('created_by', auth()->id())->orderBy('first_name')->get();
+
+        return view('livewire.rentagreement.rent-agreements', [
+            'rentAgreements' => $rentAgreements,
+            'sites' => $sites,
+            'tenants' => $tenants
+        ]);
     }
 
-    public function registerEmployee()
+    // ... rest of your methods remain the same ...
+    public function createAgreement()
     {
-        $this->dispatch('openModal', 'employee.employee-info-modal');
+        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal');
     }
 
-    public function editEmployee($employeeId)
+    public function viewAgreement($agreementId)
     {
-        // Add ownership check
-        $employee = EmployeeInfo::where('id', $employeeId)
-            ->where('created_by', auth()->id())
-            ->first();
+        $agreement = RentAgreement::findOrFail($agreementId);
 
-        if (!$employee) {
+        if (!$agreement->hasMedia('agreement_files')) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'You can only edit employees you created'
+                'message' => 'No agreement file found'
             ]);
             return;
         }
 
-        $this->dispatch('openModal', 'employee.employee-info-modal', [
-            'employeeId' => $employeeId
-        ]);
+        $media = $agreement->getFirstMedia('agreement_files');
+        return response()->file($media->getPath());
     }
-    public function impersonate($userId)
-    {
-        $user = User::findOrFail($userId);
 
-        if (!auth()->user()->canImpersonate() || !$user->canBeImpersonated()) {
+    public function editAgreement($agreementId)
+    {
+        $agreement = RentAgreement::find($agreementId);
+
+        if (!$this->canEditOrDelete($agreement)) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'You are not allowed to impersonate this user.'
+                'message' => 'You are not authorized to edit this agreement'
             ]);
             return;
         }
 
-        auth()->user()->impersonate($user);
-
-        $this->dispatch('showToast', [
-            'type' => 'success',
-            'message' => 'You are now impersonating the tenant.'
+        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal', [
+            'agreementId' => $agreementId
         ]);
+    }
 
-        return redirect()->route('backend.payments.paytenant');
+    public function confirmDelete($agreementId)
+    {
+        $agreement = RentAgreement::find($agreementId);
+
+        if (!$this->canEditOrDelete($agreement)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not authorized to delete this agreement'
+            ]);
+            return;
+        }
+
+        $this->dispatch('openModal', 'rentagreement.delete-confirmation-modal', [
+            'agreementId' => $agreementId
+        ]);
+    }
+
+    protected function canEditOrDelete($agreement)
+    {
+        // First check if user created the agreement
+        if ($agreement->created_by === auth()->id()) {
+            return true;
+        }
+
+        $user = Auth::user();
+
+        // Keep your existing role-based checks
+        if ($agreement->updated_by) {
+            $updater = $agreement->updater;
+            if ($updater && in_array($updater->roles->pluck('name')->first(), ['super admin', 'cashier', 'ceo'])) {
+                return $user->hasAnyRole(['super admin', 'cashier', 'ceo']);
+            }
+        }
+
+        return false;
     }
 }
 
+
+
 <?php
 
-namespace App\Livewire\Employee;
+namespace App\Livewire\Rentagreement;
 
 use Carbon\Carbon;
 use App\Models\User;
 use App\Models\EmployeeInfo;
+use App\Models\RentAgreement;
+use Livewire\WithFileUploads;
+use Modules\Room\Models\Room;
 use App\Notifications\NotifyCeo;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Hash;
+use Modules\Room\Models\RoomPrice;
+use Illuminate\Support\Facades\Gate;
 use LivewireUI\Modal\ModalComponent;
-use Illuminate\Support\Facades\Artisan;
-use App\Notifications\UserAccountCreated;
 
-class EmployeeInfoModal extends ModalComponent
+class RentAgreementModal extends ModalComponent
 {
-    public $employeeId;
+    use WithFileUploads;
+
+    public $agreementId;
     public $isEdit = false;
 
-    public array $employee = [
-        // English Names
-        'first_name' => '',
-        'middle_name' => '',
-        'last_name' => '',
+    public $tenant_id = '';
+    public $room_id = '';
+    public $start_date = '';
+    public $end_date = '';
+    public $purpose = '';
+    public $rent_amount = '';
+    public $agreement_file;
+    public $existing_file;
+    public $agreement;
+    public $show_end_date = false; // Control visibility
 
-        // Amharic Names
-        'first_name_am' => '',
-        'middle_name_am' => '',
-        'last_name_am' => '',
 
-        // Personal Info
-        'gender' => '',
-        'birth_date' => '',
-        'national_id' => '',
-        'phone' => '',
-        'email' => '',
+    protected $rules = [
+        'tenant_id' => 'required|exists:employee_infos,id',
+        'room_id' => 'required|exists:rooms,id',
+        'start_date' => 'required|date',
+        'end_date' => 'required|date|after:start_date',
+        'purpose' => 'nullable|string|max:500',
+        'rent_amount' => 'required|numeric|min:0',
+        'agreement_file' => 'nullable|file|mimes:pdf|max:8200',
     ];
 
-    public function mount($employeeId = null)
+    protected function authorizeAction(string $action): bool
     {
-        if ($employeeId) {
-            $this->employeeId = $employeeId;
+        $permission = match ($action) {
+            'create' => 'add_rentagreements',
+            'update' => 'edit_rentagreements',
+            default => 'view_rentagreements'
+        };
+
+        if (!auth()->user()->can($permission)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not authorized to perform this action',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+    public function mount($agreementId = null)
+    {
+        $action = $agreementId ? 'update' : 'create';
+        if (!$this->authorizeAction($action)) {
+            $this->skipRender();
+            return;
+        }
+
+        if ($agreementId) {
+            $this->agreementId = $agreementId;
             $this->isEdit = true;
-            $this->loadEmployee();
+            $this->loadAgreement();
+        } else {
+            $this->start_date = now()->format('Y-m-d');
+            $this->end_date = now()->addYears(5)->format('Y-m-d');
+            $this->show_end_date = false;
+        }
+    }
+    public function updatedStartDate($value)
+    {
+        if (!$this->isEdit && !empty($value)) {
+            try {
+                $this->end_date = Carbon::parse($value)->addYears(5)->format('Y-m-d');
+            } catch (\Exception $e) {
+                $this->dispatch('showToast', [
+                    'type' => 'error',
+                    'message' => 'Invalid Date.'
+                ]);
+            }
         }
     }
 
-    public function loadEmployee()
+    public function loadAgreement()
     {
-        $employee = EmployeeInfo::where('id', $this->employeeId)
+        $this->agreement = RentAgreement::where('id', $this->agreementId)
             ->where('created_by', auth()->id())
             ->first();
-
-        if (!$employee) {
+        if (!$this->agreement) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Employee not found or you don\'t have permission',
+                'message' => 'Agreement not found or you don\'t have permission',
                 'position' => 'top-end',
                 'duration' => 5000
             ]);
             $this->closeModal();
             return;
         }
-
-        $this->employee = [
-            'first_name' => $employee->first_name,
-            // ... rest of your existing assignments ...
-        ];
-    }
-
-    protected function prepareForValidation($attributes)
-    {
-        // Trim all string fields
-        $attributes['employee'] = array_map(function ($value) {
-            return is_string($value) ? trim($value) : $value;
-        }, $attributes['employee'] ?? []);
-
-        // Process phone number
-        if (!empty($attributes['employee']['phone'])) {
-            // Remove all non-digit characters
-            $phone = preg_replace('/[^0-9]/', '', $attributes['employee']['phone']);
-
-            // If phone is 9 digits and doesn't start with 0, add 0
-            if (strlen($phone) === 9 && !str_starts_with($phone, '0')) {
-                $phone = '0' . $phone;
-            }
-
-            $attributes['employee']['phone'] = $phone;
+        if ($this->agreement) {
+            $this->tenant_id = $this->agreement->tenant_id;
+            $this->room_id = $this->agreement->room_id;
+            $this->start_date = $this->agreement->start_date->format('Y-m-d');
+            $this->end_date = $this->agreement->end_date->format('Y-m-d');
+            $this->purpose = $this->agreement->purpose;
+            $this->rent_amount = $this->agreement->rent_amount;
         }
-
-        return $attributes; // Must return the modified attributes
     }
-    protected function rules(): array
+
+    public function updatedRoomId($value)
     {
+        if ($value) {
+            $roomPrice = RoomPrice::where('room_id', $value)
+                ->whereNull('effective_to')
+                ->latest()
+                ->first();
 
-        $rules = [
-            // Names
-            'employee.first_name' => 'required|string|max:255',
-            'employee.middle_name' => 'required|string|max:255',
-            'employee.last_name' => 'required|string|max:255',
-            'employee.first_name_am' => 'nullable|string|max:255',
-            'employee.middle_name_am' => 'nullable|string|max:255',
-            'employee.last_name_am' => 'nullable|string|max:255',
-
-            // Personal info
-            'employee.gender' => 'required|in:male,female,other',
-            'employee.birth_date' => 'nullable|date',
-
-            // Phone validation - mandatory, 10 digits, starts with 0
-            'employee.phone' => [
-                'required',
-                'string',
-                'regex:/^0\d{9}$/',
-                function ($attribute, $value, $fail) {
-                    $query = $this->isEdit
-                        ? EmployeeInfo::where('phone', $value)->where('id', '!=', $this->employeeId)
-                        : EmployeeInfo::where('phone', $value);
-
-                    if ($query->exists()) {
-                        $fail('This phone number is already registered');
-                    }
-                }
-            ],
-
-            // Email validation - optional but must be valid if provided
-            'employee.email' => [
-                'nullable',
-                'email',
-                function ($attribute, $value, $fail) {
-                    if (!empty($value)) {
-                        $query = $this->isEdit
-                            ? EmployeeInfo::where('email', $value)->where('id', '!=', $this->employeeId)
-                            : EmployeeInfo::where('email', $value);
-
-                        if ($query->exists()) {
-                            $fail('This email is already registered');
-                        }
-                    }
-                }
-            ],
-        ];
-
-        // Modified national_id validation
-        $rules['employee.national_id'] = [
-            'nullable',
-            'string',
-            'max:50',
-            function ($attribute, $value, $fail) {
-                if (!empty($value)) {
-                    $query = $this->isEdit
-                        ? EmployeeInfo::where('national_id', $value)->where('id', '!=', $this->employeeId)
-                        : EmployeeInfo::where('national_id', $value);
-
-                    if ($query->exists()) {
-                        $fail('This national ID is already registered');
-                    }
-                }
+            if ($roomPrice) {
+                $this->rent_amount = $roomPrice->total_price;
             }
-        ];
-
-        return $rules;
-    }
-
-    protected function generateEmail(): string
-    {
-        // If email is provided and valid, use it
-        if (!empty($this->employee['email']) && filter_var($this->employee['email'], FILTER_VALIDATE_EMAIL)) {
-            return $this->employee['email'];
         }
-
-        // Otherwise use phone number (already validated to be 10 digits starting with 0)
-        return $this->employee['phone'] . '@shaderms.com';
     }
 
     public function save()
     {
-        if ($this->isEdit) {
-            // Verify ownership before editing
-            $exists = EmployeeInfo::where('id', $this->employeeId)
-                ->where('created_by', auth()->id())
-                ->exists();
-
-            if (!$exists) {
-                $this->dispatch('showToast', [
-                    'type' => 'error',
-                    'message' => 'You can only edit employees you created',
-                    'position' => 'top-end',
-                    'duration' => 5000
-                ]);
-                return;
-            }
+        $action = $this->isEdit ? 'update' : 'create';
+        if (!$this->authorizeAction($action)) {
+            return;
         }
-        if (isset($this->employee['national_id']) && trim($this->employee['national_id']) === '') {
-            $this->employee['national_id'] = null;
-        }
-        $validated = $this->validate();
 
-        // Generate email based on rules
-        $email = $this->generateEmail();
-        $validated['employee']['email'] = $email;
+        $this->validate();
+
+        // Check room availability
+        if (!RentAgreement::isRoomAvailable(
+            $this->room_id,
+            $this->start_date,
+            $this->end_date,
+            $this->isEdit ? $this->agreementId : null
+        )) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The room is already occupied during the selected period'
+            ]);
+            return;
+        }
+
+        // Get current room price
+        $roomPrice = RoomPrice::where('room_id', $this->room_id)
+            ->whereNull('effective_to')
+            ->latest()
+            ->first();
+
+        if (!$roomPrice) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'No active price found for this room'
+            ]);
+            return;
+        }
 
         DB::beginTransaction();
 
         try {
-            if ($this->isEdit) {
-                // Update existing employee
-                $employee = EmployeeInfo::find($this->employeeId);
-                $employee->update($validated['employee']);
+            $data = [
+                'tenant_id' => $this->tenant_id,
+                'room_id' => $this->room_id,
+                'start_date' => $this->start_date,
+                'end_date' => $this->end_date,
+                'purpose' => $this->purpose,
+                'rent_amount' => $roomPrice->total_price,
+            ];
 
-                // Update user if needed
-                $user = $employee->user;
-                if ($user) {
-                    $user->update([
-                        'first_name' => $validated['employee']['first_name'],
-                        'middle_name' => $validated['employee']['middle_name'],
-                        'last_name' => $validated['employee']['last_name'],
-                        'name' => $validated['employee']['first_name'] . ' ' . $validated['employee']['middle_name'],
-                        'email' => $email,
-                    ]);
-                    $this->notifyCeo('updated', $employee);
+            if ($this->isEdit) {
+                $agreement = RentAgreement::where('id', $this->agreementId)
+                    ->where('created_by', auth()->id())
+                    ->first();
+
+                if (!$agreement) {
+                    throw new \Exception('You can only edit agreements you created');
                 }
 
-                $message = 'Tenant updated successfully!';
+                $agreement->update($data);
+
+                // Handle file upload for edit
+                if ($this->agreement_file) {
+                    $agreement->clearMediaCollection('agreement_files');
+                    $agreement->addMedia($this->agreement_file->getRealPath())
+                        ->usingName($this->agreement_file->getClientOriginalName())
+                        ->toMediaCollection('agreement_files');
+                }
+                $this->notifyCeo('updated', $agreement);
+
+
+                $message = 'Rent agreement updated successfully!';
             } else {
-                // Create new employee
-                $user = User::create([
-                    'first_name' => $validated['employee']['first_name'],
-                    'middle_name' => $validated['employee']['middle_name'],
-                    'last_name' => $validated['employee']['last_name'],
-                    'name' => $validated['employee']['first_name'] . ' ' . $validated['employee']['last_name'],
-                    'email' => $email,
-                    'password' => Hash::make($email),
-                    'email_verified_at' => now(),
-                ]);
+                $agreement = RentAgreement::create($data);
 
-                $user->syncRoles(['tenant']);
-                $user->syncPermissions([]);
+                // Handle file upload for create
+                if ($this->agreement_file) {
+                    $agreement->addMedia($this->agreement_file->getRealPath())
+                        ->usingName($this->agreement_file->getClientOriginalName())
+                        ->toMediaCollection('agreement_files');
+                }
+                $this->notifyCeo('created', $agreement);
 
-                $employeeData = $validated['employee'];
-                $employeeData['user_id'] = $user->id;
-                $employee = EmployeeInfo::create($employeeData);
-                $this->notifyCeo('created', $employee);
-
-                $user->notify(new UserAccountCreated([
-                    'password' => $email,
-                ]));
-
-                $message = 'Tenant record created successfully!';
+                $message = 'Rent agreement created successfully!';
             }
 
             DB::commit();
-            Artisan::call('cache:clear');
 
-            $this->dispatch('refresh-employees');
-
+            $this->dispatch('refresh-rent-agreements');
             $this->closeModal();
             $this->dispatch('showToast', [
                 'type' => 'success',
@@ -349,17 +380,24 @@ class EmployeeInfoModal extends ModalComponent
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("Tenant record " . ($this->isEdit ? "update" : "creation") . " failed: " . $e->getMessage());
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Failed to ' . ($this->isEdit ? "update" : "create") . ' employee: ' . $e->getMessage()
+                'message' => 'Failed to save rent agreement: ' . $e->getMessage()
             ]);
         }
     }
 
     public function render()
     {
-        return view('livewire.employee.modal.employee-info-modal');
+        $tenants = EmployeeInfo::orderBy('first_name')->get();
+        $rooms = Room::orderBy('name')->get();
+
+        return view('livewire.rentagreement.rent-agreement-modal', [
+            'tenants' => EmployeeInfo::where('created_by', auth()->id())->orderBy('first_name')->get(),
+            'rooms' => Room::whereHas('site', function ($q) {
+                $q->where('created_by', auth()->id());
+            })->orderBy('name')->get()
+        ]);
     }
 
     public static function modalMaxWidth(): string
@@ -367,21 +405,22 @@ class EmployeeInfoModal extends ModalComponent
         return '4xl';
     }
 
-    protected function notifyCeo($action, EmployeeInfo $employee)
+
+
+    protected function notifyCeo($action, RentAgreement $agreement)
     {
         $ceoUsers = User::role(['ceo', 'super admin'])->get();
 
         $data = [
-            'employee_name' => $employee->full_name,
-            'employee_id' => $employee->employee_id,
-            'email' => $employee->email,
-            'phone' => $employee->phone,
+            'tenant_name' => $agreement->tenant->full_name,
+            'room_name' => $agreement->room->name,
+            'rent_amount' => $agreement->rent_amount,
         ];
 
         foreach ($ceoUsers as $ceo) {
             $ceo->notify(new NotifyCeo(
                 $action,
-                'Tenant',
+                'Rent Agreement',
                 $data
             ));
         }
