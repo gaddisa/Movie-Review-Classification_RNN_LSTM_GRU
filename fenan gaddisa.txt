@@ -1,54 +1,174 @@
 <?php
 
-namespace App\Livewire\Rentagreement;
+namespace App\Livewire\Room;
 
-use Carbon\Carbon;
-use App\Models\User;
-use App\Models\EmployeeInfo;
-use App\Models\RentAgreement;
-use Livewire\WithFileUploads;
+use Livewire\Component;
+use Livewire\WithPagination;
 use Modules\Room\Models\Room;
+use Modules\Site\Models\Site;
+
+class Rooms extends Component
+{
+    use WithPagination;
+
+    public $siteId;
+    public $siteFilter = '';
+    public $statusFilter = '';
+    public $searchTerm = '';
+    public $sortField = 'name';
+    public $sortDirection = 'asc';
+    public $perPage = 10;
+
+    protected $listeners = ['refreshRooms' => '$refresh'];
+
+    public function mount($site_id = null)
+    {
+        $this->siteId = $site_id;
+        if ($site_id) {
+            $this->siteFilter = $site_id;
+        }
+    }
+
+    public function sortBy($field)
+    {
+        if ($this->sortField === $field) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortDirection = 'asc';
+        }
+        $this->sortField = $field;
+    }
+
+    public function resetFilters()
+    {
+        $this->reset(['siteFilter', 'statusFilter', 'searchTerm']);
+        $this->resetPage();
+    }
+
+    // Update the getSitesProperty method
+    public function getSitesProperty()
+    {
+        return Site::where('created_by', auth()->id())
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function getStatsProperty()
+    {
+        $roomsQuery = Room::query()
+            ->whereHas('site', function ($query) {
+                $query->where('created_by', auth()->id());
+            })
+            ->when($this->siteFilter, function ($query) {
+                return $query->where('site_id', $this->siteFilter);
+            });
+
+        $totalRooms = $roomsQuery->count();
+
+        // Get rooms with active rent agreements (where end_date is in the future)
+        $occupiedRooms = $roomsQuery->whereHas('rentAgreements', function ($query) {
+            $query->where('end_date', '>=', now()->toDateString());
+        })->count();
+
+        // Available rooms are those without active rent agreements
+        $availableRooms = $totalRooms - $occupiedRooms;
+
+        return [
+            'totalSites' => Site::count(),
+            'totalRooms' => $totalRooms,
+            'availableRooms' => $availableRooms,
+            'occupiedRooms' => $occupiedRooms,
+            'validation' => ($availableRooms + $occupiedRooms) == $totalRooms
+        ];
+    }
+
+    public function render()
+    {
+        $rooms = Room::query()
+            ->with(['site', 'current_price_relation', 'rentAgreements'])
+            ->whereHas('site', function ($query) {
+                $query->where('created_by', auth()->id());
+            })
+            ->when($this->siteFilter, function ($query) {
+                return $query->where('site_id', $this->siteFilter);
+            })
+            // ... rest of your existing query conditions ...
+            ->paginate($this->perPage);
+
+        return view('livewire.room.rooms', [
+            'rooms' => $rooms,
+            'sites' => $this->sites,
+            'stats' => $this->stats
+        ]);
+    }
+
+
+
+    public function openAddModal()
+    {
+        $this->dispatch('openModal', 'room.room-modal', [
+            'siteId' => $this->siteFilter ?: $this->siteId
+        ]);
+    }
+
+    public function openEditModal($roomId)
+    {
+        $this->dispatch('openModal', 'room.room-modal', [
+            'roomId' => $roomId
+        ]);
+    }
+
+    public function deleteRoom($roomId)
+    {
+        $room = Room::find($roomId);
+        if ($room) {
+            $room->delete();
+            $this->dispatch('refreshRooms');
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => 'Room deleted successfully'
+            ]);
+        }
+    }
+}
+
+
+<?php
+
+namespace App\Livewire\Room;
+
+use App\Models\User;
+use Modules\Room\Models\Room;
+use Modules\Site\Models\Site;
+use Illuminate\Validation\Rule;
 use App\Notifications\NotifyCeo;
 use Illuminate\Support\Facades\DB;
 use Modules\Room\Models\RoomPrice;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
 use LivewireUI\Modal\ModalComponent;
 
-class RentAgreementModal extends ModalComponent
+class RoomModal extends ModalComponent
 {
-    use WithFileUploads;
-
-    public $agreementId;
+    public $siteId;
+    public $roomId;
     public $isEdit = false;
 
-    public $tenant_id = '';
-    public $room_id = '';
-    public $start_date = '';
-    public $end_date = '';
-    public $purpose = '';
-    public $rent_amount = '';
-    public $agreement_file;
-    public $existing_file;
-    public $agreement;
-    public $show_end_date = false; // Control visibility
-
-
-    protected $rules = [
-        'tenant_id' => 'required|exists:employee_infos,id',
-        'room_id' => 'required|exists:rooms,id',
-        'start_date' => 'required|date',
-        'end_date' => 'required|date|after:start_date',
-        'purpose' => 'nullable|string|max:500',
-        'rent_amount' => 'required|numeric|min:0',
-        'agreement_file' => 'nullable|file|mimes:pdf|max:8200',
-    ];
+    // Form fields
+    public $name;
+    public $description;
+    public $area_square_meters;
+    public $room_status = 0;
+    public $status = 1;
+    public $selected_site_id;
+    public $price_per_sqm;
 
     protected function authorizeAction(string $action): bool
     {
         $permission = match ($action) {
-            'create' => 'add_rentagreements',
-            'update' => 'edit_rentagreements',
-            default => 'view_rentagreements'
+            'create' => 'add_rooms',
+            'update' => 'edit_rooms',
+            default => 'view_rooms',
         };
 
         if (!auth()->user()->can($permission)) {
@@ -63,434 +183,239 @@ class RentAgreementModal extends ModalComponent
 
         return true;
     }
-    public function mount($agreementId = null)
+
+    public function mount($siteId = null, $roomId = null)
     {
-        $action = $agreementId ? 'update' : 'create';
+        $action = $roomId ? 'update' : 'create';
         if (!$this->authorizeAction($action)) {
             $this->skipRender();
             return;
         }
 
-        if ($agreementId) {
-            $this->agreementId = $agreementId;
+        $this->siteId = $siteId;
+        $this->selected_site_id = $siteId;
+
+        if ($roomId) {
             $this->isEdit = true;
-            $this->loadAgreement();
-        } else {
-            $this->start_date = now()->format('Y-m-d');
-            $this->end_date = now()->addYears(5)->format('Y-m-d'); // Fixed: changed addYear(5) to addYears(5)
-            $this->show_end_date = false; // Hide end date during creation
+            $this->loadRoom($roomId);
         }
     }
-    public function updatedStartDate($value)
+
+    public function loadRoom($roomId)
     {
-        if (!$this->isEdit && !empty($value)) {
-            try {
-                $this->end_date = Carbon::parse($value)->addYears(5)->format('Y-m-d');
-            } catch (\Exception $e) {
+
+        try {
+            //$room = Room::with(['currentPrice'])->findOrFail($roomId);
+            //$room = Room::with('prices')->findOrFail($roomId);
+            $room = Room::with('currentPriceModel')
+                ->whereHas('site', function ($query) {
+                    $query->where('created_by', auth()->id());
+                })
+                ->findOrFail($roomId);
+            $this->roomId = $roomId;
+            $this->selected_site_id = $room->site_id;
+            $this->name = $room->name;
+            $this->description = $room->description;
+            $this->area_square_meters = $room->area_square_meters;
+            $this->room_status = $room->room_status;
+            $this->status = $room->status;
+
+            // Get the current active price
+            //$currentPrice = $room->prices()->whereNull('effective_to')->latest('effective_from')->first();
+            //$this->price_per_sqm = $currentPrice?->price_per_sqm ?? 0;
+
+            $this->price_per_sqm = $room->currentPriceModel?->price_per_sqm ?? 0;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The requested room does not exist',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            $this->closeModal();
+        } catch (\Exception $e) {
+            Log::error('Failed to load room: ' . $e->getMessage(), [
+                'room_id' => $roomId,
+                'user_id' => auth()->id()
+            ]);
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to load room data',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            $this->closeModal();
+        }
+    }
+
+    public function saveRoom()
+    {
+
+        // Add this check at the beginning of saveRoom
+        if ($this->isEdit) {
+            $exists = Room::where('id', $this->roomId)
+                ->whereHas('site', function ($query) {
+                    $query->where('created_by', auth()->id());
+                })
+                ->exists();
+
+            if (!$exists) {
                 $this->dispatch('showToast', [
                     'type' => 'error',
-                    'message' => 'Invalid Date.'
+                    'message' => 'You can only edit rooms you created',
+                    'position' => 'top-end',
+                    'duration' => 5000
                 ]);
+                return;
             }
         }
-    }
 
-    public function loadAgreement()
-    {
-        $this->agreement = RentAgreement::find($this->agreementId);
-
-        if ($this->agreement) {
-            $this->tenant_id = $this->agreement->tenant_id;
-            $this->room_id = $this->agreement->room_id;
-            $this->start_date = $this->agreement->start_date->format('Y-m-d');
-            $this->end_date = $this->agreement->end_date->format('Y-m-d');
-            $this->purpose = $this->agreement->purpose;
-            $this->rent_amount = $this->agreement->rent_amount;
-        }
-    }
-
-    public function updatedRoomId($value)
-    {
-        if ($value) {
-            $roomPrice = RoomPrice::where('room_id', $value)
-                ->whereNull('effective_to')
-                ->latest()
-                ->first();
-
-            if ($roomPrice) {
-                $this->rent_amount = $roomPrice->total_price;
-            }
-        }
-    }
-
-    public function save()
-    {
         $action = $this->isEdit ? 'update' : 'create';
         if (!$this->authorizeAction($action)) {
             return;
         }
 
-        $this->validate();
+        $validated = $this->validate([
+            'selected_site_id' => 'required|exists:sites,id',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('rooms')->where(function ($query) {
+                    return $query->where('site_id', $this->selected_site_id);
+                })->ignore($this->roomId)
+            ],
+            'description' => 'nullable|string',
+            'area_square_meters' => 'required|numeric|min:0',
+            'price_per_sqm' => 'required|numeric|min:0',
+            'room_status' => 'required|in:0,1',
+            'status' => 'required|in:0,1,2',
+        ]);
 
-        // Check room availability
-        if (!RentAgreement::isRoomAvailable(
-            $this->room_id,
-            $this->start_date,
-            $this->end_date,
-            $this->isEdit ? $this->agreementId : null
-        )) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'The room is already occupied during the selected period'
-            ]);
-            return;
-        }
-
-        // Get current room price
-        $roomPrice = RoomPrice::where('room_id', $this->room_id)
-            ->whereNull('effective_to')
-            ->latest()
-            ->first();
-
-        if (!$roomPrice) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'No active price found for this room'
-            ]);
-            return;
-        }
-
-        DB::beginTransaction();
+        $validated['site_id'] = $this->selected_site_id;
 
         try {
-            $data = [
-                'tenant_id' => $this->tenant_id,
-                'room_id' => $this->room_id,
-                'start_date' => $this->start_date,
-                'end_date' => $this->end_date,
-                'purpose' => $this->purpose,
-                'rent_amount' => $roomPrice->total_price,
-            ];
+            DB::beginTransaction();
 
             if ($this->isEdit) {
-                $agreement = RentAgreement::find($this->agreementId);
-                $agreement->update($data);
+                $room = Room::findOrFail($this->roomId);
+                $room->update($validated);
+                $this->notifyCeo('updated', $room);
 
-                // Handle file upload for edit
-                if ($this->agreement_file) {
-                    $agreement->clearMediaCollection('agreement_files');
-                    $agreement->addMedia($this->agreement_file->getRealPath())
-                        ->usingName($this->agreement_file->getClientOriginalName())
-                        ->toMediaCollection('agreement_files');
+                // Check if price changed
+                $currentPrice = $room->currentPriceModel;
+                if (!$currentPrice || (float)$currentPrice->price_per_sqm != (float)$this->price_per_sqm) {
+
+                    // Expire old price if exists
+                    if ($currentPrice) {
+                        $currentPrice->update([
+                            'effective_to' => now()->subDay()->toDateString()
+                        ]);
+                    }
+
+                    // Create new price record
+                    RoomPrice::create([
+                        'room_id' => $room->id,
+                        'price_per_sqm' => $this->price_per_sqm,
+                        'total_price' => $this->price_per_sqm * $room->area_square_meters,
+                        'effective_from' => now()->toDateString()
+                    ]);
                 }
-                $this->notifyCeo('updated', $agreement);
-
-
-                $message = 'Rent agreement updated successfully!';
             } else {
-                $agreement = RentAgreement::create($data);
+                $room = Room::create($validated);
+                $this->notifyCeo('created', $room);
 
-                // Handle file upload for create
-                if ($this->agreement_file) {
-                    $agreement->addMedia($this->agreement_file->getRealPath())
-                        ->usingName($this->agreement_file->getClientOriginalName())
-                        ->toMediaCollection('agreement_files');
-                }
-                $this->notifyCeo('created', $agreement);
-
-                $message = 'Rent agreement created successfully!';
+                // Create initial price record
+                RoomPrice::create([
+                    'room_id' => $room->id,
+                    'price_per_sqm' => $this->price_per_sqm,
+                    'total_price' => $this->price_per_sqm * $room->area_square_meters,
+                    'effective_from' => now()->toDateString()
+                ]);
             }
 
             DB::commit();
 
-            $this->dispatch('refresh-rent-agreements');
+            $this->dispatch('refreshRooms');
             $this->closeModal();
             $this->dispatch('showToast', [
                 'type' => 'success',
-                'message' => $message
+                'message' => 'Room saved successfully'
             ]);
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Failed to save rent agreement: ' . $e->getMessage()
+                'message' => 'Room not found',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Room save failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'room_id' => $this->roomId ?? null,
+                'user_id' => auth()->id()
+            ]);
+
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to save room. Please try again.',
+                'position' => 'top-end',
+                'duration' => 5000
             ]);
         }
     }
 
+    // Update getSitesProperty
+    public function getSitesProperty()
+    {
+        return Site::where('created_by', auth()->id())
+            ->orderBy('name')
+            ->get(['id', 'name']);
+    }
+
+    public function getTotalPriceProperty()
+    {
+        return $this->area_square_meters * $this->price_per_sqm;
+    }
+
     public function render()
     {
-        $tenants = EmployeeInfo::orderBy('first_name')->get();
-        $rooms = Room::orderBy('name')->get();
-
-        return view('livewire.rentagreement.rent-agreement-modal', [
-            'tenants' => $tenants,
-            'rooms' => $rooms
+        return view('livewire.room.room-modal', [
+            'totalPrice' => $this->totalPrice
         ]);
     }
 
     public static function modalMaxWidth(): string
     {
-        return '4xl';
+        return '2xl';
     }
 
-
-
-    protected function notifyCeo($action, RentAgreement $agreement)
+    protected function notifyCeo($action, Room $room)
     {
-        $ceoUsers = User::role(['ceo', 'super admin'])->get();
+        try {
+            $ceoUsers = User::role(['ceo', 'super admin'])->get();
 
-        $data = [
-            'tenant_name' => $agreement->tenant->full_name,
-            'room_name' => $agreement->room->name,
-            'rent_amount' => $agreement->rent_amount,
-        ];
+            $data = [
+                'room_name' => $room->name,
+                'site_name' => $room->site->name,
+                'area_sqm' => $room->area_square_meters,
+                'status' => $room->status ? 'Active' : 'Inactive',
+            ];
 
-        foreach ($ceoUsers as $ceo) {
-            $ceo->notify(new NotifyCeo(
-                $action,
-                'Rent Agreement',
-                $data
-            ));
+            foreach ($ceoUsers as $ceo) {
+                $ceo->notify(new NotifyCeo(
+                    $action,
+                    'Room',
+                    $data
+                ));
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to send CEO notification: ' . $e->getMessage(), [
+                'room_id' => $room->id,
+                'action' => $action
+            ]);
         }
     }
 }
-
-
-
-
-<div class="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-lg border border-gray-200">
-    <div class="flex justify-between items-center pb-4 border-b border-gray-200 mb-4">
-        <h2 class="text-2xl font-bold text-gray-800 flex items-center">
-            <i class="fas fa-file-contract mr-2 text-blue-600"></i>
-            @if ($isEdit)
-                @lang('Edit Rental Agreement')
-            @else
-                @lang('Create New Rental Agreement')
-            @endif
-        </h2>
-        <button wire:click="$dispatch('closeModal')"
-            class="text-gray-500 hover:text-red-600 transition-colors duration-200 transform hover:scale-110">
-            <i class="fas fa-times-circle text-xl"></i>
-        </button>
-    </div>
-
-    <form wire:submit.prevent="save" class="space-y-5">
-        <!-- Tenant and Room Selection -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Tenant Selection -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-user-tie mr-2 text-blue-500"></i> @lang('Tenant Information')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-search"></i>
-                    </span>
-                    <select wire:model="tenant_id"
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
-                        <option value="">@lang('Select Tenant')</option>
-                        @foreach ($tenants as $tenant)
-                            <option value="{{ $tenant->id }}">{{ $tenant->full_name }} ({{ $tenant->employee_id }})
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                @error('tenant_id')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-
-            <!-- Room Selection -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-door-open mr-2 text-blue-500"></i> @lang('Room Information')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-search"></i>
-                    </span>
-                    <select wire:model="room_id"
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
-                        <option value="">@lang('Select Room')</option>
-                        @foreach ($rooms as $room)
-                            <option value="{{ $room->id }}">{{ $room->name }} ({{ $room->site->name ?? 'N/A' }})
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                @error('room_id')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-        </div>
-
-        <!-- Dates and Price -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- Start Date -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-calendar-day mr-2 text-blue-500"></i> @lang('Start Date')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-calendar"></i>
-                    </span>
-                    <input type="date" wire:model="start_date"
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                </div>
-                @error('start_date')
-                    <span class="text-sm text-red-500 flex items-center mt-1">
-                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                    </span>
-                @enderror
-            </div>
-
-            <!-- End Date -->
-
-            @if ($isEdit)
-                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                        <i class="fas fa-calendar-times mr-2 text-blue-500"></i> @lang('End Date')
-                    </h3>
-                    <div class="relative">
-                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                            <i class="fas fa-calendar"></i>
-                        </span>
-                        <input type="date" wire:model="end_date" min="{{ now()->format('Y-m-d') }}"
-                            class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                    </div>
-                    @error('end_date')
-                        <span class="text-sm text-red-500 flex items-center mt-1">
-                            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                        </span>
-                    @enderror
-                </div>
-            @else
-                <input type="hidden" wire:model="end_date"> <!-- Hidden but still submitted -->
-            @endif
-
-
-
-            <!-- Room Price Display -->
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                    <i class="fas fa-money-bill-wave mr-2 text-blue-500"></i> @lang('Monthly Rent')
-                </h3>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                        <i class="fas fa-dollar-sign"></i>
-                    </span>
-                    <input type="text" wire:model="rent_amount" readonly
-                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 bg-gray-100 font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                </div>
-                <div class="text-xs text-gray-500 mt-1">
-                    @lang('Current room price (automatically set)')
-                </div>
-            </div>
-        </div>
-
-        <!-- Purpose -->
-        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                <i class="fas fa-info-circle mr-2 text-blue-500"></i> @lang('Intended Use')
-            </h3>
-            <div class="mb-2 text-sm text-gray-600">
-                @lang('Please describe how the room will be used (e.g., office, storage, meeting room)')
-            </div>
-            <textarea wire:model="purpose" rows="3"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                placeholder="@lang('Example: Office space for IT department')"></textarea>
-            @error('purpose')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-        </div>
-
-        <!-- Agreement File -->
-        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                <i class="fas fa-file-pdf mr-2 text-blue-500"></i> @lang('Agreement Document')
-            </h3>
-            <div class="mb-2 text-sm text-gray-600">
-                @lang('Upload the signed agreement document (PDF format, max 50MB)')
-            </div>
-
-            <!-- File Upload Input -->
-            <div class="relative">
-                <input type="file" wire:model="agreement_file" id="agreement_file" accept="application/pdf"
-                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                <div
-                    class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center transition hover:border-blue-500 hover:bg-blue-50">
-                    <div class="flex items-center justify-center">
-                        <i class="fas fa-cloud-upload-alt text-blue-500 text-2xl mr-2"></i>
-                        <span class="text-gray-700">
-                            @if ($agreement_file)
-                                {{ $agreement_file->getClientOriginalName() }}
-                            @else
-                                @lang('Click to select PDF file')
-                            @endif
-                        </span>
-                    </div>
-                    @if ($agreement_file)
-                        <button type="button" wire:click="$set('agreement_file', null)"
-                            class="mt-2 text-red-500 hover:text-red-700 text-sm">
-                            <i class="fas fa-times mr-1"></i> @lang('Remove file')
-                        </button>
-                    @endif
-                </div>
-            </div>
-
-            @error('agreement_file')
-                <span class="text-sm text-red-500 flex items-center mt-1">
-                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
-                </span>
-            @enderror
-
-            <!-- Show existing file -->
-            @if ($agreement?->hasMedia('agreement_files'))
-                <div class="mt-3 bg-blue-50 p-2 rounded flex items-center">
-                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
-                    <span class="text-blue-800">
-                        {{ $agreement->getFirstMedia('agreement_files')->name }}
-                    </span>
-                    <span class="ml-auto text-blue-600 hover:text-blue-800">
-                        <a href="{{ route('backend.rentagreements.viewAgreement', $agreement->id) }}" target="_blank"
-                            title="@lang('View current file')">
-                            <i class="fas fa-eye"></i>
-                        </a>
-                    </span>
-                </div>
-                <p class="text-xs text-gray-500 mt-1">
-                    @lang('Uploading a new file will replace the existing one')
-                </p>
-            @endif
-        </div>
-
-        <!-- Form Actions -->
-        <div class="flex justify-end space-x-3 pt-4">
-            <button type="button" wire:click="$dispatch('closeModal')" wire:loading.attr="disabled"
-                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
-                @lang('Cancel')
-            </button>
-            <button type="submit" wire:loading.attr="disabled"
-                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                <span wire:loading.remove>
-                    @if ($isEdit)
-                        @lang('Update Agreement')
-                    @else
-                        @lang('Create Agreement')
-                    @endif
-                </span>
-                <span wire:loading>
-                    <i class="fas fa-spinner fa-spin me-1"></i> @lang('Processing...')
-                </span>
-            </button>
-        </div>
-    </form>
-</div>
