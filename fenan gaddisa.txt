@@ -1,428 +1,459 @@
 <?php
 
-namespace App\Livewire\RentAgreement;
-
-use Livewire\Component;
-use App\Models\EmployeeInfo;
-use Livewire\WithPagination;
-use App\Models\RentAgreement;
-use Modules\Room\Models\Room;
-use Modules\Site\Models\Site;
-use Illuminate\Support\Facades\Auth;
-
-class RentAgreements extends Component
-{
-    use WithPagination;
-
-    protected $listeners = ['refresh-rent-agreements' => '$refresh'];
-
-    public $search = '';
-    public $statusFilter = 'active';
-    public $perPage = 10;
-    public $siteFilter = '';
-    public $dateFilter = '';
-    public $deleteId = null;
-
-    public function render()
-    {
-        $rentAgreements = RentAgreement::query()
-            ->with(['tenant', 'room.site', 'updater'])
-            ->where('rent_agreements.created_by', auth()->id()) // Specify table name
-            ->when($this->search, function ($q) {
-                $q->whereHas('tenant', function ($query) {
-                    $query->where('first_name', 'like', "%{$this->search}%")
-                        ->orWhere('last_name', 'like', "%{$this->search}%")
-                        ->orWhere('employee_id', 'like', "%{$this->search}%");
-                });
-            })
-            ->when($this->siteFilter, function ($q) {
-                $q->whereHas('room.site', function ($query) {
-                    $query->where('id', $this->siteFilter);
-                });
-            })
-            ->when($this->dateFilter, function ($q) {
-                $q->whereDate('rent_agreements.start_date', '<=', $this->dateFilter)
-                    ->whereDate('rent_agreements.end_date', '>=', $this->dateFilter);
-            })
-            ->when($this->statusFilter === 'active', function ($q) {
-                $q->whereDate('rent_agreements.start_date', '<=', now())
-                    ->whereDate('rent_agreements.end_date', '>=', now());
-            })
-            ->when($this->statusFilter === 'expired', function ($q) {
-                $q->whereDate('rent_agreements.end_date', '<', now());
-            })
-            ->when($this->statusFilter === 'upcoming', function ($q) {
-                $q->whereDate('rent_agreements.start_date', '>', now());
-            })
-            ->join('employee_infos', 'rent_agreements.tenant_id', '=', 'employee_infos.id')
-            ->orderBy('employee_infos.employee_id')
-            ->orderBy('rent_agreements.start_date', 'desc')
-            ->select('rent_agreements.*')
-            ->paginate($this->perPage);
-
-        $sites = Site::where('created_by', auth()->id())->orderBy('name')->get();
-        $tenants = EmployeeInfo::where('created_by', auth()->id())->orderBy('first_name')->get();
-
-        return view('livewire.rentagreement.rent-agreements', [
-            'rentAgreements' => $rentAgreements,
-            'sites' => $sites,
-            'tenants' => $tenants
-        ]);
-    }
-
-    // ... rest of your methods remain the same ...
-    public function createAgreement()
-    {
-        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal');
-    }
-
-    public function viewAgreement($agreementId)
-    {
-        $agreement = RentAgreement::findOrFail($agreementId);
-
-        if (!$agreement->hasMedia('agreement_files')) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'No agreement file found'
-            ]);
-            return;
-        }
-
-        $media = $agreement->getFirstMedia('agreement_files');
-        return response()->file($media->getPath());
-    }
-
-    public function editAgreement($agreementId)
-    {
-        $agreement = RentAgreement::find($agreementId);
-
-        if (!$this->canEditOrDelete($agreement)) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You are not authorized to edit this agreement'
-            ]);
-            return;
-        }
-
-        $this->dispatch('openModal', 'rentagreement.rent-agreement-modal', [
-            'agreementId' => $agreementId
-        ]);
-    }
-
-    public function confirmDelete($agreementId)
-    {
-        $agreement = RentAgreement::find($agreementId);
-
-        if (!$this->canEditOrDelete($agreement)) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You are not authorized to delete this agreement'
-            ]);
-            return;
-        }
-
-        $this->dispatch('openModal', 'rentagreement.delete-confirmation-modal', [
-            'agreementId' => $agreementId
-        ]);
-    }
-
-    protected function canEditOrDelete($agreement)
-    {
-        // First check if user created the agreement
-        if ($agreement->created_by === auth()->id()) {
-            return true;
-        }
-
-        $user = Auth::user();
-
-        // Keep your existing role-based checks
-        if ($agreement->updated_by) {
-            $updater = $agreement->updater;
-            if ($updater && in_array($updater->roles->pluck('name')->first(), ['super admin', 'cashier', 'ceo'])) {
-                return $user->hasAnyRole(['super admin', 'cashier', 'ceo']);
-            }
-        }
-
-        return false;
-    }
-}
-
-
-
-<?php
-
-namespace App\Livewire\Rentagreement;
+namespace App\Http\Controllers\Backend;
 
 use Carbon\Carbon;
 use App\Models\User;
+use App\Models\Payment;
+use Andegna\DateTimeFactory;
 use App\Models\EmployeeInfo;
+use Illuminate\Http\Request;
 use App\Models\RentAgreement;
-use Livewire\WithFileUploads;
 use Modules\Room\Models\Room;
-use App\Notifications\NotifyCeo;
-use Illuminate\Support\Facades\DB;
-use Modules\Room\Models\RoomPrice;
-use Illuminate\Support\Facades\Gate;
-use LivewireUI\Modal\ModalComponent;
+use Modules\Site\Models\Site;
+use App\Models\PaymentAllocation;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Auth;
+use Modules\Application\Models\Application;
+use Modules\Mainsetting\Models\Mainsetting;
 
-class RentAgreementModal extends ModalComponent
+class BackendController extends Controller
 {
-    use WithFileUploads;
 
-    public $agreementId;
-    public $isEdit = false;
+    // Add this to your BackendController or a helper class
 
-    public $tenant_id = '';
-    public $room_id = '';
-    public $start_date = '';
-    public $end_date = '';
-    public $purpose = '';
-    public $rent_amount = '';
-    public $agreement_file;
-    public $existing_file;
-    public $agreement;
-    public $show_end_date = false; // Control visibility
-
-
-    protected $rules = [
-        'tenant_id' => 'required|exists:employee_infos,id',
-        'room_id' => 'required|exists:rooms,id',
-        'start_date' => 'required|date',
-        'end_date' => 'required|date|after:start_date',
-        'purpose' => 'nullable|string|max:500',
-        'rent_amount' => 'required|numeric|min:0',
-        'agreement_file' => 'nullable|file|mimes:pdf|max:8200',
-    ];
-
-    protected function authorizeAction(string $action): bool
+    private function getEthiopianMonthlyCollections($allocations, $fiscalYearStart, $fiscalYearEnd)
     {
-        $permission = match ($action) {
-            'create' => 'add_rentagreements',
-            'update' => 'edit_rentagreements',
-            default => 'view_rentagreements'
-        };
-
-        if (!auth()->user()->can($permission)) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You are not authorized to perform this action',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            return false;
-        }
-
-        return true;
-    }
-    public function mount($agreementId = null)
-    {
-        $action = $agreementId ? 'update' : 'create';
-        if (!$this->authorizeAction($action)) {
-            $this->skipRender();
-            return;
-        }
-
-        if ($agreementId) {
-            $this->agreementId = $agreementId;
-            $this->isEdit = true;
-            $this->loadAgreement();
-        } else {
-            $this->start_date = now()->format('Y-m-d');
-            $this->end_date = now()->addYears(5)->format('Y-m-d');
-            $this->show_end_date = false;
-        }
-    }
-    public function updatedStartDate($value)
-    {
-        if (!$this->isEdit && !empty($value)) {
-            try {
-                $this->end_date = Carbon::parse($value)->addYears(5)->format('Y-m-d');
-            } catch (\Exception $e) {
-                $this->dispatch('showToast', [
-                    'type' => 'error',
-                    'message' => 'Invalid Date.'
-                ]);
-            }
-        }
-    }
-
-    public function loadAgreement()
-    {
-        $this->agreement = RentAgreement::where('id', $this->agreementId)
-            ->where('created_by', auth()->id())
-            ->first();
-        if (!$this->agreement) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Agreement not found or you don\'t have permission',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            $this->closeModal();
-            return;
-        }
-        if ($this->agreement) {
-            $this->tenant_id = $this->agreement->tenant_id;
-            $this->room_id = $this->agreement->room_id;
-            $this->start_date = $this->agreement->start_date->format('Y-m-d');
-            $this->end_date = $this->agreement->end_date->format('Y-m-d');
-            $this->purpose = $this->agreement->purpose;
-            $this->rent_amount = $this->agreement->rent_amount;
-        }
-    }
-
-    public function updatedRoomId($value)
-    {
-        if ($value) {
-            $roomPrice = RoomPrice::where('room_id', $value)
-                ->whereNull('effective_to')
-                ->latest()
-                ->first();
-
-            if ($roomPrice) {
-                $this->rent_amount = $roomPrice->total_price;
-            }
-        }
-    }
-
-    public function save()
-    {
-        $action = $this->isEdit ? 'update' : 'create';
-        if (!$this->authorizeAction($action)) {
-            return;
-        }
-
-        $this->validate();
-
-        // Check room availability
-        if (!RentAgreement::isRoomAvailable(
-            $this->room_id,
-            $this->start_date,
-            $this->end_date,
-            $this->isEdit ? $this->agreementId : null
-        )) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'The room is already occupied during the selected period'
-            ]);
-            return;
-        }
-
-        // Get current room price
-        $roomPrice = RoomPrice::where('room_id', $this->room_id)
-            ->whereNull('effective_to')
-            ->latest()
-            ->first();
-
-        if (!$roomPrice) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'No active price found for this room'
-            ]);
-            return;
-        }
-
-        DB::beginTransaction();
-
-        try {
-            $data = [
-                'tenant_id' => $this->tenant_id,
-                'room_id' => $this->room_id,
-                'start_date' => $this->start_date,
-                'end_date' => $this->end_date,
-                'purpose' => $this->purpose,
-                'rent_amount' => $roomPrice->total_price,
-            ];
-
-            if ($this->isEdit) {
-                $agreement = RentAgreement::where('id', $this->agreementId)
-                    ->where('created_by', auth()->id())
-                    ->first();
-
-                if (!$agreement) {
-                    throw new \Exception('You can only edit agreements you created');
-                }
-
-                $agreement->update($data);
-
-                // Handle file upload for edit
-                if ($this->agreement_file) {
-                    $agreement->clearMediaCollection('agreement_files');
-                    $agreement->addMedia($this->agreement_file->getRealPath())
-                        ->usingName($this->agreement_file->getClientOriginalName())
-                        ->toMediaCollection('agreement_files');
-                }
-                $this->notifyCeo('updated', $agreement);
-
-
-                $message = 'Rent agreement updated successfully!';
-            } else {
-                $agreement = RentAgreement::create($data);
-
-                // Handle file upload for create
-                if ($this->agreement_file) {
-                    $agreement->addMedia($this->agreement_file->getRealPath())
-                        ->usingName($this->agreement_file->getClientOriginalName())
-                        ->toMediaCollection('agreement_files');
-                }
-                $this->notifyCeo('created', $agreement);
-
-                $message = 'Rent agreement created successfully!';
-            }
-
-            DB::commit();
-
-            $this->dispatch('refresh-rent-agreements');
-            $this->closeModal();
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => $message
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to save rent agreement: ' . $e->getMessage()
-            ]);
-        }
-    }
-
-    public function render()
-    {
-        $tenants = EmployeeInfo::orderBy('first_name')->get();
-        $rooms = Room::orderBy('name')->get();
-
-        return view('livewire.rentagreement.rent-agreement-modal', [
-            'tenants' => EmployeeInfo::where('created_by', auth()->id())->orderBy('first_name')->get(),
-            'rooms' => Room::whereHas('site', function ($q) {
-                $q->where('created_by', auth()->id());
-            })->orderBy('name')->get()
-        ]);
-    }
-
-    public static function modalMaxWidth(): string
-    {
-        return '4xl';
-    }
-
-
-
-    protected function notifyCeo($action, RentAgreement $agreement)
-    {
-        $ceoUsers = User::role(['ceo', 'super admin'])->get();
-
-        $data = [
-            'tenant_name' => $agreement->tenant->full_name,
-            'room_name' => $agreement->room->name,
-            'rent_amount' => $agreement->rent_amount,
+        $ethiopianMonths = [
+            1 => 'መስከረም',
+            2 => 'ጥቅምት',
+            3 => 'ኅዳር',
+            4 => 'ታኅሣሥ',
+            5 => 'ጥር',
+            6 => 'የካቲት',
+            7 => 'መጋቢት',
+            8 => 'ሚያዝያ',
+            9 => 'ግንቦት',
+            10 => 'ሰኔ',
+            11 => 'ሐምሌ',
+            12 => 'ነሐሴ',
+            13 => 'ጳጉሜ'
         ];
 
-        foreach ($ceoUsers as $ceo) {
-            $ceo->notify(new NotifyCeo(
-                $action,
-                'Rent Agreement',
-                $data
-            ));
+        // Initialize monthly data for Ethiopian fiscal year (from ሐምሌ to ሰኔ)
+        $monthlyData = [];
+        for ($month = 11; $month <= 13; $month++) {
+            $monthlyData[$ethiopianMonths[$month]] = 0;
         }
+        for ($month = 1; $month <= 10; $month++) {
+            $monthlyData[$ethiopianMonths[$month]] = 0;
+        }
+
+        // Group allocations by Ethiopian month
+        foreach ($allocations as $allocation) {
+            $ethiopianDate = DateTimeFactory::fromDateTime($allocation->created_at);
+            $ethiopianMonth = $ethiopianDate->getMonth();
+            $ethiopianYear = $ethiopianDate->getYear();
+
+            // Check if the date falls within the fiscal year
+            $fiscalStartEth = DateTimeFactory::fromDateTime($fiscalYearStart);
+            $fiscalEndEth = DateTimeFactory::fromDateTime($fiscalYearEnd);
+
+            if ($ethiopianDate >= $fiscalStartEth && $ethiopianDate <= $fiscalEndEth) {
+                $monthName = $ethiopianMonths[$ethiopianMonth];
+                $monthlyData[$monthName] += $allocation->total_for_the_month;
+            }
+        }
+
+        // Prepare chart data in the correct order (ሐምሌ to ሰኔ)
+        $orderedMonths = [
+            'ሐምሌ',
+            'ነሐሴ',
+            'ጳጉሜ', // Ethiopian months 11,12,13
+            'መስከረም',
+            'ጥቅምት',
+            'ኅዳር',
+            'ታኅሣሥ',
+            'ጥር',
+            'የካቲት',
+            'መጋቢት',
+            'ሚያዝያ',
+            'ግንቦት',
+            'ሰኔ'  // Months 1-10
+        ];
+
+        $labels = [];
+        $data = [];
+
+        foreach ($orderedMonths as $month) {
+            $labels[] = $month;
+            $data[] = $monthlyData[$month] ?? 0;
+        }
+
+        return [
+            'labels' => $labels,
+            'data' => $data
+        ];
     }
+    public function index(Request $request)
+    {
+        // Get all cashiers except the test email
+        $cashiers = User::role('cashier')
+            ->where('email', '!=', 'teslim12@gmail.com')
+            ->get();
+
+
+        // Initialize variables with default values
+        $cashierNames = [];
+        $rentAgreementCounts = [];
+        $roomCounts = [];
+        $tenantCounts = [];
+        $leader = null;
+        $maxAgreements = 0;
+
+        if ($cashiers->isNotEmpty()) {
+            foreach ($cashiers as $cashier) {
+                $cashierNames[] = $cashier->name;
+
+                // Count rent agreements created by this cashier
+                $agreementCount = RentAgreement::where('created_by', $cashier->id)->count();
+                $rentAgreementCounts[] = $agreementCount;
+
+                // Count rooms created by this cashier
+                $roomCount = Room::where('created_by', $cashier->id)->count();
+                $roomCounts[] = $roomCount;
+
+                // Count tenants (EmployeeInfo) created by this cashier
+                $tenantCount = EmployeeInfo::where('created_by', $cashier->id)->count();
+                $tenantCounts[] = $tenantCount;
+
+                // Check for leader
+                if ($agreementCount > $maxAgreements) {
+                    $maxAgreements = $agreementCount;
+                    $leader = $cashier;
+                }
+            }
+        }
+
+        return view('backend.index', compact(
+            'cashiers',
+            'cashierNames',
+            'rentAgreementCounts',
+            'roomCounts',
+            'tenantCounts',
+            'leader',
+            'maxAgreements'
+        ));
+    }
+
+    private function getAvailableFiscalYears($currentFiscalYear)
+    {
+        $firstHistoricalYear = 2024; // First fiscal year in system
+        $years = range($firstHistoricalYear, $currentFiscalYear);
+        return array_reverse($years); // Newest first
+    }
+    private function getLastEightWeeksPerformance($ceoUsers)
+    {
+        $payments = PaymentAllocation::where('status', 'approved')
+            ->whereIn('updated_by', $ceoUsers)
+            ->where('created_at', '>=', now()->subWeeks(8)->startOfWeek())
+            ->get();
+
+        $weeklyData = [];
+
+        for ($i = 7; $i >= 0; $i--) {
+            $start = now()->subWeeks($i)->startOfWeek();
+            $end = now()->subWeeks($i)->endOfWeek();
+
+            // Convert to Ethiopian dates
+            $ethStart = DateTimeFactory::fromDateTime($start);
+            $ethEnd = DateTimeFactory::fromDateTime($end);
+
+            // Create Amharic label: "ሳምንት 1: ሐምሌ 15-21"
+            $weekNumber = 8 - $i;
+            $monthStart = translate_ethiopian_month($ethStart->format('F'), 'am');
+            $monthEnd = translate_ethiopian_month($ethEnd->format('F'), 'am');
+
+            $label = "ሳምንት $weekNumber: " .
+                $monthStart . ' ' . $ethStart->format('j') . '-' .
+                ($monthStart === $monthEnd ? '' : $monthEnd . ' ') .
+                $ethEnd->format('j');
+
+            $amount = $payments->filter(function ($payment) use ($start, $end) {
+                return $payment->created_at >= $start && $payment->created_at <= $end;
+            })->sum('total_for_the_month');
+
+            $weeklyData[] = [
+                'week_number' => $weekNumber,
+                'label' => $label,
+                'amount' => $amount,
+                'start_date' => $start,
+                'end_date' => $end
+            ];
+        }
+
+        return [
+            'labels' => array_column($weeklyData, 'label'),
+            'data' => array_column($weeklyData, 'amount'),
+            'detailed_data' => $weeklyData
+        ];
+    }
+    // private function getLastEightWeeksPerformance($ceoUsers)
+    // {
+    //     $payments = PaymentAllocation::where('status', 'approved')
+    //         ->whereIn('updated_by', $ceoUsers)
+    //         ->where('created_at', '>=', now()->subWeeks(8)->startOfWeek())
+    //         ->get();
+
+    //     $weeklyData = [];
+
+    //     for ($i = 7; $i >= 0; $i--) {
+    //         $start = now()->subWeeks($i)->startOfWeek();
+    //         $end = now()->subWeeks($i)->endOfWeek();
+
+    //         // Week label format: "Week 1: Jul 1-7" or "ሳምንት 1: Jul 1-7"
+    //         $weekNumber = 8 - $i; // Counts from 1 to 8
+    //         $gregorianLabel = "Week $weekNumber: " . $start->format('M j') . '-' . $end->format('j');
+    //         $amharicLabel = "ሳምንት $weekNumber: " . $start->format('M j') . '-' . $end->format('j');
+
+    //         $amount = $payments->filter(function ($payment) use ($start, $end) {
+    //             return $payment->created_at >= $start && $payment->created_at <= $end;
+    //         })->sum('total_for_the_month');
+
+    //         $weeklyData[] = [
+    //             'week_number' => $weekNumber,
+    //             'gregorian_label' => $gregorianLabel,
+    //             'amharic_label' => $amharicLabel,
+    //             'amount' => $amount,
+    //             'start_date' => $start,
+    //             'end_date' => $end
+    //         ];
+    //     }
+
+    //     return [
+    //         'labels' => array_column($weeklyData, 'gregorian_label'),
+    //         'amharic_labels' => array_column($weeklyData, 'amharic_label'),
+    //         'data' => array_column($weeklyData, 'amount'),
+    //         'detailed_data' => $weeklyData
+    //     ];
+    // }
 }
+
+
+
+@extends('backend.layouts.app')
+
+@section('title')
+    @lang('Date Encoders Performance Dashboard')
+@endsection
+
+@section('breadcrumbs')
+    <x-backend.breadcrumbs />
+@endsection
+
+@section('content')
+    <div class="card border-0 rounded-4 shadow-lg mb-4" style="background: linear-gradient(135deg, #007BFF, #00BFA5)">
+        <div class="card-body p-4">
+            <div class="row align-items-center text-white">
+                <div class="col-md-8">
+                    <div class="d-flex align-items-center flex-wrap mb-3">
+                        <h2 class="fw-bold m-0"><i class="fas fa-tachometer-alt me-2"></i> Data Encoding Performance Report
+                        </h2>
+                    </div>
+                    <p class="lead"><i class="far fa-clock me-2"></i> Data Encoders Performance Dashboard</p>
+                </div>
+
+                @if ($leader)
+                    <div class="col-md-4 text-center">
+                        <div class="leader-badge bg-warning p-3 rounded-4 shadow">
+                            <i class="fas fa-trophy fa-3x text-white mb-2"></i>
+                            <h4 class="text-white mb-1">Top Performer</h4>
+                            <h3 class="text-white">{{ $leader->name }}</h3>
+                            <p class="text-white mb-0">{{ $maxAgreements }} Rent Agreements</p>
+                        </div>
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+
+    @if ($cashiers->isEmpty())
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i> No cashiers found (excluding test accounts).
+        </div>
+    @else
+        <div class="row">
+            <!-- Rent Agreements Chart -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-file-contract me-2"></i> Rent Agreements Created</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="rentAgreementsChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rooms Chart -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-door-open me-2"></i> Rooms Registered</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="roomsChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tenants Chart -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="fas fa-users me-2"></i> Tenants Registered</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="tenantsChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Summary -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i> Performance Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="thead-light">
+                                    <tr>
+                                        <th>Cashier</th>
+                                        <th class="text-end">Agreements</th>
+                                        <th class="text-end">Rooms</th>
+                                        <th class="text-end">Tenants</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($cashiers as $index => $cashier)
+                                        <tr>
+                                            <td>{{ $cashier->name }}</td>
+                                            <td class="text-end">{{ $rentAgreementCounts[$index] }}</td>
+                                            <td class="text-end">{{ $roomCounts[$index] }}</td>
+                                            <td class="text-end">{{ $tenantCounts[$index] }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @push('after-scripts')
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script>
+            @if ($cashiers->isNotEmpty())
+                // Rent Agreements Chart
+                const rentCtx = document.getElementById('rentAgreementsChart').getContext('2d');
+                new Chart(rentCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: {!! json_encode($cashierNames) !!},
+                        datasets: [{
+                            label: 'Rent Agreements Created',
+                            data: {!! json_encode($rentAgreementCounts) !!},
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+
+                // Rooms Chart
+                const roomsCtx = document.getElementById('roomsChart').getContext('2d');
+                new Chart(roomsCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: {!! json_encode($cashierNames) !!},
+                        datasets: [{
+                            label: 'Rooms Registered',
+                            data: {!! json_encode($roomCounts) !!},
+                            backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+
+                // Tenants Chart
+                const tenantsCtx = document.getElementById('tenantsChart').getContext('2d');
+                new Chart(tenantsCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: {!! json_encode($cashierNames) !!},
+                        datasets: [{
+                            label: 'Tenants Registered',
+                            data: {!! json_encode($tenantCounts) !!},
+                            backgroundColor: 'rgba(153, 102, 255, 0.7)',
+                            borderColor: 'rgba(153, 102, 255, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            @endif
+        </script>
+    @endpush
+
+    @push('after-styles')
+        <style>
+            .leader-badge {
+                background: linear-gradient(135deg, #FFC107, #FF9800);
+                border: 3px solid white;
+            }
+
+            .card {
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                transition: all 0.3s ease;
+            }
+
+            .card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            }
+
+            .table-hover tbody tr:hover {
+                background-color: rgba(0, 123, 255, 0.05);
+            }
+        </style>
+    @endpush
+@endsection
