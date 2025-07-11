@@ -1,623 +1,496 @@
-<div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 space-y-6">
-    <!-- HEADER + FILTERS -->
-    <div class="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <!-- Top Section with Title and Pay Button -->
-        <div
-            class="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div class="flex items-center">
-                <div class="bg-white p-3 rounded-lg shadow-sm mr-4 border border-blue-200">
-                    <i class="fas fa-money-bill-wave text-blue-600 text-2xl"></i>
-                </div>
-                <div>
-                    <h2 class="text-2xl md:text-3xl font-bold text-gray-800">@lang('My Rent Payments')</h2>
-                    <p class="text-sm text-gray-600 mt-1">@lang('View and manage your rental payments')</p>
-                </div>
-            </div>
+<?php
 
-            <button wire:click="openPaymentModal"
-                class="w-full md:w-auto bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl px-6 py-3 flex items-center justify-center space-x-2 transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl">
-                <i class="fas fa-money-bill-wave text-lg"></i>
-                <span class="font-semibold">@lang('Pay Rent Now')</span>
-            </button>
-        </div>
+namespace App\Livewire\Rentagreement;
 
-        <!-- Bottom Section with Filters -->
-        <div class="border-t border-gray-200 px-6 py-4 bg-white">
-            <div class="flex flex-col md:flex-row gap-4 items-end">
-                <div class="w-full md:w-72">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">@lang('Select Agreement')</label>
-                    <div class="relative">
-                        <select wire:model="selectedAgreementId"
-                            class="appearance-none w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 px-4 py-3 pr-8 text-gray-700 transition duration-150 ease-in-out bg-white shadow-sm">
-                            <option value="">@lang('Select an agreement')</option>
-                            @foreach ($agreements as $agreementOption)
-                                <option value="{{ $agreementOption->id }}">
-                                    {{ $agreementOption->room->name }} -
-                                    {{ $agreementOption->room->site->name ?? __('No Site') }}
-                                </option>
-                            @endforeach
-                        </select>
-                        <div
-                            class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                            <i class="fas fa-chevron-down text-sm"></i>
-                        </div>
-                    </div>
-                </div>
+use Carbon\Carbon;
+use App\Models\User;
+use App\Models\EmployeeInfo;
+use App\Models\RentAgreement;
+use Livewire\WithFileUploads;
+use Modules\Room\Models\Room;
+use App\Notifications\NotifyCeo;
+use Illuminate\Support\Facades\DB;
+use Modules\Room\Models\RoomPrice;
+use Illuminate\Support\Facades\Gate;
+use LivewireUI\Modal\ModalComponent;
 
-                @if ($selectedAgreementId)
-                    <div class="w-full md:w-56">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">@lang('Filter Year')</label>
-                        <div class="relative">
-                            <select wire:model="yearFilter"
-                                class="appearance-none w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 px-4 py-3 pr-8 text-gray-700 transition duration-150 ease-in-out bg-white shadow-sm">
-                                @foreach ($years as $year)
-                                    <option value="{{ $year }}">{{ $year }}</option>
-                                @endforeach
-                            </select>
-                            <div
-                                class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                <i class="fas fa-chevron-down text-sm"></i>
-                            </div>
-                        </div>
-                    </div>
-                @endif
+class RentAgreementModal extends ModalComponent
+{
+    use WithFileUploads;
 
-                <div class="w-full md:w-auto flex-1 md:flex-none md:ml-auto">
-                    <div class="h-full flex items-end">
-                        <div class="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 text-center">
-                            <p class="text-xs font-medium text-blue-600">@lang('Current Unpaid')</p>
-                            <p class="text-lg font-bold text-blue-700">
-                                ${{ number_format(array_sum(array_column($unpaidMonths, 'total')), 2) }}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    public $agreementId;
+    public $isEdit = false;
+
+    public $tenant_id = '';
+    public $room_id = '';
+    public $start_date = '';
+    public $end_date = '';
+    public $purpose = '';
+    public $rent_amount = '';
+    public $agreement_file;
+    public $existing_file;
+    public $agreement;
+    public $show_end_date = false; // Control visibility
+
+
+    protected $rules = [
+        'tenant_id' => 'required|exists:employee_infos,id',
+        'room_id' => 'required|exists:rooms,id',
+        'start_date' => 'required|date',
+        'end_date' => 'required|date|after:start_date',
+        'purpose' => 'nullable|string|max:500',
+        'rent_amount' => 'required|numeric|min:0',
+        'agreement_file' => 'nullable|file|mimes:pdf|max:8200',
+    ];
+
+    protected function authorizeAction(string $action): bool
+    {
+        $permission = match ($action) {
+            'create' => 'add_rentagreements',
+            'update' => 'edit_rentagreements',
+            default => 'view_rentagreements'
+        };
+
+        if (!auth()->user()->can($permission)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You are not authorized to perform this action',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+    public function mount($agreementId = null)
+    {
+        $action = $agreementId ? 'update' : 'create';
+        if (!$this->authorizeAction($action)) {
+            $this->skipRender();
+            return;
+        }
+
+        if ($agreementId) {
+            $this->agreementId = $agreementId;
+            $this->isEdit = true;
+            $this->loadAgreement();
+        } else {
+            $this->start_date = now()->format('Y-m-d');
+            $this->end_date = now()->addYears(5)->format('Y-m-d'); // Fixed: changed addYear(5) to addYears(5)
+            $this->show_end_date = false; // Hide end date during creation
+        }
+    }
+    public function updatedStartDate($value)
+    {
+        if (!$this->isEdit && !empty($value)) {
+            try {
+                $this->end_date = Carbon::parse($value)->addYears(5)->format('Y-m-d');
+            } catch (\Exception $e) {
+                $this->dispatch('showToast', [
+                    'type' => 'error',
+                    'message' => 'Invalid Date.'
+                ]);
+            }
+        }
+    }
+
+    public function loadAgreement()
+    {
+        $this->agreement = RentAgreement::find($this->agreementId);
+
+        if ($this->agreement) {
+            $this->tenant_id = $this->agreement->tenant_id;
+            $this->room_id = $this->agreement->room_id;
+            $this->start_date = $this->agreement->start_date->format('Y-m-d');
+            $this->end_date = $this->agreement->end_date->format('Y-m-d');
+            $this->purpose = $this->agreement->purpose;
+            $this->rent_amount = $this->agreement->rent_amount;
+        }
+    }
+
+    public function updatedRoomId($value)
+    {
+        if ($value) {
+            $roomPrice = RoomPrice::where('room_id', $value)
+                ->whereNull('effective_to')
+                ->latest()
+                ->first();
+
+            if ($roomPrice) {
+                $this->rent_amount = $roomPrice->total_price;
+            }
+        }
+    }
+
+    public function save()
+    {
+        $action = $this->isEdit ? 'update' : 'create';
+        if (!$this->authorizeAction($action)) {
+            return;
+        }
+
+        $this->validate();
+
+        // Check room availability
+        if (!RentAgreement::isRoomAvailable(
+            $this->room_id,
+            $this->start_date,
+            $this->end_date,
+            $this->isEdit ? $this->agreementId : null
+        )) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The room is already occupied during the selected period'
+            ]);
+            return;
+        }
+
+        // Get current room price
+        $roomPrice = RoomPrice::where('room_id', $this->room_id)
+            ->whereNull('effective_to')
+            ->latest()
+            ->first();
+
+        if (!$roomPrice) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'No active price found for this room'
+            ]);
+            return;
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $data = [
+                'tenant_id' => $this->tenant_id,
+                'room_id' => $this->room_id,
+                'start_date' => $this->start_date,
+                'end_date' => $this->end_date,
+                'purpose' => $this->purpose,
+                'rent_amount' => $roomPrice->total_price,
+            ];
+
+            if ($this->isEdit) {
+                $agreement = RentAgreement::find($this->agreementId);
+                $agreement->update($data);
+
+                // Handle file upload for edit
+                if ($this->agreement_file) {
+                    $agreement->clearMediaCollection('agreement_files');
+                    $agreement->addMedia($this->agreement_file->getRealPath())
+                        ->usingName($this->agreement_file->getClientOriginalName())
+                        ->toMediaCollection('agreement_files');
+                }
+                $this->notifyCeo('updated', $agreement);
+
+
+                $message = 'Rent agreement updated successfully!';
+            } else {
+                $agreement = RentAgreement::create($data);
+
+                // Handle file upload for create
+                if ($this->agreement_file) {
+                    $agreement->addMedia($this->agreement_file->getRealPath())
+                        ->usingName($this->agreement_file->getClientOriginalName())
+                        ->toMediaCollection('agreement_files');
+                }
+                $this->notifyCeo('created', $agreement);
+
+                $message = 'Rent agreement created successfully!';
+            }
+
+            DB::commit();
+
+            $this->dispatch('refresh-rent-agreements');
+            $this->closeModal();
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => $message
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to save rent agreement: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    public function render()
+    {
+        $tenants = EmployeeInfo::orderBy('first_name')->get();
+        $rooms = Room::orderBy('name')->get();
+
+        return view('livewire.rentagreement.rent-agreement-modal', [
+            'tenants' => $tenants,
+            'rooms' => $rooms
+        ]);
+    }
+
+    public static function modalMaxWidth(): string
+    {
+        return '4xl';
+    }
+
+
+
+    protected function notifyCeo($action, RentAgreement $agreement)
+    {
+        $ceoUsers = User::role(['ceo', 'super admin'])->get();
+
+        $data = [
+            'tenant_name' => $agreement->tenant->full_name,
+            'room_name' => $agreement->room->name,
+            'rent_amount' => $agreement->rent_amount,
+        ];
+
+        foreach ($ceoUsers as $ceo) {
+            $ceo->notify(new NotifyCeo(
+                $action,
+                'Rent Agreement',
+                $data
+            ));
+        }
+    }
+}
+
+
+
+
+<div class="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-lg border border-gray-200">
+    <div class="flex justify-between items-center pb-4 border-b border-gray-200 mb-4">
+        <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+            <i class="fas fa-file-contract mr-2 text-blue-600"></i>
+            @if ($isEdit)
+                @lang('Edit Rental Agreement')
+            @else
+                @lang('Create New Rental Agreement')
+            @endif
+        </h2>
+        <button wire:click="$dispatch('closeModal')"
+            class="text-gray-500 hover:text-red-600 transition-colors duration-200 transform hover:scale-110">
+            <i class="fas fa-times-circle text-xl"></i>
+        </button>
     </div>
 
-    <!-- IF NO AGREEMENT SELECTED -->
-    @if (!$selectedAgreementId)
-        <div class="bg-white p-8 rounded-xl shadow-sm text-center border border-gray-100">
-            <div class="mx-auto w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-                <i class="fas fa-file-contract text-2xl text-blue-400"></i>
+    <form wire:submit.prevent="save" class="space-y-5">
+        <!-- Tenant and Room Selection -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Tenant Selection -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-user-tie mr-2 text-blue-500"></i> @lang('Tenant Information')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <select wire:model="tenant_id"
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
+                        <option value="">@lang('Select Tenant')</option>
+                        @foreach ($tenants as $tenant)
+                            <option value="{{ $tenant->id }}">{{ $tenant->full_name }} ({{ $tenant->employee_id }})
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                @error('tenant_id')
+                    <span class="text-sm text-red-500 flex items-center mt-1">
+                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                    </span>
+                @enderror
             </div>
-            <h3 class="text-xl font-semibold text-gray-700 mb-2">@lang('No Agreement Selected')</h3>
-            <p class="text-gray-500 max-w-md mx-auto">@lang('Please select a rental agreement to view payment details')</p>
+
+            <!-- Room Selection -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-door-open mr-2 text-blue-500"></i> @lang('Room Information')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <select wire:model="room_id"
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white transition">
+                        <option value="">@lang('Select Room')</option>
+                        @foreach ($rooms as $room)
+                            <option value="{{ $room->id }}">{{ $room->name }} ({{ $room->site->name ?? 'N/A' }})
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                @error('room_id')
+                    <span class="text-sm text-red-500 flex items-center mt-1">
+                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                    </span>
+                @enderror
+            </div>
         </div>
-    @else
-        <!-- AGREEMENT INFO CARD -->
-        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div class="p-3 bg-blue-50 rounded-lg">
-                    <p class="text-xs font-medium text-blue-600 uppercase tracking-wider">@lang('Room')</p>
-                    <p class="text-lg font-semibold text-gray-800 mt-1">{{ $agreement->room->name }}</p>
+
+        <!-- Dates and Price -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Start Date -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-calendar-day mr-2 text-blue-500"></i> @lang('Start Date')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-calendar"></i>
+                    </span>
+                    <input type="date" wire:model="start_date"
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                 </div>
-                <div class="p-3 bg-blue-50 rounded-lg">
-                    <p class="text-xs font-medium text-blue-600 uppercase tracking-wider">@lang('Monthly Rent')</p>
-                    <p class="text-lg font-semibold text-gray-800 mt-1">${{ number_format($agreement->rent_amount, 2) }}
-                    </p>
+                @error('start_date')
+                    <span class="text-sm text-red-500 flex items-center mt-1">
+                        <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                    </span>
+                @enderror
+            </div>
+
+            <!-- End Date -->
+
+            @if ($isEdit)
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                        <i class="fas fa-calendar-times mr-2 text-blue-500"></i> @lang('End Date')
+                    </h3>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                            <i class="fas fa-calendar"></i>
+                        </span>
+                        <input type="date" wire:model="end_date" min="{{ now()->format('Y-m-d') }}"
+                            class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                    </div>
+                    @error('end_date')
+                        <span class="text-sm text-red-500 flex items-center mt-1">
+                            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                        </span>
+                    @enderror
                 </div>
-                <div class="p-3 bg-blue-50 rounded-lg">
-                    <p class="text-xs font-medium text-blue-600 uppercase tracking-wider">@lang('Agreement Period')</p>
-                    @if (App::getLocale() == 'en')
-                        <p class="text-lg font-semibold text-gray-800 mt-1">
-                            {{ $agreement->start_date->format('M d, Y') }} -
-                            {{ $agreement->end_date ? $agreement->end_date->format('M d, Y') : __('Present') }}
-                        </p>
-                    @else
-                        <p class="text-lg font-semibold text-gray-800 mt-1">
-                            {{ $agreement->start_date ? gregorian_to_ethiopian($agreement->start_date) : __('Present') }}
-                            -
-                            {{ $agreement->end_date ? gregorian_to_ethiopian($agreement->end_date) : __('Present') }}
-                        </p>
+            @else
+                <input type="hidden" wire:model="end_date"> <!-- Hidden but still submitted -->
+            @endif
+
+
+
+            <!-- Room Price Display -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                    <i class="fas fa-money-bill-wave mr-2 text-blue-500"></i> @lang('Monthly Rent')
+                </h3>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fas fa-dollar-sign"></i>
+                    </span>
+                    <input type="text" wire:model="rent_amount" readonly
+                        class="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 bg-gray-100 font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                    @lang('Current room price (automatically set)')
+                </div>
+            </div>
+        </div>
+
+        <!-- Purpose -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                <i class="fas fa-info-circle mr-2 text-blue-500"></i> @lang('Intended Use')
+            </h3>
+            <div class="mb-2 text-sm text-gray-600">
+                @lang('Please describe how the room will be used (e.g., office, storage, meeting room)')
+            </div>
+            <textarea wire:model="purpose" rows="3"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                placeholder="@lang('Example: Office space for IT department')"></textarea>
+            @error('purpose')
+                <span class="text-sm text-red-500 flex items-center mt-1">
+                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                </span>
+            @enderror
+        </div>
+
+        <!-- Agreement File -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                <i class="fas fa-file-pdf mr-2 text-blue-500"></i> @lang('Agreement Document')
+            </h3>
+            <div class="mb-2 text-sm text-gray-600">
+                @lang('Upload the signed agreement document (PDF format, max 50MB)')
+            </div>
+
+            <!-- File Upload Input -->
+            <div class="relative">
+                <input type="file" wire:model="agreement_file" id="agreement_file" accept="application/pdf"
+                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                <div
+                    class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center transition hover:border-blue-500 hover:bg-blue-50">
+                    <div class="flex items-center justify-center">
+                        <i class="fas fa-cloud-upload-alt text-blue-500 text-2xl mr-2"></i>
+                        <span class="text-gray-700">
+                            @if ($agreement_file)
+                                {{ $agreement_file->getClientOriginalName() }}
+                            @else
+                                @lang('Click to select PDF file')
+                            @endif
+                        </span>
+                    </div>
+                    @if ($agreement_file)
+                        <button type="button" wire:click="$set('agreement_file', null)"
+                            class="mt-2 text-red-500 hover:text-red-700 text-sm">
+                            <i class="fas fa-times mr-1"></i> @lang('Remove file')
+                        </button>
                     @endif
                 </div>
             </div>
+
+            @error('agreement_file')
+                <span class="text-sm text-red-500 flex items-center mt-1">
+                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                </span>
+            @enderror
+
+            <!-- Show existing file -->
+            @if ($agreement?->hasMedia('agreement_files'))
+                <div class="mt-3 bg-blue-50 p-2 rounded flex items-center">
+                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
+                    <span class="text-blue-800">
+                        {{ $agreement->getFirstMedia('agreement_files')->name }}
+                    </span>
+                    <span class="ml-auto text-blue-600 hover:text-blue-800">
+                        <a href="{{ route('backend.rentagreements.viewAgreement', $agreement->id) }}" target="_blank"
+                            title="@lang('View current file')">
+                            <i class="fas fa-eye"></i>
+                        </a>
+                    </span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">
+                    @lang('Uploading a new file will replace the existing one')
+                </p>
+            @endif
         </div>
 
-        <!-- PAYMENT STATUS SUMMARY CARDS -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <!-- Unpaid Card -->
-            <div class="bg-red-50 border border-red-100 rounded-xl p-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs font-medium text-red-600 uppercase tracking-wider">@lang('Unpaid')</p>
-                        <p class="text-2xl font-bold text-red-700 mt-1">
-                            ${{ number_format(array_sum(array_column($unpaidMonths, 'total')), 2) }}
-                        </p>
-                        <p class="text-xs text-red-500 mt-1">{{ count($unpaidMonths) }} @lang('months')</p>
-                    </div>
-                    <div class="bg-red-100 p-3 rounded-lg">
-                        <i class="fas fa-exclamation-circle text-red-500 text-xl"></i>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Pending Card -->
-            @php
-                $pendingPayments = $paidMonths->flatten()->filter(fn($a) => $a->status === 'pending');
-                $pendingTotal = $pendingPayments->sum('total_for_the_month');
-            @endphp
-            <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs font-medium text-yellow-600 uppercase tracking-wider">@lang('Pending')</p>
-                        <p class="text-2xl font-bold text-yellow-700 mt-1">
-                            ${{ number_format($pendingTotal, 2) }}
-                        </p>
-                        <p class="text-xs text-yellow-500 mt-1">{{ $pendingPayments->count() }} @lang('payments')</p>
-                    </div>
-                    <div class="bg-yellow-100 p-3 rounded-lg">
-                        <i class="fas fa-clock text-yellow-500 text-xl"></i>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Rejected Card -->
-            @php
-                $rejectedPayments = $paidMonths->flatten()->filter(fn($a) => $a->status === 'rejected');
-                $rejectedTotal = $rejectedPayments->sum('total_for_the_month');
-            @endphp
-            <div class="bg-orange-50 border border-orange-100 rounded-xl p-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs font-medium text-orange-600 uppercase tracking-wider">@lang('Rejected')</p>
-                        <p class="text-2xl font-bold text-orange-700 mt-1">
-                            ${{ number_format($rejectedTotal, 2) }}
-                        </p>
-                        <p class="text-xs text-orange-500 mt-1">{{ $rejectedPayments->count() }} @lang('payments')</p>
-                    </div>
-                    <div class="bg-orange-100 p-3 rounded-lg">
-                        <i class="fas fa-times-circle text-orange-500 text-xl"></i>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Approved Card -->
-            @php
-                $approvedPayments = $paidMonths->flatten()->filter(fn($a) => $a->status === 'approved');
-                $approvedTotal = $approvedPayments->sum('total_for_the_month');
-            @endphp
-            <div class="bg-green-50 border border-green-100 rounded-xl p-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs font-medium text-green-600 uppercase tracking-wider">@lang('Approved')</p>
-                        <p class="text-2xl font-bold text-green-700 mt-1">
-                            ${{ number_format($approvedTotal, 2) }}
-                        </p>
-                        <p class="text-xs text-green-500 mt-1">{{ $approvedPayments->count() }} @lang('payments')</p>
-                    </div>
-                    <div class="bg-green-100 p-3 rounded-lg">
-                        <i class="fas fa-check-circle text-green-500 text-xl"></i>
-                    </div>
-                </div>
-            </div>
+        <!-- Form Actions -->
+        <div class="flex justify-end space-x-3 pt-4">
+            <button type="button" wire:click="$dispatch('closeModal')" wire:loading.attr="disabled"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                @lang('Cancel')
+            </button>
+            <button type="submit" wire:loading.attr="disabled"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                <span wire:loading.remove>
+                    @if ($isEdit)
+                        @lang('Update Agreement')
+                    @else
+                        @lang('Create Agreement')
+                    @endif
+                </span>
+                <span wire:loading>
+                    <i class="fas fa-spinner fa-spin me-1"></i> @lang('Processing...')
+                </span>
+            </button>
         </div>
-
-        <!-- UNPAID RENT SECTION -->
-        @if (!empty($unpaidMonths))
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div class="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-gray-50">
-                    <div class="flex items-center">
-                        <div class="bg-red-100 p-2 rounded-lg mr-3">
-                            <i class="fas fa-exclamation-circle text-red-500"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-gray-800">@lang('Unpaid Rent')</h3>
-                    </div>
-                    <span class="text-sm text-gray-500">@lang('Showing'): {{ $yearFilter }}</span>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Month')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Rent Amount')</th>
-
-
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Penalty')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Total Due')</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            @foreach ($unpaidMonths as $month)
-                                <tr class="hover:bg-gray-50 transition duration-150 ease-in-out">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @php
-                                            $combinedMonthYear = $month['month_name'] . ' ' . $month['year'];
-                                        @endphp
-                                        @if (App::getLocale() == 'en')
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ $combinedMonthYear }}
-                                            </div>
-                                        @else
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ gregorian_month_year_to_ethiopian($combinedMonthYear) }}
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            ${{ number_format($agreement->rent_amount, 2) }}</div>
-                                    </td>
-
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            ${{ number_format($month['penalty'], 2) }}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-semibold text-gray-900">
-                                            ${{ number_format($month['total'], 2) }}</div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                        <tfoot class="bg-red-50 font-semibold">
-                            <tr>
-                                <td colspan="3" class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    @lang('Total Amount Due')</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    ${{ number_format(array_sum(array_column($unpaidMonths, 'total')), 2) }}</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-
-                <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
-                    <button wire:click="openPaymentModal"
-                        class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-6 py-3 flex items-center space-x-2 transition duration-150 ease-in-out transform hover:scale-[1.02] shadow-md">
-                        <i class="fas fa-money-bill-wave"></i>
-                        <span>@lang('Pay Rent Now')</span>
-                    </button>
-                </div>
-            </div>
-        @endif
-
-        <!-- PENDING PAYMENTS SECTION -->
-        @if ($pendingPayments->count() > 0)
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div class="border-b border-gray-200 px-6 py-4 flex items-center bg-yellow-50">
-                    <div class="bg-yellow-100 p-2 rounded-lg mr-3">
-                        <i class="fas fa-clock text-yellow-500"></i>
-                    </div>
-                    <h3 class="text-lg font-bold text-gray-800">@lang('Pending Payments')</h3>
-                    <span class="ml-auto text-sm text-yellow-600">{{ $pendingPayments->count() }}
-                        @lang('payments')</span>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Month')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Amount')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('TTN')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Date Submitted')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Actions')</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            @foreach ($pendingPayments as $allocation)
-                                <tr class="hover:bg-gray-50 transition duration-150 ease-in-out">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @php
-                                            $month = \Carbon\Carbon::createFromDate(
-                                                $allocation->year_gregorian,
-                                                $allocation->month_gregorian,
-                                                1,
-                                            )->format('F Y');
-                                        @endphp
-                                        @if (App::getLocale() == 'en')
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ $month }}
-                                            </div>
-                                        @else
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ gregorian_month_year_to_ethiopian($month) }}
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-semibold text-gray-900">
-                                            ${{ number_format($allocation->total_for_the_month, 2) }}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if ($allocation->payment && $allocation->payment->ttn_number)
-                                            @php
-                                                $ttnUrl =
-                                                    config('app.ttn_url') .
-                                                    ($allocation->payment->ttn_number ?? '') .
-                                                    config('app.ttn_operator') .
-                                                    config('app.ttn_bank_last_8digit');
-                                            @endphp
-
-                                            <a href="{{ $ttnUrl }}" target="_blank"
-                                                class="badge bg-info-subtle text-info-emphasis rounded-pill">
-                                                {{ $allocation->payment->ttn_number }}
-                                            </a>
-                                        @else
-                                            <span class="text-gray-400">N/A</span>
-                                        @endif
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            @if ($allocation->payment && $allocation->payment->payment_date_gregorian)
-                                                @if (App::getLocale() == 'en')
-                                                    {{ \Carbon\Carbon::parse($allocation->payment->payment_date_gregorian)->format('M d, Y') }}
-                                                @else
-                                                    {{ gregorian_to_ethiopian($allocation->payment->payment_date_gregorian) }}
-                                                @endif
-                                            @else
-                                                N/A
-                                            @endif
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <div class="flex space-x-2">
-                                            <button wire:click="editPayment({{ $allocation->id }})"
-                                                class="text-blue-600 hover:text-blue-900">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                            <button wire:click="deletePayment({{ $allocation->id }})"
-                                                class="text-red-600 hover:text-red-900"
-                                                onclick="return confirm('@lang('Are you sure you want to delete this payment?')')">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        @endif
-
-        <!-- REJECTED PAYMENTS SECTION -->
-        @if ($rejectedPayments->count() > 0)
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div class="border-b border-gray-200 px-6 py-4 flex items-center bg-orange-50">
-                    <div class="bg-orange-100 p-2 rounded-lg mr-3">
-                        <i class="fas fa-times-circle text-orange-500"></i>
-                    </div>
-                    <h3 class="text-lg font-bold text-gray-800">@lang('Rejected Payments')</h3>
-                    <span class="ml-auto text-sm text-orange-600">{{ $rejectedPayments->count() }}
-                        @lang('payments')</span>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Month')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Amount')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('TTN')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Date Submitted')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Reason for Rejection')
-                                </th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Actions')</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            @foreach ($rejectedPayments as $allocation)
-                                <tr class="hover:bg-gray-50 transition duration-150 ease-in-out">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @php
-                                            $month = \Carbon\Carbon::createFromDate(
-                                                $allocation->year_gregorian,
-                                                $allocation->month_gregorian,
-                                                1,
-                                            )->format('F Y');
-                                        @endphp
-                                        @if (App::getLocale() == 'en')
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ $month }}
-                                            </div>
-                                        @else
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ gregorian_month_year_to_ethiopian($month) }}
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-semibold text-gray-900">
-                                            ${{ number_format($allocation->total_for_the_month, 2) }}</div>
-                                    </td>
-
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if ($allocation->payment && $allocation->payment->ttn_number)
-                                            <a href="https://apps.cbe.com.et:100/BranchReceipt/{{ $allocation->payment->ttn_number }}&14317418"
-                                                target="_blank"
-                                                class="text-blue-600 hover:text-blue-800 hover:underline">
-                                                {{ $allocation->payment->ttn_number }}
-                                            </a>
-                                        @else
-                                            <span class="text-gray-400">N/A</span>
-                                        @endif
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            @if ($allocation->payment && $allocation->payment->payment_date_gregorian)
-                                                @if (App::getLocale() == 'en')
-                                                    {{ \Carbon\Carbon::parse($allocation->payment->payment_date_gregorian)->format('M d, Y') }}
-                                                @else
-                                                    {{ gregorian_to_ethiopian($allocation->payment->payment_date_gregorian) }}
-                                                @endif
-                                            @else
-                                                N/A
-                                            @endif
-                                        </div>
-                                    </td>
-
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div
-                                            class="text-sm @if (!empty($allocation->reject_reason)) text-red-700 font-medium @else text-gray-500 @endif">
-                                            {{ $allocation->reject_reason ?? 'N/A' }}
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <div class="flex space-x-2">
-                                            <button wire:click="editPayment({{ $allocation->id }})"
-                                                class="text-blue-600 hover:text-blue-900">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                            <button wire:click="deletePayment({{ $allocation->id }})"
-                                                class="text-red-600 hover:text-red-900"
-                                                onclick="return confirm('@lang('Are you sure you want to delete this payment?')')">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        @endif
-
-        <!-- APPROVED PAYMENTS SECTION -->
-        @if ($approvedPayments->count() > 0)
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div class="border-b border-gray-200 px-6 py-4 flex items-center bg-green-50">
-                    <div class="bg-green-100 p-2 rounded-lg mr-3">
-                        <i class="fas fa-check-circle text-green-500"></i>
-                    </div>
-                    <h3 class="text-lg font-bold text-gray-800">@lang('Payment History')</h3>
-                    <span class="ml-auto text-sm text-green-600">{{ $approvedPayments->count() }}
-                        @lang('payments')</span>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Month')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Amount')</th>
-
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Penalty')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Total')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('TTN')</th>
-                                <th
-                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    @lang('Date Paid')</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            @foreach ($approvedPayments as $allocation)
-                                <tr class="hover:bg-gray-50 transition duration-150 ease-in-out">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @php
-                                            $month = \Carbon\Carbon::createFromDate(
-                                                $allocation->year_gregorian,
-                                                $allocation->month_gregorian,
-                                                1,
-                                            )->format('F Y');
-                                        @endphp
-                                        @if (App::getLocale() == 'en')
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ $month }}
-                                            </div>
-                                        @else
-                                            <div class="text-sm font-medium text-gray-900">
-                                                {{ gregorian_month_year_to_ethiopian($month) }}
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            ${{ number_format($allocation->rent_amount, 2) }}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            ${{ number_format($allocation->penalty_amount, 2) }}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            ${{ number_format($allocation->total_for_the_month, 2) }}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if ($allocation->payment && $allocation->payment->ttn_number)
-                                            <a href="https://apps.cbe.com.et:100/BranchReceipt/{{ $allocation->payment->ttn_number }}&14317418"
-                                                target="_blank"
-                                                class="text-blue-600 hover:text-blue-800 hover:underline">
-                                                {{ $allocation->payment->ttn_number }}
-                                            </a>
-                                        @else
-                                            <span class="text-gray-400">N/A</span>
-                                        @endif
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            @if ($allocation->payment && $allocation->payment->payment_date_gregorian)
-                                                @if (App::getLocale() == 'en')
-                                                    {{ \Carbon\Carbon::parse($allocation->payment->payment_date_gregorian)->format('M d, Y') }}
-                                                @else
-                                                    {{ gregorian_to_ethiopian($allocation->payment->payment_date_gregorian) }}
-                                                @endif
-                                            @else
-                                                N/A
-                                            @endif
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        @endif
-
-        <!-- EMPTY STATE FOR ALL SECTIONS -->
-        @if (empty($unpaidMonths) && $pendingPayments->isEmpty() && $rejectedPayments->isEmpty() && $approvedPayments->isEmpty())
-            <div class="bg-white p-8 rounded-xl shadow-sm text-center border border-gray-100">
-                <div class="mx-auto w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mb-4">
-                    <i class="fas fa-check-circle text-2xl text-green-400"></i>
-                </div>
-                <h3 class="text-xl font-semibold text-gray-700 mb-2">@lang('All Payments Up to Date')</h3>
-                <p class="text-gray-500 max-w-md mx-auto">@lang('You have no pending or unpaid rent payments for the selected agreement and year.')</p>
-            </div>
-        @endif
-    @endif
+    </form>
 </div>
