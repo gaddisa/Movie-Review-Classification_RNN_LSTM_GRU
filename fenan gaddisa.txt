@@ -1,20 +1,101 @@
-የገንደቆሬ  ገበያ ማዕከል መደብ	72	Liulseged Asfaw
-የዲፖ ገበያ ማዕከል	87	Nestanet Seyfu
-የሀምዳኤል ማምረቻ	13	Liulseged Asfaw
-ኮካ ማምረቻ ማዕከል	84	Mengistu Zelalem
-የቀርሳ ተራ ገበያ ማዕከል 	82	Liulseged Asfaw
-የገንደቆሬ  ገበያ ማዕከል ሱቅ	36	Liulseged Asfaw
-የሳቢያን ገበያ ማዕከል 	164	Mehadi Mohammed
-የመጋላ  ገበያ ማዕከል	70	Mengistu Zelalem
-የፓፓ ማምረቻ  ማዕከል 	36	Nestanet Seyfu
-የጎሮ ገበያ ማዕከል	41	Mengistu Zelalem
-የመልካ-ጀብዱ  ገበያ ማዕከል ሱቅ	29	Hiwot Ashenafi
-የመልካ-ጀብዱ  ማምረቻም	10	Mengistu Zelalem
-ገንደ ገራዳ ገበያ ማዕከል	64	Abu Alemayehu
-የማሽላ ተራ ማምረቻ1	24	Mehadi Mohammed
-የማሽላ ተራ ማምረቻ2	104	Mehadi Mohammed
-የሠፈረ-ሰላም ማምረቻ ማዕከል	15	Abu Alemayehu
-የጀርባ ሰፈር ገበያ ማዕከል 	41	Hiwot Ashenafi
-የኢንዱስት ማምረቻ ማዕከል	43	Hiwot Ashenafi
-የገንደ-ገበሬ ገበያ ማዕከል	91	Hiwot Ashenafi
-የጫት ተራ ገበያ ማዕከል 	126	Mehadi Mohammed
+<?php
+
+namespace App\Livewire;
+
+use App\Models\User;
+use Livewire\Component;
+use Livewire\WithPagination;
+use Spatie\Permission\Models\Role;
+
+class UsersIndex extends Component
+{
+    use WithPagination;
+
+    public $searchTerm = '';
+    public $roleFilter = '';
+    public $perPage = 10; // Explicit pagination setting
+
+    protected $paginationTheme = 'bootstrap';
+
+    // Reset page when filters change
+    public function updatingSearchTerm() { $this->resetPage(); }
+    public function updatingRoleFilter() { $this->resetPage(); }
+    public function updatingPerPage() { $this->resetPage(); }
+
+    public function render()
+    {
+        $query = User::query()
+            ->when($this->searchTerm, function ($query) {
+                $query->where(function($q) {
+                    $q->where('name', 'like', '%'.$this->searchTerm.'%')
+                      ->orWhere('email', 'like', '%'.$this->searchTerm.'%');
+                });
+            })
+            ->when($this->roleFilter, function ($query) {
+                $query->whereHas('roles', function($q) {
+                    $q->where('name', $this->roleFilter);
+                });
+            })
+            ->orderBy('id', 'desc');
+
+        // Optimized eager loading
+        $users = $query->with([
+            'roles' => fn($q) => $q->select('id', 'name'),
+            'permissions' => fn($q) => $q->select('id', 'name'),
+            'providers' => fn($q) => $q->select('user_id', 'provider')
+        ])->paginate($this->perPage);
+
+        $roles = Role::all(['id', 'name']);
+
+        return view('livewire.users-index', compact('users', 'roles'));
+    }
+}
+
+
+<?php
+
+namespace App\Livewire;
+
+use App\Models\User;
+use Livewire\Component;
+use Livewire\WithPagination;
+use Spatie\Permission\Models\Role;
+
+class UsersIndex extends Component
+{
+    use WithPagination;
+
+    public $searchTerm = '';
+    public $roleFilter = '';
+
+    protected $paginationTheme = 'bootstrap';
+
+    // Reset page when search or filter changes
+    public function updated($property)
+    {
+        if (in_array($property, ['searchTerm', 'roleFilter'])) {
+            $this->resetPage();
+        }
+    }
+
+    public function render()
+    {
+        $users = User::query()
+            ->when($this->searchTerm, function ($query) {
+                $query->where(function($q) {
+                    $q->where('name', 'like', '%' . $this->searchTerm . '%')
+                      ->orWhere('email', 'like', '%' . $this->searchTerm . '%');
+                });
+            })
+            ->when($this->roleFilter, function ($query) {
+                $query->role($this->roleFilter);
+            })
+            ->orderBy('id', 'desc')
+            ->with(['permissions', 'roles', 'providers'])
+            ->paginate(10); // Explicit pagination count
+
+        $roles = Role::all();
+
+        return view('livewire.users-index', compact('users', 'roles'));
+    }
+}
