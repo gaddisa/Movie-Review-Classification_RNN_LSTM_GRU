@@ -1,10 +1,1 @@
--- First, delete all existing permissions from CEO role
-DELETE FROM role_has_permissions 
-WHERE role_id = (SELECT id FROM roles WHERE name = 'ceo');
 
--- Then insert all cashier permissions into CEO role
-INSERT INTO role_has_permissions (permission_id, role_id)
-SELECT permission_id, 
-       (SELECT id FROM roles WHERE name = 'ceo') AS role_id
-FROM role_has_permissions
-WHERE role_id = (SELECT id FROM roles WHERE name = 'cashier');
