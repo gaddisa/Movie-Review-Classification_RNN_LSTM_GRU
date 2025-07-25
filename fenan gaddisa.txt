@@ -1,1 +1,516 @@
+<?php
 
+namespace App\Livewire\Payment;
+
+use Carbon\Carbon;
+use App\Models\User;
+use App\Models\Payment;
+use Livewire\Component;
+use App\Models\EmployeeInfo;
+use App\Models\RentAgreement;
+use App\Models\PaymentAllocation;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
+use LivewireUI\Modal\ModalComponent;
+use App\Notifications\GeneralNotification;
+
+class TenantsPaymentModal extends ModalComponent
+{
+    public $agreementId;
+    public $selectedMonths = [];
+    public $totalAmountDue;
+    public $amountToPay;
+    public $ttnNumber;
+    public $paymentDate;
+    public $paymentId = null;
+    public $allocationId = null;
+    public $isEdit = false;
+
+    public $rentAmount;
+    public $minimumPayment;
+
+    protected $rules = [
+        'ttnNumber' => ['required', 'string', 'max:15', 'regex:/^[a-zA-Z0-9]+$/'],
+        'paymentDate' => 'required|date',
+        'amountToPay' => 'required|numeric|min:0',
+    ];
+
+    public function mount($agreementId, $selectedMonths, $totalAmount, $paymentId = null, $allocationId = null)
+    {
+        $this->agreementId = $agreementId;
+        $this->selectedMonths = $selectedMonths;
+        $this->totalAmountDue = (float)$totalAmount;
+        $this->paymentDate = now()->format('Y-m-d');
+        $this->amountToPay = (float)$totalAmount;
+        $this->paymentId = $paymentId;
+        $this->allocationId = $allocationId;
+        $this->isEdit = !is_null($paymentId);
+
+        $this->initializePaymentData();
+    }
+
+    protected function initializePaymentData()
+    {
+        try {
+            DB::beginTransaction();
+
+            $agreement = RentAgreement::with('tenant')->findOrFail($this->agreementId);
+            $currentEmployee = EmployeeInfo::where('user_id', auth()->id())->firstOrFail();
+
+            $this->verifyTenantOwnership($agreement, $currentEmployee);
+
+            $this->rentAmount = $agreement->rent_amount;
+
+            if ($this->isEdit) {
+                $this->loadExistingPayment();
+            }
+
+            $this->calculateMinimumPayment();
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $this->handleError('Payment initialization failed', $e);
+            $this->closeModal();
+        }
+    }
+
+    protected function verifyTenantOwnership($agreement, $employee)
+    {
+        if ($agreement->tenant_id != $employee->id) {
+            abort(403, 'You are not authorized to access this agreement');
+        }
+
+        if ($this->isEdit) {
+            $payment = Payment::findOrFail($this->paymentId);
+            if ($payment->created_by != auth()->id()) {
+                abort(403, 'You can only edit your own payments');
+            }
+        }
+    }
+
+    protected function loadExistingPayment()
+    {
+        $payment = Payment::findOrFail($this->paymentId);
+        $this->ttnNumber = $payment->ttn_number;
+        $this->paymentDate = $payment->payment_date_gregorian->format('Y-m-d');
+        $this->amountToPay = $payment->total_amount;
+    }
+
+    protected function calculateMinimumPayment()
+    {
+        $monthsWithPenalty = array_filter($this->selectedMonths, function ($month) {
+            return $this->calculatePenalty($month['year'], $month['month'], $this->rentAmount) > 0;
+        });
+
+        $penaltyTotal = array_sum(array_column($monthsWithPenalty, 'total'));
+        $this->minimumPayment = $penaltyTotal > 0 ? $penaltyTotal : $this->rentAmount;
+
+        $this->rules['amountToPay'] = [
+            'required',
+            'numeric',
+            'min:' . $this->minimumPayment,
+            'max:' . $this->totalAmountDue
+        ];
+    }
+
+    public function updated($property, $value)
+    {
+        if ($property === 'amountToPay') {
+            $this->validateOnly('amountToPay');
+        }
+    }
+
+    public function submitPayment()
+    {
+        $this->validate();
+
+        // Clean TTN only once
+        $cleanedTtn = strtoupper(preg_replace('/\s+/', '', $this->ttnNumber));
+
+        // Check uniqueness
+        if (Payment::ttnExistsInApproved($cleanedTtn, $this->isEdit ? $this->paymentId : null)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The TTN is already used in an approved payment.'
+            ]);
+            return;
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $agreement = RentAgreement::with('tenant')->findOrFail($this->agreementId);
+            $currentEmployee = EmployeeInfo::where('user_id', auth()->id())->firstOrFail();
+
+            $this->verifyTenantOwnership($agreement, $currentEmployee);
+
+            if ($this->isEdit) {
+                $payment = $this->updateExistingPayment();
+            } else {
+                $payment = $this->createNewPayment();
+            }
+
+            $this->processPaymentAllocations($payment);
+
+            DB::commit();
+
+            // Notify admins about the payment submission or update
+            $this->notifyAdminsAboutPayment($payment, $this->isEdit ? 'updated' : 'submitted');
+
+            $this->dispatch('payment-processed');
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => 'Payment ' . ($this->isEdit ? 'updated' : 'submitted') . ' successfully!'
+            ]);
+            $this->closeModal();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $this->handleError('Payment processing failed', $e);
+        }
+    }
+
+    protected function updateExistingPayment()
+    {
+        $payment = Payment::findOrFail($this->paymentId);
+
+        // Clean the TTN: remove all whitespace and convert to uppercase
+        $cleanedTtn = strtoupper(preg_replace('/\s+/', '', $this->ttnNumber));
+        // Check uniqueness
+        if (Payment::ttnExistsInApproved($cleanedTtn, $this->isEdit ? $this->paymentId : null)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The TTN is already used in an approved payment.'
+            ]);
+            return;
+        }
+
+        $payment->update([
+            'ttn_number' => $cleanedTtn,
+            'total_amount' => $this->amountToPay,
+            'payment_date_gregorian' => $this->paymentDate,
+            'status' => 'pending',
+            'updated_by' => Auth::id(),
+        ]);
+
+        // Delete previous allocations
+        PaymentAllocation::where('payment_id', $payment->id)->delete();
+        // Notify CEO and Cashiers about payment update
+        $this->notifyAdminsAboutPayment($payment, 'updated');
+        return $payment;
+    }
+
+    protected function createNewPayment()
+    {
+        // Clean the TTN: remove all whitespace and convert to uppercase
+        $cleanedTtn = strtoupper(preg_replace('/\s+/', '', $this->ttnNumber));
+
+        return Payment::create([
+            'agreement_id' => $this->agreementId,
+            'ttn_number' => $cleanedTtn,
+            'total_amount' => $this->amountToPay,
+            'payment_date_gregorian' => $this->paymentDate,
+            'status' => 'pending',
+            'created_by' => Auth::id(),
+        ]);
+    }
+
+    protected function processPaymentAllocations(Payment $payment)
+    {
+        $remainingAmount = $this->amountToPay;
+
+        foreach ($this->selectedMonths as $month) {
+            if ($remainingAmount <= 0) break;
+
+            $penalty = $this->calculatePenalty($month['year'], $month['month'], $this->rentAmount);
+            $totalForMonth = $this->rentAmount + $penalty;
+            $amountToAllocate = min($totalForMonth, $remainingAmount);
+
+            PaymentAllocation::create([
+                'payment_id' => $payment->id,
+                'agreement_id' => $this->agreementId,
+                'year_gregorian' => $month['year'],
+                'month_gregorian' => $month['month'],
+                'penalty_amount' => $penalty,
+                'rent_amount' => $this->rentAmount,
+                'total_for_the_month' => $totalForMonth,
+                'amount_paid' => $amountToAllocate,
+                'status' => 'pending',
+            ]);
+
+            $remainingAmount -= $amountToAllocate;
+        }
+    }
+
+    protected function calculatePenalty($year, $month, $rentAmount)
+    {
+        $monthDate = Carbon::create($year, $month, 1)->endOfMonth();
+        $diffInMonths = $monthDate->diffInMonths(now());
+        return $diffInMonths >= 3 ? $rentAmount * 0.10 : 0;
+    }
+
+    protected function handleError(string $context, \Exception $e)
+    {
+        Log::error($context, [
+            'error' => $e->getMessage(),
+            'agreement_id' => $this->agreementId,
+            'payment_id' => $this->paymentId,
+            'user_id' => Auth::id()
+        ]);
+        $this->dispatch('showToast', [
+            'type' => 'error',
+            'message' => $e->getMessage()
+        ]);
+    }
+
+    public static function modalMaxWidth(): string
+    {
+        return '2xl';
+    }
+
+    public function render()
+    {
+        try {
+            $agreement = RentAgreement::with(['tenant', 'room'])->findOrFail($this->agreementId);
+            $currentEmployee = EmployeeInfo::where('user_id', auth()->id())->firstOrFail();
+
+            $this->verifyTenantOwnership($agreement, $currentEmployee);
+
+            return view('livewire.payment.tenants-payment-modal', [
+                'agreement' => $agreement,
+            ]);
+        } catch (\Exception $e) {
+            $this->handleError('Render failed', $e);
+            return view('livewire.payment.tenants-payment-modal', ['agreement' => null]);
+        }
+    }
+
+    protected function notifyAdminsAboutPayment(Payment $payment, string $action)
+    {
+        try {
+            // Get the tenant directly from the agreement
+            $tenant = EmployeeInfo::find($payment->agreement_id);
+
+            $data = [
+                'title' => ucfirst($action) . ' Rent Payment',
+                'message' => sprintf(
+                    '%s %s a rent payment of %s (TTN: %s)',
+                    auth()->user()->name,
+                    $action,
+                    $payment->total_amount,
+                    $payment->ttn_number
+                ),
+                'module' => 'Rent Payment',
+                'type' => $action,
+                'icon' => 'fas fa-money-bill-wave',
+                'url_backend' => route('backend.paymentreports.index'),
+                'url_frontend' => '',
+            ];
+
+            // Get admin users (CEO, Cashier, Super Admin)
+            $admins = User::role(['ceo', 'cashier', 'deputy director', 'super admin'])->get();
+
+            foreach ($admins as $admin) {
+                $admin->notify(new GeneralNotification($data));
+            }
+        } catch (\Exception $e) {
+            Log::error('Payment notification failed', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+}
+
+
+
+<div class="bg-white rounded-xl shadow-xl p-6 max-h-[90vh] overflow-y-auto w-full max-w-md md:max-w-xl">
+    <!-- Modal Header -->
+    <div class="flex items-start justify-between mb-6">
+        <div>
+            <div class="flex items-center">
+                <div class="bg-blue-100 p-2 rounded-lg mr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-gray-800">@lang($isEdit ? 'Edit Payment' : 'Submit Payment')</h3>
+                    <p class="text-sm text-gray-500 mt-1">@lang('Complete the form to submit your rent payment')</p>
+                </div>
+            </div>
+        </div>
+        <button wire:click="$dispatch('closeModal')"
+            class="text-gray-400 hover:text-gray-500 transition-colors focus:outline-none">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Payment Summary Card -->
+    <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 mb-6">
+        <h4 class="font-medium text-blue-800 mb-3 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+            </svg>
+            @lang('Payment Summary')
+        </h4>
+
+        <div class="space-y-3">
+            <div class="flex justify-between">
+                <span class="text-sm text-gray-600">@lang('Room'):</span>
+                <span class="text-sm font-medium">{{ $agreement->room->name }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-sm text-gray-600">@lang('Monthly Rent'):</span>
+                <span class="text-sm font-medium">${{ $agreement->rent_amount }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-sm text-gray-600">@lang('Selected Months'):</span>
+                <span class="text-sm font-medium">{{ count($selectedMonths) }}</span>
+            </div>
+            <div class="flex justify-between border-t border-blue-100 pt-2 mt-2">
+                <span class="text-sm font-medium text-gray-700">@lang('Total Due'):</span>
+                <span class="text-sm font-semibold">${{ $totalAmountDue }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-sm font-medium text-red-600">@lang('Minimum Payment'):</span>
+                <span class="text-sm font-semibold text-red-600">${{ $minimumPayment }}</span>
+            </div>
+        </div>
+
+        <div class="mt-4 bg-yellow-50/50 border-l-4 border-yellow-400 p-3 rounded-r">
+            <div class="flex">
+                <div class="flex-shrink-0 text-yellow-500 mt-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-yellow-700">
+                        @lang('You must pay at least $:amount to cover months with penalties', ['amount' => $minimumPayment])
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Form -->
+    <form wire:submit.prevent="submitPayment" class="space-y-4">
+        <!-- Amount to Pay -->
+        <div>
+            <label for="amountToPay" class="block text-sm font-medium text-gray-700 mb-1">@lang('Amount to Pay') *</label>
+            <div class="relative rounded-lg shadow-sm">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span class="text-gray-500">$</span>
+                </div>
+                <input type="number" id="amountToPay" wire:model.lazy="amountToPay" step="any"
+                    min="{{ $minimumPayment }}" max="{{ $totalAmountDue }}"
+                    class="block w-full pl-9 pr-16 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 @error('amountToPay') border-red-300 text-red-900 placeholder-red-300 focus:outline-none focus:ring-red-500 focus:border-red-500 @enderror"
+                    placeholder="0.00" aria-describedby="amount-helper">
+                <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <span class="text-gray-500 text-sm">
+                        @lang('of $:amount', ['amount' => $totalAmountDue])
+                    </span>
+                </div>
+            </div>
+            @error('amountToPay')
+                <p class="mt-1 text-sm text-red-600" id="amount-error">
+                    @if ($message == 'The amount to pay must be at least ' . $minimumPayment)
+                        @lang('Amount must be at least $:amount', ['amount' => $minimumPayment])
+                    @elseif($message == 'The amount to pay may not be greater than ' . $totalAmountDue)
+                        @lang('Amount cannot exceed $:amount', ['amount' => $totalAmountDue])
+                    @else
+                        @lang('Please enter a valid amount')
+                    @endif
+                </p>
+            @enderror
+        </div>
+
+        <!-- Payment Reference -->
+        <div>
+            <label for="ttnNumber" class="block text-sm font-medium text-gray-700 mb-1">@lang('Payment Reference') *</label>
+            <div class="relative rounded-lg shadow-sm">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                </div>
+                <input type="text" id="ttnNumber" wire:model.lazy="ttnNumber"
+                    class="block w-full pl-10 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 @error('ttnNumber') border-red-300 text-red-900 placeholder-red-300 focus:outline-none focus:ring-red-500 focus:border-red-500 @enderror"
+                    placeholder="@lang('Transaction number')" aria-describedby="reference-helper">
+            </div>
+            @error('ttnNumber')
+                <p class="mt-1 text-sm text-red-600" id="reference-error">@lang('Payment reference is required')</p>
+            @enderror
+            <p class="mt-1 text-sm text-gray-500" id="reference-helper">
+                @lang('Enter your bank transaction reference number')
+            </p>
+        </div>
+
+        <!-- Payment Date -->
+        <div>
+            <label for="paymentDate" class="block text-sm font-medium text-gray-700 mb-1">@lang('Payment Date') *</label>
+            <div class="relative rounded-lg shadow-sm">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                </div>
+                <input type="date" id="paymentDate" wire:model.lazy="paymentDate"
+                    class="block w-full pl-10 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 @error('paymentDate') border-red-300 text-red-900 placeholder-red-300 focus:outline-none focus:ring-red-500 focus:border-red-500 @enderror"
+                    aria-describedby="date-helper">
+            </div>
+            @error('paymentDate')
+                <p class="mt-1 text-sm text-red-600" id="date-error">
+                    @if ($message == 'The payment date field is required')
+                        @lang('Payment date is required')
+                    @else
+                        @lang('Please enter a valid date')
+                    @endif
+                </p>
+            @enderror
+            <p class="mt-1 text-sm text-gray-500" id="date-helper">
+                @lang('Date when the payment was made')
+            </p>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="pt-4 flex justify-end space-x-3 border-t border-gray-200 mt-6">
+            <button type="button" wire:click="$dispatch('closeModal')" wire:loading.attr="disabled"
+                class="px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                @lang('Cancel')
+            </button>
+            <button type="submit" wire:loading.attr="disabled"
+                class="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center disabled:opacity-75">
+                <svg wire:loading wire:target="submitPayment" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                        stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                <svg wire:loading.remove wire:target="submitPayment" xmlns="http://www.w3.org/2000/svg"
+                    class="-ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 10h18m-6 5v5m-8-5v5m4-15v15m4-15v15" />
+                </svg>
+                @lang($isEdit ? 'Update Payment' : 'Submit Payment')
+            </button>
+        </div>
+    </form>
+</div>
