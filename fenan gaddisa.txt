@@ -104,16 +104,12 @@ class TenantsPaymentModal extends ModalComponent
             return $this->calculatePenalty($month['year'], $month['month'], $this->rentAmount) > 0;
         });
 
-        // Calculate total rent for penalized months
-        $totalRent = count($monthsWithPenths) * $this->rentAmount;
-        
-        // Calculate total penalty
-        $totalPenalty = 0;
+        $penaltyTotal = 0;
         foreach ($monthsWithPenalty as $month) {
-            $totalPenalty += $this->calculatePenalty($month['year'], $month['month'], $this->rentAmount);
+            $penaltyTotal += $this->calculatePenalty($month['year'], $month['month'], $this->rentAmount);
         }
         
-        $this->minimumPayment = $totalRent + $totalPenalty;
+        $this->minimumPayment = (count($monthsWithPenalty) * $this->rentAmount) + $penaltyTotal;
 
         $this->rules['amountToPay'] = [
             'required',
@@ -123,22 +119,107 @@ class TenantsPaymentModal extends ModalComponent
         ];
     }
 
-    protected function calculatePenalty($year, $month, $rentAmount)
+    public function updated($property, $value)
     {
-        $monthDate = Carbon::create($year, $month, 1)->endOfMonth();
-        $diffInMonths = $monthDate->diffInMonths(now());
-        return $diffInMonths >= 3 ? $rentAmount * 0.10 : 0;
+        if ($property === 'amountToPay') {
+            $this->validateOnly('amountToPay');
+        }
+    }
+
+    public function submitPayment()
+    {
+        $this->validate();
+
+        $cleanedTtn = strtoupper(preg_replace('/\s+/', '', $this->ttnNumber));
+
+        if (Payment::ttnExistsInApproved($cleanedTtn, $this->isEdit ? $this->paymentId : null)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The TTN is already used in an approved payment.'
+            ]);
+            return;
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $agreement = RentAgreement::with('tenant')->findOrFail($this->agreementId);
+            $currentEmployee = EmployeeInfo::where('user_id', auth()->id())->firstOrFail();
+
+            $this->verifyTenantOwnership($agreement, $currentEmployee);
+
+            if ($this->isEdit) {
+                $payment = $this->updateExistingPayment();
+            } else {
+                $payment = $this->createNewPayment();
+            }
+
+            $this->processPaymentAllocations($payment);
+
+            DB::commit();
+
+            $this->notifyAdminsAboutPayment($payment, $this->isEdit ? 'updated' : 'submitted');
+
+            $this->dispatch('payment-processed');
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => 'Payment ' . ($this->isEdit ? 'updated' : 'submitted') . ' successfully!'
+            ]);
+            $this->closeModal();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $this->handleError('Payment processing failed', $e);
+        }
+    }
+
+    protected function updateExistingPayment()
+    {
+        $payment = Payment::findOrFail($this->paymentId);
+
+        $cleanedTtn = strtoupper(preg_replace('/\s+/', '', $this->ttnNumber));
+        if (Payment::ttnExistsInApproved($cleanedTtn, $this->isEdit ? $this->paymentId : null)) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'The TTN is already used in an approved payment.'
+            ]);
+            return;
+        }
+
+        $payment->update([
+            'ttn_number' => $cleanedTtn,
+            'total_amount' => $this->amountToPay,
+            'payment_date_gregorian' => $this->paymentDate,
+            'status' => 'pending',
+            'updated_by' => Auth::id(),
+        ]);
+
+        PaymentAllocation::where('payment_id', $payment->id)->delete();
+        return $payment;
+    }
+
+    protected function createNewPayment()
+    {
+        $cleanedTtn = strtoupper(preg_replace('/\s+/', '', $this->ttnNumber));
+
+        return Payment::create([
+            'agreement_id' => $this->agreementId,
+            'ttn_number' => $cleanedTtn,
+            'total_amount' => $this->amountToPay,
+            'payment_date_gregorian' => $this->paymentDate,
+            'status' => 'pending',
+            'created_by' => Auth::id(),
+        ]);
     }
 
     protected function processPaymentAllocations(Payment $payment)
     {
         $remainingAmount = $this->amountToPay;
 
-        // Sort months chronologically (oldest first)
+        // Sort by year and month (oldest first)
         usort($this->selectedMonths, function ($a, $b) {
             $dateA = Carbon::create($a['year'], $a['month'], 1);
             $dateB = Carbon::create($b['year'], $b['month'], 1);
-            return $dateA->gt($dateB) ? 1 : -1;
+            return $dateA <=> $dateB;
         });
 
         foreach ($this->selectedMonths as $month) {
@@ -164,7 +245,80 @@ class TenantsPaymentModal extends ModalComponent
         }
     }
 
-    // ... [rest of the methods remain exactly the same as in your original code]
-    // Keep all other methods exactly as they were in your original component
-    // including submitPayment, updateExistingPayment, createNewPayment, etc.
+    protected function calculatePenalty($year, $month, $rentAmount)
+    {
+        $monthDate = Carbon::create($year, $month, 1)->endOfMonth();
+        $diffInMonths = $monthDate->diffInMonths(now());
+        return $diffInMonths >= 3 ? $rentAmount * 0.10 : 0;
+    }
+
+    protected function handleError(string $context, \Exception $e)
+    {
+        Log::error($context, [
+            'error' => $e->getMessage(),
+            'agreement_id' => $this->agreementId,
+            'payment_id' => $this->paymentId,
+            'user_id' => Auth::id()
+        ]);
+        $this->dispatch('showToast', [
+            'type' => 'error',
+            'message' => $e->getMessage()
+        ]);
+    }
+
+    protected function notifyAdminsAboutPayment(Payment $payment, string $action)
+    {
+        try {
+            $tenant = EmployeeInfo::find($payment->agreement_id);
+
+            $data = [
+                'title' => ucfirst($action) . ' Rent Payment',
+                'message' => sprintf(
+                    '%s %s a rent payment of %s (TTN: %s)',
+                    auth()->user()->name,
+                    $action,
+                    $payment->total_amount,
+                    $payment->ttn_number
+                ),
+                'module' => 'Rent Payment',
+                'type' => $action,
+                'icon' => 'fas fa-money-bill-wave',
+                'url_backend' => route('backend.paymentreports.index'),
+                'url_frontend' => '',
+            ];
+
+            $admins = User::role(['ceo', 'cashier', 'deputy director', 'super admin'])->get();
+
+            foreach ($admins as $admin) {
+                $admin->notify(new GeneralNotification($data));
+            }
+        } catch (\Exception $e) {
+            Log::error('Payment notification failed', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public static function modalMaxWidth(): string
+    {
+        return '2xl';
+    }
+
+    public function render()
+    {
+        try {
+            $agreement = RentAgreement::with(['tenant', 'room'])->findOrFail($this->agreementId);
+            $currentEmployee = EmployeeInfo::where('user_id', auth()->id())->firstOrFail();
+
+            $this->verifyTenantOwnership($agreement, $currentEmployee);
+
+            return view('livewire.payment.tenants-payment-modal', [
+                'agreement' => $agreement,
+            ]);
+        } catch (\Exception $e) {
+            $this->handleError('Render failed', $e);
+            return view('livewire.payment.tenants-payment-modal', ['agreement' => null]);
+        }
+    }
 }
