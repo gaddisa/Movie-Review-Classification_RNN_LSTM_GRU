@@ -1,11 +1,10 @@
-<?php
-
 return [
 
+    'name' => env('APP_NAME', 'Fix My Dire'),
     'manifest' => [
 
-        'name' => env('APP_NAME', 'Fix My Dire'),
-        'short_name' => 'FMD',
+        'name' => 'Fix My Dire',
+        'short_name' => 'FixDire',
         'start_url' => '/',
         'background_color' => '#ffffff',
         'theme_color' => '#0d6efd',
@@ -13,68 +12,44 @@ return [
         'orientation' => 'portrait',
         'status_bar' => 'black',
 
-        // Icons (Choose universal ones or Android-focused)
         'icons' => [
+            '48x48' => [
+                'path' => '/pwa/android/android-launchericon-48-48.png',
+                'purpose' => 'any',
+            ],
             '72x72' => [
-                'path' => '/images/icons/android/icon-72x72.png',
-                'purpose' => 'any',
-            ],
-            '96x96' => [
-                'path' => '/images/icons/android/icon-96x96.png',
-                'purpose' => 'any',
-            ],
-            '128x128' => [
-                'path' => '/images/icons/android/icon-128x128.png',
+                'path' => '/pwa/android/android-launchericon-72-72.png',
                 'purpose' => 'any',
             ],
             '144x144' => [
-                'path' => '/images/icons/android/icon-144x144.png',
-                'purpose' => 'any',
-            ],
-            '192x192' => [
-                'path' => '/images/icons/android/icon-192x192.png',
+                'path' => '/pwa/android/android-launchericon-144-144.png',
                 'purpose' => 'any',
             ],
             '512x512' => [
-                'path' => '/images/icons/android/icon-512x512.png',
+                'path' => '/pwa/android/android-launchericon-512-512.png',
                 'purpose' => 'any',
             ],
         ],
 
-        // Splash screens (iOS-focused)
         'splash' => [
-            '640x1136' => '/images/icons/ios/splash-640x1136.png',
-            '750x1334' => '/images/icons/ios/splash-750x1334.png',
-            '828x1792' => '/images/icons/ios/splash-828x1792.png',
-            '1125x2436' => '/images/icons/ios/splash-1125x2436.png',
-            '1242x2208' => '/images/icons/ios/splash-1242x2208.png',
-            '1242x2688' => '/images/icons/ios/splash-1242x2688.png',
-            '1536x2048' => '/images/icons/ios/splash-1536x2048.png',
-            '1668x2224' => '/images/icons/ios/splash-1668x2224.png',
-            '1668x2388' => '/images/icons/ios/splash-1668x2388.png',
-            '2048x2732' => '/images/icons/ios/splash-2048x2732.png',
+            '144x144' => '/pwa/ios/144.png',
+            '256x256' => '/pwa/ios/256.png',
         ],
 
-        // Windows tiles (optional - used by Windows 10/11)
         'custom' => [
-            'ms_tile_image' => '/images/icons/windows/tile-144x144.png',
             'ms_tile_color' => '#0d6efd',
+            'ms_tile_image' => '/pwa/windows11/Square44x44Logo.altform-lightunplated_targetsize-256.png',
         ],
 
         'shortcuts' => [
             [
-                'name' => 'Report Problem',
-                'description' => 'Report public issues',
+                'name' => 'Report',
+                'description' => 'Report an issue',
                 'url' => '/report',
                 'icons' => [
-                    'src' => '/images/icons/android/icon-72x72.png',
+                    'src' => '/pwa/android/android-launchericon-144-144.png',
                     'purpose' => 'any',
                 ],
-            ],
-            [
-                'name' => 'Dashboard',
-                'description' => 'Access dashboard',
-                'url' => '/dashboard',
             ],
         ],
     ],
