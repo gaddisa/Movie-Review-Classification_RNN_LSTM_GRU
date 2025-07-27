@@ -4,3 +4,5 @@
 
 {{-- For PWA manifest --}}
 @include('laravelpwa::meta')
+
+https://www.pwabuilder.com/imagegenerator
