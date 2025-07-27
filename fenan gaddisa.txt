@@ -1,22 +1,12 @@
- 
-    // Override PWA manifest icons
-    config([
-        'laravelpwa.manifest.icons' => [
-            [
-                'src' => '/images/pwa/android/android-launchericon-192-192.png',
-                'sizes' => '192x192',
-                'type' => 'image/png',
-                'purpose' => 'any maskable'
-            ],
-            [
-                'src' => '/images/pwa/android/android-launchericon-512-512.png',
-                'sizes' => '512x512',
-                'type' => 'image/png',
-                'purpose' => 'any maskable'
-            ],
-            // Add other sizes if needed
-        ],
-        
-        // Disable splash screens (optional)
-        'laravelpwa.manifest.splash' => []
+Route::get('/manifest.json', function () {
+    return response()->json([
+        'name' => config('laravelpwa.name'),
+        'short_name' => config('laravelpwa.short_name'),
+        'start_url' => '/',
+        'display' => 'standalone',
+        'theme_color' => '#0d6efd',
+        'background_color' => '#ffffff',
+        'icons' => config('laravelpwa.manifest.icons'), // Uses your overridden icons
+        'shortcuts' => []
     ]);
+});
