@@ -1,56 +1,6 @@
-return [
+{{-- For iOS support --}}
+<link rel="apple-touch-icon" href="/pwa/ios/256.png">
+<link rel="apple-touch-startup-image" href="/pwa/ios/144.png">
 
-    'name' => env('APP_NAME', 'Fix My Dire'),
-    'manifest' => [
-
-        'name' => 'Fix My Dire',
-        'short_name' => 'FixDire',
-        'start_url' => '/',
-        'background_color' => '#ffffff',
-        'theme_color' => '#0d6efd',
-        'display' => 'standalone',
-        'orientation' => 'portrait',
-        'status_bar' => 'black',
-
-        'icons' => [
-            '48x48' => [
-                'path' => '/pwa/android/android-launchericon-48-48.png',
-                'purpose' => 'any',
-            ],
-            '72x72' => [
-                'path' => '/pwa/android/android-launchericon-72-72.png',
-                'purpose' => 'any',
-            ],
-            '144x144' => [
-                'path' => '/pwa/android/android-launchericon-144-144.png',
-                'purpose' => 'any',
-            ],
-            '512x512' => [
-                'path' => '/pwa/android/android-launchericon-512-512.png',
-                'purpose' => 'any',
-            ],
-        ],
-
-        'splash' => [
-            '144x144' => '/pwa/ios/144.png',
-            '256x256' => '/pwa/ios/256.png',
-        ],
-
-        'custom' => [
-            'ms_tile_color' => '#0d6efd',
-            'ms_tile_image' => '/pwa/windows11/Square44x44Logo.altform-lightunplated_targetsize-256.png',
-        ],
-
-        'shortcuts' => [
-            [
-                'name' => 'Report',
-                'description' => 'Report an issue',
-                'url' => '/report',
-                'icons' => [
-                    'src' => '/pwa/android/android-launchericon-144-144.png',
-                    'purpose' => 'any',
-                ],
-            ],
-        ],
-    ],
-];
+{{-- For PWA manifest --}}
+@include('laravelpwa::meta')
