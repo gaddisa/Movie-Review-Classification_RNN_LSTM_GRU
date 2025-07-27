@@ -1,72 +1,61 @@
-protected function calculateMinimumPayment()
-{
-    $monthsWithPenalty = array_filter($this->selectedMonths, function ($month) {
-        $penalty = $this->calculatePenalty($month['year'], $month['month'], $this->rentAmount);
-        return $penalty > 0;
-    });
-
-    $penaltyTotal = array_reduce($monthsWithPenalty, function ($carry, $month) {
-        return $carry + round($month['total'], 2); // Round to 2 decimal places
-    }, 0);
-
-    $this->minimumPayment = $penaltyTotal > 0 ? round($penaltyTotal, 2) : round($this->rentAmount, 2);
-
-    $this->rules['amountToPay'] = [
-        'required',
-        'numeric',
-        'min:' . $this->minimumPayment,
-        'max:' . round($this->totalAmountDue, 2)
-    ];
-}
-
-
-
-protected function getUnpaidMonths($agreement)
-{
-    $unpaid = [];
-
-    if (!$agreement || !$agreement->start_date) {
-        return $unpaid;
-    }
-
-    $startDate = Carbon::parse($agreement->start_date)->startOfMonth();
-    $endDate = $agreement->end_date
-        ? min(now()->subMonth()->endOfMonth(), Carbon::parse($agreement->end_date)->endOfMonth())
-        : now()->subMonth()->endOfMonth();
-
-    $period = \Carbon\CarbonPeriod::create($startDate, '1 month', $endDate);
-
-    foreach ($period as $date) {
-        if ($date->year != $this->yearFilter) continue;
-
-        $isPaid = PaymentAllocation::where('agreement_id', $agreement->id)
-            ->where('year_gregorian', $date->year)
-            ->where('month_gregorian', $date->month)
-            ->exists();
-
-        if (!$isPaid) {
-            $penalty = $this->calculatePenalty($date->year, $date->month, $agreement->rent_amount);
-            $totalForMonth = round($agreement->rent_amount + $penalty, 2);
-
-            $unpaid[] = [
-                'year' => $date->year,
-                'month' => $date->month,
-                'month_name' => $date->format('F'),
-                'penalty' => round($penalty, 2),
-                'total' => $totalForMonth,
-            ];
-        }
-    }
-
-    return $unpaid;
-}
-
-
-
-protected function calculatePenalty($year, $month, $rentAmount)
-{
-    $monthDate = Carbon::create($year, $month, 1)->endOfMonth();
-    $diffInMonths = $monthDate->diffInMonths(now());
-    return $diffInMonths >= 3 ? round($rentAmount * 0.10, 2) : 0;
-}
-
+return [
+    'manifest' => [
+        'name' => env('APP_NAME', 'Fix My Dire'),
+        'short_name' => 'FMD',
+        'start_url' => '/',
+        'background_color' => '#ffffff',
+        'theme_color' => '#0d6efd',
+        'display' => 'standalone',
+        'orientation' => 'portrait',
+        'status_bar' => 'black',
+        'icons' => [
+            '72x72' => [
+                'path' => '/images/icons/icon-72x72.png',
+                'purpose' => 'any'
+            ],
+            '96x96' => [
+                'path' => '/images/icons/icon-96x96.png',
+                'purpose' => 'any'
+            ],
+            '128x128' => [
+                'path' => '/images/icons/icon-128x128.png',
+                'purpose' => 'any'
+            ],
+            '144x144' => [
+                'path' => '/images/icons/icon-144x144.png',
+                'purpose' => 'any'
+            ],
+            '192x192' => [
+                'path' => '/images/icons/icon-192x192.png',
+                'purpose' => 'any'
+            ],
+            '512x512' => [
+                'path' => '/images/icons/icon-512x512.png',
+                'purpose' => 'any'
+            ]
+        ],
+        'splash' => [
+            '640x1136' => '/images/icons/splash-640x1136.png',
+            '750x1334' => '/images/icons/splash-750x1334.png',
+            '828x1792' => '/images/icons/splash-828x1792.png',
+            '1125x2436' => '/images/icons/splash-1125x2436.png',
+        ],
+        'shortcuts' => [
+            [
+                'name' => 'Report Problem',
+                'description' => 'Report road, electricity, or garbage problems',
+                'url' => '/report',
+                'icons' => [
+                    'src' => '/images/icons/icon-72x72.png',
+                    'purpose' => 'any'
+                ]
+            ],
+            [
+                'name' => 'Dashboard',
+                'description' => 'Access dashboard',
+                'url' => '/dashboard'
+            ]
+        ],
+        'custom' => []
+    ]
+];
