@@ -1,33 +1,22 @@
-var filesToCache = [
-    '/offline',
-    '/css/app.css',
-    '/js/app.js',
-    // Replace with YOUR icon paths
-    '/images/pwa/android/android-launchericon-48-48.png',
-    '/images/pwa/android/android-launchericon-72-72.png',
-    '/images/pwa/android/android-launchericon-96-96.png',
-    '/images/pwa/android/android-launchericon-144-144.png',
-    '/images/pwa/android/android-launchericon-192-192.png',
-    '/images/pwa/android/android-launchericon-512-512.png',
-    // Remove all default splash screens or replace with yours
-];
-
-
-
-<!-- Replace @laravelPWA with these manual tags -->
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#0d6efd">
-    
-    <!-- Android -->
-    <meta name="mobile-web-app-capable" content="yes">
-    <link rel="icon" sizes="192x192" href="{{ asset('images/pwa/android/android-launchericon-192-192.png') }}">
-    
-    <!-- iOS -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="FMD">
-    <link rel="apple-touch-icon" href="{{ asset('images/pwa/android/android-launchericon-192-192.png') }}">
-    
-    <!-- Windows -->
-    <meta name="msapplication-TileImage" content="{{ asset('images/pwa/android/android-launchericon-192-192.png') }}">
-    <meta name="msapplication-TileColor" content="#0d6efd">
+ 
+    // Override PWA manifest icons
+    config([
+        'laravelpwa.manifest.icons' => [
+            [
+                'src' => '/images/pwa/android/android-launchericon-192-192.png',
+                'sizes' => '192x192',
+                'type' => 'image/png',
+                'purpose' => 'any maskable'
+            ],
+            [
+                'src' => '/images/pwa/android/android-launchericon-512-512.png',
+                'sizes' => '512x512',
+                'type' => 'image/png',
+                'purpose' => 'any maskable'
+            ],
+            // Add other sizes if needed
+        ],
+        
+        // Disable splash screens (optional)
+        'laravelpwa.manifest.splash' => []
+    ]);
