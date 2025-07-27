@@ -1,4 +1,7 @@
+<?php
+
 return [
+
     'name' => env('APP_NAME', 'Fix My Dire'),
     'short_name' => 'FMD',
     'start_url' => '/',
@@ -10,50 +13,29 @@ return [
 
     'icons' => [
         '72x72' => [
-            'path' => '/images/pwa/android-launchericon-72-72.png',
-            'purpose' => 'any',
+            'path' => '/images/pwa/android/android-launchericon-72-72.png',
+            'purpose' => 'any'
         ],
         '96x96' => [
-            'path' => '/images/pwa/android-launchericon-96-96.png',
-            'purpose' => 'any',
+            'path' => '/images/pwa/android/android-launchericon-96-96.png',
+            'purpose' => 'any'
         ],
         '144x144' => [
-            'path' => '/images/pwa/android-launchericon-144-144.png',
-            'purpose' => 'any',
+            'path' => '/images/pwa/android/android-launchericon-144-144.png',
+            'purpose' => 'any'
         ],
         '192x192' => [
-            'path' => '/images/pwa/android-launchericon-192-192.png',
-            'purpose' => 'any',
+            'path' => '/images/pwa/android/android-launchericon-192-192.png',
+            'purpose' => 'any'
         ],
         '512x512' => [
-            'path' => '/images/pwa/android-launchericon-512-512.png',
-            'purpose' => 'any',
+            'path' => '/images/pwa/android/android-launchericon-512-512.png',
+            'purpose' => 'any'
         ],
     ],
 
-    'splash' => [
-        '640x1136' => '/images/pwa/ios/640x1136.png',
-        '750x1334' => '/images/pwa/ios/750x1334.png',
-        '828x1792' => '/images/pwa/ios/828x1792.png',
-        '1125x2436' => '/images/pwa/ios/1125x2436.png',
-    ],
+    'shortcuts' => [],
 
-    'shortcuts' => [
-        [
-            'name' => 'Report Problem',
-            'description' => 'Report road, electricity, or garbage problems',
-            'url' => '/report',
-            'icons' => [
-                'src' => '/images/pwa/android-launchericon-72-72.png',
-                'purpose' => 'any',
-            ]
-        ],
-        [
-            'name' => 'Dashboard',
-            'description' => 'Access dashboard',
-            'url' => '/dashboard',
-        ]
-    ],
+    'custom' => []
 
-    'custom' => [],
 ];
