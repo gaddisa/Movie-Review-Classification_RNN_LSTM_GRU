@@ -1,12 +1,10 @@
-Route::get('/manifest.json', function () {
-    return response()->json([
-        'name' => config('laravelpwa.name'),
-        'short_name' => config('laravelpwa.short_name'),
-        'start_url' => '/',
-        'display' => 'standalone',
-        'theme_color' => '#0d6efd',
-        'background_color' => '#ffffff',
-        'icons' => config('laravelpwa.manifest.icons'), // Uses your overridden icons
-        'shortcuts' => []
-    ]);
-});
+-- 1. Remove all permissions from 'deputy director'
+DELETE FROM role_has_permissions
+WHERE role_id = (SELECT id FROM roles WHERE name = 'deputy director');
+
+-- 2. Assign all permissions from 'ceo' to 'deputy director'
+INSERT INTO role_has_permissions (permission_id, role_id)
+SELECT permission_id,
+       (SELECT id FROM roles WHERE name = 'deputy director')
+FROM role_has_permissions
+WHERE role_id = (SELECT id FROM roles WHERE name = 'ceo');
