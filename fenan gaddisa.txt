@@ -1,10 +1,14 @@
--- 1. Remove all permissions from 'deputy director'
 DELETE FROM role_has_permissions
 WHERE role_id = (SELECT id FROM roles WHERE name = 'deputy director');
 
--- 2. Assign all permissions from 'ceo' to 'deputy director'
 INSERT INTO role_has_permissions (permission_id, role_id)
-SELECT permission_id,
+SELECT p.permission_id,
        (SELECT id FROM roles WHERE name = 'deputy director')
-FROM role_has_permissions
-WHERE role_id = (SELECT id FROM roles WHERE name = 'ceo');
+FROM role_has_permissions p
+WHERE p.role_id = (SELECT id FROM roles WHERE name = 'ceo')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM role_has_permissions rp
+    WHERE rp.permission_id = p.permission_id
+      AND rp.role_id = (SELECT id FROM roles WHERE name = 'deputy director')
+  );
