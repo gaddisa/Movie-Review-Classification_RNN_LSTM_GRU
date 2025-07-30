@@ -1,12 +1,7 @@
-SELECT id FROM roles WHERE name = 'ceo';
-SELECT id FROM roles WHERE name = 'system admin';
-INSERT INTO role_has_permissions (permission_id, role_id)
-SELECT permission_id, 1  -- system admin role ID
+INSERT INTO role_has_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'super admin' LIMIT 1) AS role_id,
+    permission_id
 FROM role_has_permissions
-WHERE role_id = 2        -- ceo role ID
-  AND permission_id NOT IN (
-    SELECT permission_id
-    FROM role_has_permissions
-    WHERE role_id = 1
-  );
-
+WHERE role_id = (SELECT id FROM roles WHERE name = 'system admin' LIMIT 1)
+ON DUPLICATE KEY UPDATE role_id = role_id;
