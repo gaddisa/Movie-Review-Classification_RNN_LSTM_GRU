@@ -1,17 +1,1 @@
--- Step 1: Delete from model_has_roles
-DELETE FROM model_has_roles
-WHERE model_type = 'App\\Models\\User'
-AND model_id IN (
-    SELECT id FROM users WHERE email IN ('nadhi@shaderms.com', 'qaco@shaderms.com')
-);
-
--- Step 2: Delete from model_has_permissions
-DELETE FROM model_has_permissions
-WHERE model_type = 'App\\Models\\User'
-AND model_id IN (
-    SELECT id FROM users WHERE email IN ('nadhi@shaderms.com', 'qaco@shaderms.com')
-);
-
--- Step 3: Delete from users
-DELETE FROM users
-WHERE email IN ('nadhi@shaderms.com', 'qaco@shaderms.com');
+php artisan make:livewire LogViewer/DeleteLogModal
