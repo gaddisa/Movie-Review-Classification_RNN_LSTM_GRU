@@ -1,12 +1,12 @@
--- Get role IDs
-SET @ceo_role_id := (SELECT id FROM roles WHERE name = 'ceo');
-SET @admin_role_id := (SELECT id FROM roles WHERE name = 'system admin');
-
--- Insert missing permissions from ceo to system admin
+SELECT id FROM roles WHERE name = 'ceo';
+SELECT id FROM roles WHERE name = 'system admin';
 INSERT INTO role_has_permissions (permission_id, role_id)
-SELECT permission_id, @admin_role_id
+SELECT permission_id, 1  -- system admin role ID
 FROM role_has_permissions
-WHERE role_id = @ceo_role_id
+WHERE role_id = 2        -- ceo role ID
   AND permission_id NOT IN (
-      SELECT permission_id FROM role_has_permissions WHERE role_id = @admin_role_id
+    SELECT permission_id
+    FROM role_has_permissions
+    WHERE role_id = 1
   );
+
