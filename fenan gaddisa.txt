@@ -4,4 +4,4 @@ SELECT
     permission_id
 FROM role_has_permissions
 WHERE role_id = (SELECT id FROM roles WHERE name = 'system admin' LIMIT 1)
-ON DUPLICATE KEY UPDATE role_id = role_id;
+ON DUPLICATE KEY UPDATE role_id = VALUES(role_id);
