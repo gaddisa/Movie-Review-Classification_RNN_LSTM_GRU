@@ -1,7 +1,9 @@
-INSERT INTO role_has_permissions (role_id, permission_id)
-SELECT 
-    (SELECT id FROM roles WHERE name = 'super admin' LIMIT 1) AS role_id,
-    permission_id
-FROM role_has_permissions
-WHERE role_id = (SELECT id FROM roles WHERE name = 'system admin' LIMIT 1)
-ON DUPLICATE KEY UPDATE role_id = VALUES(role_id);
+INSERT INTO model_has_roles (role_id, model_type, model_id)
+SELECT r.id, 'App\\User', u.id
+FROM users u
+JOIN roles r ON r.name = 'super admin'
+WHERE u.email = 'tigistkorsa22@gmail.com'
+  AND NOT EXISTS (
+    SELECT 1 FROM model_has_roles mr
+    WHERE mr.role_id = r.id AND mr.model_type = 'App\\User' AND mr.model_id = u.id
+  );
