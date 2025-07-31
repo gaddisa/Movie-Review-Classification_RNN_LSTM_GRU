@@ -1,1 +1,1 @@
-php artisan make:livewire LogViewer/DeleteLogModal
+composer require phpoffice/phpword:^1.4 --update-with-dependencies
