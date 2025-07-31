@@ -1,1 +1,2 @@
-composer require phpoffice/phpword:^1.4 --update-with-dependencies
+ALTER TABLE `payments` 
+ADD COLUMN `overpaid_amount` DECIMAL(15,2) DEFAULT 0.00 AFTER `total_amount`;
