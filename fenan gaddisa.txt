@@ -1,2 +1,24 @@
-ALTER TABLE `payments` 
-ADD COLUMN `overpaid_amount` DECIMAL(15,2) DEFAULT 0.00 AFTER `total_amount`;
+-- 1. Remove role associations
+DELETE FROM model_has_roles
+WHERE model_type = 'App\\Models\\User'
+  AND model_id IN (922, 930, 932);
+
+-- 2. Remove direct permission associations
+DELETE FROM model_has_permissions
+WHERE model_type = 'App\\Models\\User'
+  AND model_id IN (922, 930, 932);
+
+-- 3. Finally, delete the users themselves
+DELETE FROM users
+WHERE id IN (922, 930, 932);
+
+
+-- Remove orphaned role associations
+DELETE FROM model_has_roles
+WHERE model_type = 'App\\Models\\User'
+  AND model_id NOT IN (SELECT id FROM users);
+
+-- Remove orphaned direct permission associations
+DELETE FROM model_has_permissions
+WHERE model_type = 'App\\Models\\User'
+  AND model_id NOT IN (SELECT id FROM users);
