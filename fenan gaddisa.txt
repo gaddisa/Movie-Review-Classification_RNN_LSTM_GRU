@@ -1,24 +1,61 @@
--- 1. Remove role associations
-DELETE FROM model_has_roles
-WHERE model_type = 'App\\Models\\User'
-  AND model_id IN (922, 930, 932);
+-- EmployeeInfo table indexes
+ALTER TABLE `employee_infos` 
+ADD INDEX `idx_employee_user_id` (`user_id`),
+ADD INDEX `idx_employee_national_id` (`national_id`),
+ADD INDEX `idx_employee_status` (`status`),
+ADD INDEX `idx_employee_created_at` (`created_at`);
 
--- 2. Remove direct permission associations
-DELETE FROM model_has_permissions
-WHERE model_type = 'App\\Models\\User'
-  AND model_id IN (922, 930, 932);
+-- Payment table indexes
+ALTER TABLE `payments` 
+ADD INDEX `idx_payment_agreement_id` (`agreement_id`),
+ADD INDEX `idx_payment_status` (`status`),
+ADD INDEX `idx_payment_date_gregorian` (`payment_date_gregorian`),
+ADD INDEX `idx_payment_ttn_number` (`ttn_number`),
+ADD INDEX `idx_payment_created_at` (`created_at`);
 
--- 3. Finally, delete the users themselves
-DELETE FROM users
-WHERE id IN (922, 930, 932);
+-- PaymentAllocation table indexes
+ALTER TABLE `payment_allocations` 
+ADD INDEX `idx_allocation_payment_id` (`payment_id`),
+ADD INDEX `idx_allocation_agreement_id` (`agreement_id`),
+ADD INDEX `idx_allocation_status` (`status`),
+ADD INDEX `idx_allocation_year_month` (`year_gregorian`, `month_gregorian`),
+ADD INDEX `idx_allocation_created_at` (`created_at`),
+ADD INDEX `idx_allocation_updated_by` (`updated_by`);
 
+-- PaymentApproval table indexes
+ALTER TABLE `payment_approvals` 
+ADD INDEX `idx_approval_payment_id` (`payment_id`),
+ADD INDEX `idx_approval_status` (`status`),
+ADD INDEX `idx_approval_acted_at` (`acted_at`);
 
--- Remove orphaned role associations
-DELETE FROM model_has_roles
-WHERE model_type = 'App\\Models\\User'
-  AND model_id NOT IN (SELECT id FROM users);
+-- RentAgreement table indexes
+ALTER TABLE `rent_agreements` 
+ADD INDEX `idx_rent_tenant_id` (`tenant_id`),
+ADD INDEX `idx_rent_room_id` (`room_id`),
+ADD INDEX `idx_rent_dates` (`start_date`, `end_date`),
+ADD INDEX `idx_rent_created_at` (`created_at`);
 
--- Remove orphaned direct permission associations
-DELETE FROM model_has_permissions
-WHERE model_type = 'App\\Models\\User'
-  AND model_id NOT IN (SELECT id FROM users);
+-- Room table indexes
+ALTER TABLE `rooms` 
+ADD INDEX `idx_room_site_id` (`site_id`),
+ADD INDEX `idx_room_status` (`room_status`),
+ADD INDEX `idx_room_created_at` (`created_at`);
+
+-- RoomPrice table indexes
+ALTER TABLE `room_prices` 
+ADD INDEX `idx_price_room_id` (`room_id`),
+ADD INDEX `idx_price_dates` (`effective_from`, `effective_to`),
+ADD INDEX `idx_price_created_at` (`created_at`);
+
+-- Site table indexes
+ALTER TABLE `sites` 
+ADD INDEX `idx_site_status` (`status`),
+ADD INDEX `idx_site_created_at` (`created_at`);
+
+-- Composite indexes for frequently joined queries
+ALTER TABLE `payment_allocations` 
+ADD INDEX `idx_allocation_payment_agreement` (`payment_id`, `agreement_id`),
+ADD INDEX `idx_allocation_status_dates` (`status`, `year_gregorian`, `month_gregorian`);
+
+ALTER TABLE `rent_agreements` 
+ADD INDEX `idx_rent_active` (`tenant_id`, `room_id`, `start_date`, `end_date`);
