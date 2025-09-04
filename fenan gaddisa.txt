@@ -24,15 +24,15 @@
                     </span></h2>
                     @guest
                         <div class="flex flex-col sm:flex-row gap-4 justify-center sm:justify-start">
-                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-white text-blue-700 font-medium hover:bg-gray-100 focus:ring-4 focus:ring-gray-300 transition"
+                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-white text-blue-700 font-medium hover:bg-gray-100 focus:ring-4 focus:ring-gray-300 transition border-2 border-transparent"
                                href="{{ route('register') }}">
                                 <span>Accreditation Signup</span>
                             </a>
-                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-yellow-400 text-gray-800 font-medium hover:bg-yellow-500 focus:ring-4 focus:ring-yellow-300 transition"
+                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-transparent text-white font-medium hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 transition border-2 border-dashed border-white"
                                href="https://neta.gov.et/requestverification" target="_blank">
                                 <span>Authentication</span>
                             </a>
-                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-green-400 text-gray-800 font-medium hover:bg-green-500 focus:ring-4 focus:ring-green-300 transition"
+                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-transparent text-white font-medium hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 transition border-2 border-dashed border-white"
                                href="https://neta.gov.et/equivalence-letter/aggrement" target="_blank">
                                 <span>Equivalence</span>
                             </a>
@@ -172,5 +172,4 @@
             </div>
         </div>
     </footer>
-@endsection 
-
+@endsection
