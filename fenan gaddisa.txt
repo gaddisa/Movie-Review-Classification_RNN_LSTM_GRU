@@ -1,1 +1,176 @@
- 
+@extends('frontend.layouts.app')
+
+@section('title')
+    {{ app_name() }}
+@endsection
+
+@section('content')
+    <!-- Hero Section -->
+    <section class="bg-gradient-to-r from-blue-900 to-blue-700 text-white py-12 sm:py-16">
+        <div class="mx-auto max-w-screen-xl px-4 sm:px-12 lg:px-24">
+            <div class="flex flex-col items-center sm:flex-row sm:justify-center sm:space-x-8">
+                <!-- Image -->
+                <div class="flex-shrink-0 mb-6 sm:mb-0">
+                    <img class="h-20 sm:h-24 md:h-28 rounded" src="{{ asset('img/logo-square.png') }}" alt="{{ app_name() }}" />
+                </div>
+
+                <!-- Text -->
+                <div class="text-center sm:text-left">
+                    <h1 class="mb-4 text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight">
+                        FDRE Education and Training Authority
+                    </h1>
+                    <h2 class="mb-6 text-xl sm:text-2xl md:text-3xl font-semibold">
+                        Accreditation Management System <br> <span class="text-yellow-500 bg-yellow-100 font-bold">(Note:This Portal is not for  Authentication and Equivalence)
+                    </span></h2>
+                    @guest
+                        <div class="flex flex-col sm:flex-row gap-4 justify-center sm:justify-start">
+                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-white text-blue-700 font-medium hover:bg-gray-100 focus:ring-4 focus:ring-gray-300 transition"
+                               href="{{ route('register') }}">
+                                <span>Accreditation Signup</span>
+                            </a>
+                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-yellow-400 text-gray-800 font-medium hover:bg-yellow-500 focus:ring-4 focus:ring-yellow-300 transition"
+                               href="https://neta.gov.et/requestverification" target="_blank">
+                                <span>Authentication</span>
+                            </a>
+                            <a class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-green-400 text-gray-800 font-medium hover:bg-green-500 focus:ring-4 focus:ring-green-300 transition"
+                               href="https://neta.gov.et/equivalence-letter/aggrement" target="_blank">
+                                <span>Equivalence</span>
+                            </a>
+                        </div>
+                    @endguest
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="bg-blue-50 py-16 sm:py-20 text-gray-600">
+        <div class="container mx-auto flex flex-col items-center justify-center px-5">
+            <div class="w-full text-center lg:w-2/3">
+                <h1 class="mb-4 text-2xl sm:text-3xl md:text-4xl font-medium text-gray-800">
+                    About the Accreditation System
+                </h1>
+                <p class="mb-10 leading-relaxed px-2 sm:px-8">
+                    This platform delivers a fully digital accreditation experience, enabling institutions to submit applications, 
+                    address assessor feedback in real time, and obtain certification; eliminating the need for physical document submissions at any stage.
+                </p>
+
+                <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+                    <!-- Mission Card -->
+                    <div class="h-full rounded-lg bg-white p-6 shadow-lg flex flex-col items-center text-center transition hover:scale-105 hover:shadow-xl">
+                        <i class="fas fa-bullseye text-4xl text-blue-600 mb-4"></i>
+                        <h3 class="mb-2 text-lg sm:text-xl font-semibold text-gray-800">Our Mission</h3>
+                        <p class="text-gray-600 text-sm sm:text-base">To promote excellence in education and training through accreditation, quality assurance, and professional licensing.</p>
+                    </div>
+                    <!-- Vision Card -->
+                    <div class="h-full rounded-lg bg-white p-6 shadow-lg flex flex-col items-center text-center transition hover:scale-105 hover:shadow-xl">
+                        <i class="fas fa-eye text-4xl text-blue-600 mb-4"></i>
+                        <h3 class="mb-2 text-lg sm:text-xl font-semibold text-gray-800">Our Vision</h3>
+                        <p class="text-gray-600 text-sm sm:text-base">A nation where every educational institution and professional meets the highest standards of quality and practice.</p>
+                    </div>
+                    <!-- Values Card -->
+                    <div class="h-full rounded-lg bg-white p-6 shadow-lg flex flex-col items-center text-center transition hover:scale-105 hover:shadow-xl">
+                        <i class="fas fa-heart text-4xl text-blue-600 mb-4"></i>
+                        <h3 class="mb-2 text-lg sm:text-xl font-semibold text-gray-800">Our Values</h3>
+                        <p class="text-gray-600 text-sm sm:text-base">Integrity, Excellence, Equity, and Accountability.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Accredited Institutions -->
+    <section id="institutions" class="bg-gradient-to-r from-blue-900 to-blue-700 text-white py-16 sm:py-20">
+        @livewire('accredited-institutions')
+    </section>
+
+    <!-- Services Section -->
+    <section id="services" class="bg-white py-16 sm:py-20 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+        <div class="container mx-auto flex flex-col items-center justify-center px-5">
+            <div class="w-full text-center lg:w-2/3">
+                <h1 class="mb-4 text-2xl sm:text-3xl md:text-4xl font-medium text-gray-800 dark:text-gray-200">
+                    Our Services
+                </h1>
+                <p class="mb-10 leading-relaxed px-2 sm:px-6 md:px-12">
+                    We provide a range of services to ensure the highest standards in education and professional practice.
+                </p>
+                <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+                    <!-- Institutional Accreditation -->
+                    <div class="h-full rounded-lg bg-white dark:bg-gray-700 p-6 shadow-lg text-center transition hover:scale-105 hover:shadow-xl">
+                        <i class="fas fa-university text-4xl text-blue-600 mb-4"></i>
+                        <h3 class="mb-2 text-lg sm:text-xl font-semibold">Institutional Accreditation</h3>
+                        <p class="text-sm sm:text-base">We accredit educational institutions to ensure they meet national and international standards.</p>
+                    </div>
+                    <!-- Program Accreditation -->
+                    <div class="h-full rounded-lg bg-white dark:bg-gray-700 p-6 shadow-lg text-center transition hover:scale-105 hover:shadow-xl">
+                        <i class="fas fa-book-open text-4xl text-blue-600 mb-4"></i>
+                        <h3 class="mb-2 text-lg sm:text-xl font-semibold">Program Accreditation</h3>
+                        <p class="text-sm sm:text-base">We evaluate and accredit academic programs to ensure quality and relevance.</p>
+                    </div>
+                    <!-- Quality Assurance -->
+                    <div class="h-full rounded-lg bg-white dark:bg-gray-700 p-6 shadow-lg text-center transition hover:scale-105 hover:shadow-xl">
+                        <i class="fas fa-check-circle text-4xl text-blue-600 mb-4"></i>
+                        <h3 class="mb-2 text-lg sm:text-xl font-semibold">Quality Assurance</h3>
+                        <p class="text-sm sm:text-base">We monitor and evaluate the quality of education and training programs.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-12">
+        <div class="container mx-auto px-5">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-sm sm:text-base">
+                <!-- Contact -->
+                <div class="space-y-3">
+                    <h3 class="text-lg sm:text-xl font-bold mb-4 border-b pb-2">Contact Us</h3>
+                    <div class="flex items-start">
+                        <i class="fas fa-map-marker-alt mt-1 mr-3"></i>
+                        <div>
+                            <p class="font-medium">Head Office</p>
+                            <p>Shiro Meda, In front of America Embassy</p>
+                            <p>Addis Ababa, Ethiopia</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center"><i class="fas fa-phone-alt mr-3"></i><span>+251-XX-XXX-XX-XX (Office)</span></div>
+                    <div class="flex items-center"><i class="fas fa-mobile-alt mr-3"></i><span>+251-XX-XXX-XX-XX (Mobile)</span></div>
+                    <div class="flex items-center"><i class="fas fa-envelope mr-3"></i><span>info@xxxxxx.xxx</span></div>
+                    <div class="flex items-center"><i class="fas fa-globe mr-3"></i><span>www.xxxxxx.xxx</span></div>
+                </div>
+
+                <!-- Links -->
+                <div class="space-y-3">
+                    <h3 class="text-lg sm:text-xl font-bold mb-4 border-b pb-2">Quick Links</h3>
+                    <ul class="space-y-2">
+                        <li><a href="{{ route('home') }}" class="hover:text-blue-400 transition"><i class="fas fa-home mr-2"></i> Home</a></li>
+                        @guest
+                            @if (user_registration())
+                                <li><a href="{{ route('register') }}" class="hover:text-blue-400 transition"><i class="fas fa-user-plus mr-2"></i> Register</a></li>
+                            @endif
+                            <li><a href="{{ route('login') }}" class="hover:text-blue-400 transition"><i class="fas fa-sign-in-alt mr-2"></i> Login</a></li>
+                        @endguest
+                        <li><a href="{{ route('howtoapply') }}" class="hover:text-blue-400 transition"><i class="fas fa-file-alt mr-2"></i> Accreditation Process</a></li>
+                    </ul>
+                </div>
+
+                <!-- About -->
+                <div class="space-y-3 text-center md:text-right">
+                    <div class="flex justify-center md:justify-end mb-4">
+                        <img class="h-20 sm:h-24 rounded" src="{{ asset('img/logo-square.png') }}" alt="{{ app_name() }}" />
+                    </div>
+                    <h3 class="text-lg sm:text-xl font-bold mb-2">FDRE Education and Training Authority</h3>
+                    <p class="text-gray-300 text-sm sm:text-base">Accreditation Management System</p>
+                    <p class="mt-4">Working Hours: Mon-Fri 8:30AM-5:30PM</p>
+                    <p>Closed on weekends and public holidays</p>
+                </div>
+            </div>
+
+            <div class="border-t border-gray-700 mt-8 pt-6 text-center text-gray-400 text-xs sm:text-sm">
+                <p>&copy; {{ date('Y') }} FDRE Education and Training Authority. All rights reserved.</p>
+                <p class="mt-2">Powered by <a href="#" class="hover:text-blue-400">Dire Dawa University</a></p>
+            </div>
+        </div>
+    </footer>
+@endsection 
+
