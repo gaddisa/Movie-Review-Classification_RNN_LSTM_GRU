@@ -1,40 +1,31 @@
-<?php
-
-namespace App\Models;
-
-use Modules\DeskReview\Models\DeskReview;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-
-class Indicator extends BaseModel
-{
-    use HasFactory;
-
-    protected $fillable = ['substandard_id', 'name', 'description', 'created_by', 'updated_by'];
-
-    public function substandard()
-    {
-        return $this->belongsTo(Substandard::class);
+server { listen 80; client_max_body_size 100M;
+ server_name accreditation.neta.gov.et; return 301 https://$host$request_uri;
+}
+server { listen 443 ssl; server_name accreditation.neta.gov.et; root 
+    /var/www/html/eta_accreditation/public; index index.php index.html;
+    
+    ssl_certificate /etc/letsencrypt/live/accreditation.neta.gov.et/fullchain.pem; ssl_certificate_key 
+    /etc/letsencrypt/live/accreditation.neta.gov.et/privkey.pem;
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always; add_header X-Content-Type-Options "nosniff" always; 
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always; add_header X-XSS-Protection "1; 
+    mode=block" always;
+    
+    # Relaxed Content-Security-Policy for Font Awesome, CDNs, inline CSS/JS
+    add_header Content-Security-Policy "default-src 'self' https: data:; script-src 'self' https: 
+    'unsafe-inline' 'unsafe-eval'; style-src 'self' https: 'unsafe-inline'; font-src 'self' https: 
+    data:; img-src 'self' https: data:; connect-src 'self' https:;" always;
+    
+    # Error logging
+    error_log /var/log/nginx/accreditation_error.log; access_log 
+    /var/log/nginx/accreditation_access.log; location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+    location ~ \.php$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/php8.2-fpm.sock; 
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name; include fastcgi_params;
     }
     
-    // Define relationship with DeskReview
-    public function deskReviews()
-    {
-        return $this->hasMany(DeskReview::class, 'indicator_id');
-    }
-
-    public function questions()
-    {
-        return $this->hasMany(Question::class);
-    }
-
-    // Many-to-many relationship with attachments through indicator_attachment pivot table
-    public function attachments()
-    {
-        return $this->belongsToMany(
-            \Modules\Attachement\Models\Attachement::class, // Related model
-            'indicator_attachment', // Pivot table name
-            'indicator_id', // Foreign key on the pivot table for this model
-            'attachment_id' // Foreign key on the pivot table for the related model
-        )->withTimestamps();
+    # Deny access to hidden files
+    location ~ /\. { deny all;
     }
 }
