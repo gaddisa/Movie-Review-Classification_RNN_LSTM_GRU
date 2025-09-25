@@ -7864,8 +7864,6 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
  
 public function downloadDctStructureInPdf(Request $request)
 {
-    if (ob_get_level()) ob_end_clean();
-
     $dctId = $request->input('id');
 
     // Validate the DCT ID
