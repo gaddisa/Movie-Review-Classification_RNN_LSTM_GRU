@@ -3458,7 +3458,7 @@ class ApplicationsController extends BackendBaseController
             ], 500);
         }
     }
-   use Dompdf\Dompdf;
+ use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -3593,6 +3593,9 @@ public function downloadDctNarrativeResponsePdf($applicationId)
     ]);
 }
 
+    /**
+     * Completely strips ALL formatting and returns pure text
+     */
     private function extractPureText($content)
     {
         if (empty($content)) {
@@ -7873,12 +7876,7 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
         return $dompdf->stream($filename);
     }
     
- use Dompdf\Dompdf;
-use Dompdf\Options;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Validator;
-use RealRashid\SweetAlert\Facades\Alert;
-
+ 
 public function downloadDctStructureInPdf(Request $request)
 {
     $dctId = $request->input('id');
@@ -8000,13 +7998,13 @@ public function downloadDctStructureInPdf(Request $request)
     $filename = 'dct_structure_' . $dctName . '.pdf';
 
     // Output PDF as string
-    // Output PDF as string
-	$output = $dompdf->output();
+    $output = $dompdf->output();
 
-	// Return as Laravel response (download)
-	return response($output, 200)
-		->header('Content-Type', 'application/pdf')
-		->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+    // Return as Laravel response (download)
+    return response($output, 200)
+        ->header('Content-Type', 'application/pdf')
+        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+}
 
 }
 
