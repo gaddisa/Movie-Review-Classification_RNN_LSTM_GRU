@@ -3586,7 +3586,7 @@ class ApplicationsController extends BackendBaseController
     return response($output, 200)
         ->header('Content-Type', 'application/pdf')
         ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
-	}    
+	   
 	
 	}
      
