@@ -3460,6 +3460,7 @@ class ApplicationsController extends BackendBaseController
     }
     public function downloadDctNarrativeResponsePdf($applicationId)
     {
+
         // Step 1: Validate the ID
         $validator = Validator::make(['application_id' => $applicationId], [
             'application_id' => 'required|integer|exists:applications,id',
@@ -7861,12 +7862,6 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
     }
     
  
-use Dompdf\Dompdf;
-use Dompdf\Options;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Validator;
-use RealRashid\SweetAlert\Facades\Alert;
-
 public function downloadDctStructureInPdf(Request $request)
 {
     $dctId = $request->input('id');
@@ -7887,7 +7882,7 @@ public function downloadDctStructureInPdf(Request $request)
     // Fetch the DCT with its relationships
     $dct = \Modules\DCT\Models\DCT::with([
         'standards.substandards.indicators.questions',
-        'standards.substandards.indicators.attachments'
+        'standards.substandards.indicators.attachments' // Direct many-to-many relationship
     ])->findOrFail($dctId);
 
     // Prepare logo
@@ -7924,52 +7919,62 @@ public function downloadDctStructureInPdf(Request $request)
     $html .= '<div class="header-logo"><img src="' . $logoSrc . '" alt="ETA Logo"></div>';
     $html .= '<h1 style="text-align: center;">Education and Training Authority</h1>';
     $html .= '<h2 style="text-align: center;">Data Collection Tool Structure</h2>';
-    $html .= '<h3 style="text-align: center;">' . e($dct->name) . '</h3>';
+    $html .= '<h3 style="text-align: center;">' . $dct->name . '</h3>';
+    
+    // Centered watermark for all pages
     $html .= '<div class="watermark"><img src="' . $logoSrc . '" alt="ETA Watermark"></div>';
+    
     $html .= '<div class="page-break"></div>';
 
     // DCT Content
     foreach ($dct->standards->sortBy('id') as $standard) {
-        $html .= '<h1>Standard: ' . e($standard->name) . '</h1>';
-
+        $html .= '<h1>Standard: ' . $standard->name . '</h1>';
+        
         if (!empty($standard->description)) {
-            $html .= '<p><strong>Description:</strong> ' . e($standard->description) . '</p>';
+            $html .= '<p><strong>Description:</strong> ' . $standard->description . '</p>';
         }
-
+        
         foreach ($standard->substandards->sortBy('id') as $substandard) {
-            $html .= '<h2>Substandard: ' . e($substandard->name) . '</h2>';
-
+            $html .= '<h2>Substandard: ' . $substandard->name . '</h2>';
+            
             if (!empty($substandard->description)) {
-                $html .= '<p><strong>Description:</strong> ' . e($substandard->description) . '</p>';
+                $html .= '<p><strong>Description:</strong> ' . $substandard->description . '</p>';
             }
-
+            
             foreach ($substandard->indicators->sortBy('id') as $indicator) {
-                $html .= '<h3>Indicator: ' . e($indicator->name) . '</h3>';
-
+                $html .= '<h3>Indicator: ' . $indicator->name . '</h3>';
+                
                 if (!empty($indicator->description)) {
-                    $html .= '<p><strong>Description:</strong> ' . e($indicator->description) . '</p>';
+                    $html .= '<p><strong>Description:</strong> ' . $indicator->description . '</p>';
                 }
-
-                // Questions
+                
+                // Show questions for this indicator
                 if ($indicator->questions->count() > 0) {
-                    $html .= '<h4>Narrative Questions:</h4><ol>';
+                    $html .= '<h4>Narrative Questions:</h4>';
+                    $html .= '<ol>';
+                    
                     foreach ($indicator->questions as $question) {
-                        $html .= '<li>' . e($question->question_text) . '</li>';
+                        $html .= '<li>' . $question->question_text . '</li>';
                     }
+                    
                     $html .= '</ol>';
                 }
-
-                // Attachments
+                
+                // Show attachments for this indicator - using many-to-many relationship
                 if ($indicator->attachments->count() > 0) {
-                    $html .= '<h4>Supportive Materials:</h4><ul class="attachment-list">';
+                    $html .= '<h4>Supportive Materials:</h4>';
+                    $html .= '<ul class="attachment-list">';
+                    
                     foreach ($indicator->attachments as $attachment) {
-                        $html .= '<li>' . e($attachment->name) . ' (' . e($attachment->is_required) . ')</li>';
+                        $html .= '<li>' . $attachment->name . 
+                                ' (' . $attachment->is_required . ')</li>';
                     }
+                    
                     $html .= '</ul>';
                 }
             }
         }
-
+        
         $html .= '<div class="page-break"></div>';
     }
 
@@ -7983,19 +7988,12 @@ public function downloadDctStructureInPdf(Request $request)
     $dompdf->setPaper('A4', 'portrait');
     $dompdf->render();
 
-    // Filename
+    // Create filename with DCT name
     $dctName = Str::slug($dct->name);
     $filename = 'dct_structure_' . $dctName . '.pdf';
-
-    // Output PDF as string
-    $output = $dompdf->output();
-
-    // Return as Laravel response (download)
-    return response($output, 200)
-        ->header('Content-Type', 'application/pdf')
-        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+    
+    return $dompdf->stream($filename);
 }
-
 }
 
 
