@@ -4119,10 +4119,17 @@ return response($output, 200)
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'landscape');
         $dompdf->render();
+		
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+	}
 
         $filename = 'desk_review_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
-    }
+		$output = $dompdf->output();
+		return response($output, 200)
+		->header('Content-Type', 'application/pdf')
+		->header('Content-Disposition', 'inline; filename="' . $filename . '"');    
+	}
 
 
 
@@ -6524,13 +6531,18 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'landscape');
         $dompdf->render();
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+	}
 
         // Create filename with institute and program names
         $instituteName = Str::slug($application->institute->name);
         $programName = Str::slug($application->program->name);
         $filename = 'desk_review_' . $instituteName . '_' . $programName . '.pdf';
-        return $dompdf->stream($filename);
-    }
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');    }
 
 
     public function downloadDeskReview2($applicationId)
