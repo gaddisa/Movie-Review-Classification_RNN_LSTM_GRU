@@ -7864,6 +7864,8 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
  
 public function downloadDctStructureInPdf(Request $request)
 {
+    if (ob_get_level()) ob_end_clean();
+
     $dctId = $request->input('id');
 
     // Validate the DCT ID
@@ -7988,14 +7990,11 @@ public function downloadDctStructureInPdf(Request $request)
     $dompdf->setPaper('A4', 'portrait');
     $dompdf->render();
 
-    // Replace the stream() method call with this:
-$output = $dompdf->output();
-$filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
-
-return response($output, 200)
-    ->header('Content-Type', 'application/pdf')
-    ->header('Content-Disposition', 'attachment; filename="' . $filename . '"')
-    ->header('Content-Length', strlen($output));
+    // Create filename with DCT name
+    $dctName = Str::slug($dct->name);
+    $filename = 'dct_structure_' . $dctName . '.pdf';
+    
+    return $dompdf->stream($filename);
 }
 }
 
