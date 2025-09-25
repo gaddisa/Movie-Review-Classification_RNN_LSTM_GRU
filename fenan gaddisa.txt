@@ -3575,8 +3575,14 @@ class ApplicationsController extends BackendBaseController
         $dompdf->render();
 
         // Output the PDF
-        $filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
+       // Generate safe PDF output for Octane/RoadRunner
+$filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
+
+return response($dompdf->output(), 200, [
+    'Content-Type'        => 'application/pdf',
+    'Content-Disposition' => "inline; filename=\"{$filename}\"",
+]);
+
     }
     /**
      * Completely strips ALL formatting and returns pure text
