@@ -7992,7 +7992,7 @@ public function downloadDctStructureInPdf(Request $request)
     $dctName = Str::slug($dct->name);
     $filename = 'dct_structure_' . $dctName . '.pdf';
     
-    return $dompdf->stream($filename);
+    return $dompdf->download($filename);
 }
 }
 
