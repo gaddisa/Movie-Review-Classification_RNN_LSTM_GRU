@@ -3460,7 +3460,6 @@ class ApplicationsController extends BackendBaseController
     }
     public function downloadDctNarrativeResponsePdf($applicationId)
     {
-       dd("hello");
         // Step 1: Validate the ID
         $validator = Validator::make(['application_id' => $applicationId], [
             'application_id' => 'required|integer|exists:applications,id',
