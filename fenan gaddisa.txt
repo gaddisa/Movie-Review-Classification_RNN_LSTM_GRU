@@ -4670,7 +4670,7 @@ return response($output, 200)
 		$output = $dompdf->output();
 			return response($output, 200)
 			->header('Content-Type', 'application/pdf')
-			->header('Content-Disposition', 'inline; filename="' . $filename . '"');    \
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');    
 	}
 
     public function downloadToaAllRoundinPdf($applicationId)
