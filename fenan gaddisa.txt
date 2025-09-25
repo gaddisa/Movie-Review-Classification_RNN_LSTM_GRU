@@ -1401,8 +1401,27 @@ class DesksController extends BackendBaseController
 
     public function fillDeskHeadReviews($application_id, $standard_id, $substandard_id = null, $indicator_id = null)
     {
+	dd("Helloooo");
         // Step 1: Validate the input parameters
-        
+        $validator = Validator::make([
+            'application_id'   => $application_id,
+            'standard_id'      => $standard_id,
+            'substandard_id'   => $substandard_id,
+            'indicator_id'     => $indicator_id,
+        ], [
+            'application_id'   => 'required|integer|exists:applications,id',
+            'standard_id'      => 'required|integer|exists:standards,id',
+            'substandard_id'   => 'nullable|integer|exists:substandards,id',
+            'indicator_id'     => 'nullable|integer|exists:indicators,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
 
 
         $module_title = $this->module_title;
