@@ -1401,7 +1401,6 @@ class DesksController extends BackendBaseController
 
     public function fillDeskHeadReviews($application_id, $standard_id, $substandard_id = null, $indicator_id = null)
     {
-	dd("Helloooo");
         // Step 1: Validate the input parameters
         $validator = Validator::make([
             'application_id'   => $application_id,
