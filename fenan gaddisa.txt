@@ -3573,8 +3573,6 @@ class ApplicationsController extends BackendBaseController
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'landscape');
         $dompdf->render();
-		
-		
 
         // Output the PDF
         $filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
