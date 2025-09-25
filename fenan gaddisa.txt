@@ -3573,11 +3573,21 @@ class ApplicationsController extends BackendBaseController
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'landscape');
         $dompdf->render();
+		
+		while (ob_get_level() > 0) 
+		{
+		@ob_end_clean();
+		}
 
         // Output the PDF
         $filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
-    }
+	$output = $dompdf->output();
+
+    // Return as Laravel response (download)
+    return response($output, 200)
+        ->header('Content-Type', 'application/pdf')
+        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+		}
     /**
      * Completely strips ALL formatting and returns pure text
      */
