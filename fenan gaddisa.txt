@@ -3575,15 +3575,14 @@ class ApplicationsController extends BackendBaseController
         $dompdf->render();
 
         // Output the PDF
-       // Generate safe PDF output for Octane/RoadRunner
-$filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
+        $filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
+// Output PDF as string
+    $output = $dompdf->output();
 
-return response($dompdf->output(), 200, [
-    'Content-Type'        => 'application/pdf',
-    'Content-Disposition' => "inline; filename=\"{$filename}\"",
-]);
-
-    }
+    // Return as Laravel response (download)
+    return response($output, 200)
+        ->header('Content-Type', 'application/pdf')
+        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');    }
     /**
      * Completely strips ALL formatting and returns pure text
      */
@@ -7867,7 +7866,12 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
         return $dompdf->stream($filename);
     }
     
- 
+ use Dompdf\Dompdf;
+use Dompdf\Options;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Validator;
+use RealRashid\SweetAlert\Facades\Alert;
+
 public function downloadDctStructureInPdf(Request $request)
 {
     $dctId = $request->input('id');
@@ -7989,13 +7993,13 @@ public function downloadDctStructureInPdf(Request $request)
     $filename = 'dct_structure_' . $dctName . '.pdf';
 
     // Output PDF as string
-    $output = $dompdf->output();
+    // Output PDF as string
+	$output = $dompdf->output();
 
-    // Return as Laravel response (download)
-    return response($output, 200)
-        ->header('Content-Type', 'application/pdf')
-        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
-}
+	// Return as Laravel response (download)
+	return response($output, 200)
+		->header('Content-Type', 'application/pdf')
+		->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
 
 }
 
