@@ -3907,10 +3907,17 @@ return response($output, 200)
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'landscape');
         $dompdf->render();
-
+		while (ob_get_level() > 0) {
+				@ob_end_clean();
+			}
         $filename = 'my_desk_review_' . $applicationId . '_' . $reviewerId . '.pdf';
-        return $dompdf->stream($filename);
-    }
+		
+		
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');    
+	}
     public function downloadDeskReviewinPdf($applicationId)
     {
         // Step 1: Validate the ID
@@ -4374,7 +4381,14 @@ return response($output, 200)
         $dompdf->render();
 
         $filename = 'my_review_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+		}
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+
     }
     public function downloadChairPersonDeskReviewinPdf($applicationId)
     {
@@ -4650,8 +4664,14 @@ return response($output, 200)
         $dompdf->render();
 
         $filename = 'desk_review_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
-    }
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+		}
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');    \
+	}
 
     public function downloadToaAllRoundinPdf($applicationId)
     {
@@ -5014,7 +5034,13 @@ return response($output, 200)
 
         // Output the PDF
         $filename = 'toa_final_accreditation_report_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+		}
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
 
     // Helper function to process round data
@@ -5288,8 +5314,14 @@ return response($output, 200)
 
         // Output the PDF
         $filename = 'my_assessment_report_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
-    }
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+		}
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+			}
     public function downloadToaFirstRoundinPdf($applicationId)
     {
         // Step 1: Validate the ID
@@ -5655,7 +5687,14 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
 
         // Output the PDF with corrected filename
         $filename = 'toa_first_round_review_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+		}
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');		
+		
     }
 
     public function downloadToaSecondRoundinPdf($applicationId)
@@ -6009,7 +6048,14 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
 
         // Output the PDF with corrected filename
         $filename = 'toa_second_round_review_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+		}
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+
     }
 
 
@@ -6274,7 +6320,7 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
         $tempFile = tempnam(sys_get_temp_dir(), $filename);
         $phpWord->save($tempFile, 'Word2007');
 
-        return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+
     }
 
     public function downloadSummarizedDeskReviewinPdf($applicationId)
@@ -7881,7 +7927,14 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
         $dompdf->render();
 
         $filename = 'combined_assessment_report_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+		}
+		$output = $dompdf->output();
+			return response($output, 200)
+			->header('Content-Type', 'application/pdf')
+			->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+
     }
     
  
