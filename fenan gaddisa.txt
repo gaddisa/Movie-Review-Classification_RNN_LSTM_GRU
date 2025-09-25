@@ -7988,11 +7988,15 @@ public function downloadDctStructureInPdf(Request $request)
     $dompdf->setPaper('A4', 'portrait');
     $dompdf->render();
 
-    // Create filename with DCT name
-    $dctName = Str::slug($dct->name);
-    $filename = 'dct_structure_' . $dctName . '.pdf';
-    
-    return $dompdf->download($filename);
+    $dompdf->render();
+
+// Output PDF as string
+$output = $dompdf->output();
+
+// Return as Laravel response (force download)
+return response($output, 200)
+    ->header('Content-Type', 'application/pdf')
+    ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
 }
 }
 
