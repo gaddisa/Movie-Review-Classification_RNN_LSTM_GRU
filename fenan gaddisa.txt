@@ -3573,14 +3573,23 @@ class ApplicationsController extends BackendBaseController
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'landscape');
         $dompdf->render();
+		
+		while (ob_get_level() > 0) {
+		@ob_end_clean();
+	}
 
         // Output the PDF
         $filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
-        return $dompdf->stream($filename);
-    }
-    /**
-     * Completely strips ALL formatting and returns pure text
-     */
+ $output = $dompdf->output();
+
+    // Return as Laravel response (download)
+    return response($output, 200)
+        ->header('Content-Type', 'application/pdf')
+        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+	}    
+	
+	}
+     
     private function extractPureText($content)
     {
         if (empty($content)) {
@@ -7979,9 +7988,9 @@ public function downloadDctStructureInPdf(Request $request)
     $dompdf->render();
 	
 	// clear any output buffers so the PDF bytes are not corrupted
-while (ob_get_level() > 0) {
-    @ob_end_clean();
-}
+	while (ob_get_level() > 0) {
+		@ob_end_clean();
+	}
 
     // Filename
     $dctName = Str::slug($dct->name);
@@ -7994,7 +8003,7 @@ while (ob_get_level() > 0) {
     return response($output, 200)
         ->header('Content-Type', 'application/pdf')
         ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
-}
+	}
 
 }
 
