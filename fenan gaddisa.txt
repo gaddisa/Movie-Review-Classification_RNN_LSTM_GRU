@@ -3458,71 +3458,63 @@ class ApplicationsController extends BackendBaseController
             ], 500);
         }
     }
- use Dompdf\Dompdf;
-use Dompdf\Options;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
-use RealRashid\SweetAlert\Facades\Alert;
-use Modules\Application\Models\Application;
-use Modules\DCT\Models\DCT;
+    public function downloadDctNarrativeResponsePdf($applicationId)
+    {
+       dd("hello");
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $applicationId], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
 
-public function downloadDctNarrativeResponsePdf($applicationId)
-{
-    // Step 1: Validate the ID
-    $validator = Validator::make(['application_id' => $applicationId], [
-        'application_id' => 'required|integer|exists:applications,id',
-    ]);
-
-    if ($validator->fails()) {
-        Alert::toast('Invalid application ID.', 'error')
-            ->position('top-end')
-            ->autoClose(5000)
-            ->timerProgressBar();
-        return redirect()->back();
-    }
-
-    // Step 2: Fetch application
-    $application = Application::with(['program', 'institute'])->findOrFail($applicationId);
-    $programId   = $application->program_id;
-
-    // Step 3: Load DCT structure with answers
-    $dct = DCT::with([
-        'standards.substandards.indicators.questions.answers' => function ($query) use ($applicationId) {
-            $query->where('application_id', $applicationId);
+        if ($validator->fails()) {
+            Alert::toast('Invalid application ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
         }
-    ])->where('program_id', $programId)->first();
 
-    if (!$dct) {
-        return back()->with('error', 'No DCT found for this program.');
-    }
+        $application = Application::with(['program', 'institute'])->findOrFail($applicationId);
+        $programId = $application->program_id;
 
-    // Step 4: Build PDF HTML
-    $html = '<html><head>
-    <style>
-        body { font-family: Arial, sans-serif; font-size: 12px; }
-        .cover-page { text-align: center; margin-top: 3cm; }
-        .cover-title { font-size: 18pt; font-weight: bold; margin-bottom: 1.5cm; }
-        .cover-subtitle { font-size: 14pt; margin-bottom: 2cm; }
-        .institution-info { margin-bottom: 1cm; font-size: 12pt; }
-        .instructions { margin-top: 3cm; font-style: italic; }
-        .page-break { page-break-after: always; }
-        h1 { text-align: center; margin-bottom: 20px; }
-        h3 { margin-top: 25px; margin-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        th { background-color: #f2f2f2; text-align: left; }
-        td, th { border: 1px solid #ddd; padding: 8px; word-wrap: break-word; }
-        .question { width: 30%; }
-        .answer { width: 65%; }
-        .number { width: 5%; text-align: center; }
-    </style>
+        // Load DCT structure and answers
+        $dct = DCT::with([
+            'standards.substandards.indicators.questions.answers' => function ($query) use ($applicationId) {
+                $query->where('application_id', $applicationId);
+            }
+        ])->where('program_id', $programId)->first();
+
+        if (!$dct) {
+            return back()->with('error', 'No DCT found for this program.');
+        }
+
+        // Prepare PDF content with improved styling
+        $html = '<html><head>
+        <style>
+            body { font-family: Arial, sans-serif; font-size: 12px; }
+            .cover-page { text-align: center; margin-top: 3cm; }
+            .cover-title { font-size: 18pt; font-weight: bold; margin-bottom: 1.5cm; }
+            .cover-subtitle { font-size: 14pt; margin-bottom: 2cm; }
+            .institution-info { margin-bottom: 1cm; font-size: 12pt; }
+            .instructions { margin-top: 3cm; font-style: italic; }
+            .page-break { page-break-after: always; }
+            h1 { text-align: center; margin-bottom: 20px; }
+            h3 { margin-top: 25px; margin-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th { background-color: #f2f2f2; text-align: left; }
+            td, th { border: 1px solid #ddd; padding: 8px; word-wrap: break-word; }
+            .question { width: 30%; }
+            .answer { width: 65%; }
+            .number { width: 5%; text-align: center; }
+        </style>
     </head><body>';
 
-    // Cover Page
-    $html .= '<div class="cover-page">
+        // Cover Page
+        $html .= '<div class="cover-page">
         <div class="cover-title">DCT Narrative Questions Response</div>
         <div class="institution-info">
-            <strong>Institution:</strong> ' . e($application->institute->name) . '<br>
-            <strong>Program:</strong> ' . e($application->program->name) . '
+            <strong>Institution:</strong> ' . htmlspecialchars($application->institute->name) . '<br>
+            <strong>Program:</strong> ' . htmlspecialchars($application->program->name) . '
         </div>
         <div class="instructions">
             <p>Please use the word file version for your review comments.</p>
@@ -3531,68 +3523,61 @@ public function downloadDctNarrativeResponsePdf($applicationId)
     </div>
     <div class="page-break"></div>';
 
-    // Main Content
-    $html .= '<h1>Response to DCT Narrative Questions</h1>';
+        // Main Content
+        $html .= '<h1>Response to DCT Narrative Questions</h1>';
 
-    foreach ($dct->standards as $standard) {
-        foreach ($standard->substandards as $substandard) {
-            foreach ($substandard->indicators as $indicator) {
-                if ($indicator->questions->isEmpty()) continue;
+        foreach ($dct->standards as $standard) {
+            foreach ($standard->substandards as $substandard) {
+                foreach ($substandard->indicators as $indicator) {
+                    if ($indicator->questions->isEmpty()) continue;
 
-                // Add indicator title
-                $html .= '<h3>Indicator: ' . e($indicator->name) . '</h3>';
+                    // Add indicator title
+                    $html .= '<h3>Indicator: ' . $this->extractPureText($indicator->name) . '</h3>';
 
-                // Create table
-                $html .= '<table>';
-                $html .= '<tr>
-                            <th class="number">#</th>
-                            <th class="question">Question</th>
-                            <th class="answer">Answer</th>
-                          </tr>';
-
-                $i = 1;
-                foreach ($indicator->questions as $question) {
-                    $answer     = $question->answers->first();
-                    $answerText = $answer ? $answer->answer : '—';
-
-                    // Clean + format answer
-                    $formattedAnswer = nl2br(e(wordwrap($answerText, 100, "\n", true)));
-
+                    // Create table with improved layout
+                    $html .= '<table>';
                     $html .= '<tr>';
-                    $html .= '<td class="number">' . $i++ . '</td>';
-                    $html .= '<td class="question">' . e($question->question_text) . '</td>';
-                    $html .= '<td class="answer">' . $formattedAnswer . '</td>';
+                    $html .= '<th class="number">#</th>';
+                    $html .= '<th class="question">Question</th>';
+                    $html .= '<th class="answer">Answer</th>';
                     $html .= '</tr>';
-                }
 
-                $html .= '</table><br>';
+                    $i = 1;
+                    foreach ($indicator->questions as $question) {
+                        $answer = $question->answers->first();
+                        $answerText = $answer ? $this->extractPureText($answer->answer) : '—';
+
+                        // Format answer with proper line breaks
+                        $formattedAnswer = nl2br(wordwrap($answerText, 100, "\n", true));
+
+                        $html .= '<tr>';
+                        $html .= '<td class="number">' . $i++ . '</td>';
+                        $html .= '<td class="question">' . $this->extractPureText($question->question_text) . '</td>';
+                        $html .= '<td class="answer">' . $formattedAnswer . '</td>';
+                        $html .= '</tr>';
+                    }
+
+                    $html .= '</table><br>';
+                }
             }
         }
+
+        $html .= '</body></html>';
+
+        // Configure DOMPDF with landscape orientation
+        $options = new Options();
+        $options->set('isRemoteEnabled', true);
+        $options->set('isHtml5ParserEnabled', true);
+
+        $dompdf = new Dompdf($options);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'landscape');
+        $dompdf->render();
+
+        // Output the PDF
+        $filename = 'DCT_Narrative_Response_' . $applicationId . '.pdf';
+        return $dompdf->stream($filename);
     }
-
-    $html .= '</body></html>';
-
-    // Step 5: Configure DOMPDF
-    $options = new Options();
-    $options->set('isRemoteEnabled', true);
-    $options->set('isHtml5ParserEnabled', true);
-
-    $dompdf = new Dompdf($options);
-    $dompdf->loadHtml($html);
-    $dompdf->setPaper('A4', 'landscape');
-    $dompdf->render();
-
-    // Step 6: Safe filename (cleaned for Octane/RoadRunner)
-    $safeName = Str::slug($application->institute->name . '_' . $application->program->name);
-    $filename = 'DCT_Narrative_Response_' . $safeName . '_' . $applicationId . '.pdf';
-
-    // Step 7: Return response instead of stream (Octane safe)
-    return response($dompdf->output(), 200, [
-        'Content-Type'        => 'application/pdf',
-        'Content-Disposition' => "inline; filename=\"{$filename}\"",
-    ]);
-}
-
     /**
      * Completely strips ALL formatting and returns pure text
      */
@@ -7877,6 +7862,12 @@ $toaReviews = DeskReview::where('application_id', $applicationId)
     }
     
  
+use Dompdf\Dompdf;
+use Dompdf\Options;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Validator;
+use RealRashid\SweetAlert\Facades\Alert;
+
 public function downloadDctStructureInPdf(Request $request)
 {
     $dctId = $request->input('id');
