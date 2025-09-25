@@ -1,7 +1,7 @@
 <?php
 
 namespace Modules\Application\Http\Controllers\Backend;
-//check it gaddisa
+
 
 
 use Carbon\Carbon;
@@ -7978,32 +7978,21 @@ public function downloadDctStructureInPdf(Request $request)
         $html .= '<div class="page-break"></div>';
     }
 
-   // Before using Dompdf, **clear all output buffers**:
-    while (ob_get_level()) {
-        ob_end_clean();
-    }
-
-    $options = new \Dompdf\Options();
+    // Generate PDF
+    $options = new Options();
     $options->set('isHtml5ParserEnabled', true);
     $options->set('isRemoteEnabled', true);
 
-    $dompdf = new \Dompdf\Dompdf($options);
+    $dompdf = new Dompdf($options);
     $dompdf->loadHtml($html);
     $dompdf->setPaper('A4', 'portrait');
     $dompdf->render();
 
-    $filename = 'dct_structure_' . Str::slug($dct->name) . '.pdf';
-
-    $pdfContent = $dompdf->output();
-
-    return response()->stream(function () use ($pdfContent) {
-        echo $pdfContent;
-    }, 200, [
-        'Content-Type' => 'application/pdf',
-        'Content-Disposition' => "inline; filename=\"{$filename}\"",
-        'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
-        'Pragma' => 'public',
-    ]);
+    // Create filename with DCT name
+    $dctName = Str::slug($dct->name);
+    $filename = 'dct_structure_' . $dctName . '.pdf';
+    
+    return $dompdf->stream($filename);
 }
 }
 
