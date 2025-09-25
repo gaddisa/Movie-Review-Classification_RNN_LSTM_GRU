@@ -3584,9 +3584,10 @@ class ApplicationsController extends BackendBaseController
 	$output = $dompdf->output();
 
     // Return as Laravel response (download)
-    return response($output, 200)
-        ->header('Content-Type', 'application/pdf')
-        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+   // Return as Laravel response (show inline in browser tab)
+return response($output, 200)
+    ->header('Content-Type', 'application/pdf')
+    ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
 		}
     /**
      * Completely strips ALL formatting and returns pure text
