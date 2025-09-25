@@ -7977,6 +7977,11 @@ public function downloadDctStructureInPdf(Request $request)
     $dompdf->loadHtml($html);
     $dompdf->setPaper('A4', 'portrait');
     $dompdf->render();
+	
+	// clear any output buffers so the PDF bytes are not corrupted
+while (ob_get_level() > 0) {
+    @ob_end_clean();
+}
 
     // Filename
     $dctName = Str::slug($dct->name);
