@@ -13,8 +13,8 @@ class AssessorPool extends Component
 
     public $searchTerm;
     public $educationFilter;
-    public $assessorTypeFilter;
-    public $sortField = 'all';
+    public $assessorTypeFilter; // Changed from roleFilter to be more specific
+    public $sortField = 'tasks_completed';
     public $sortDirection = 'desc';
 
     protected $paginationTheme = 'bootstrap';
@@ -33,7 +33,7 @@ class AssessorPool extends Component
     {
         $searchTerm = '%' . $this->searchTerm . '%';
         
-        $query = User::where(function($query) use ($searchTerm) {
+        $users = User::where(function($query) use ($searchTerm) {
                 $query->where('name', 'like', $searchTerm)
                     ->orWhere('email', 'like', $searchTerm)
                     ->orWhere('mobile', 'like', $searchTerm)
@@ -52,27 +52,23 @@ class AssessorPool extends Component
                 }
             })
             ->when($this->assessorTypeFilter, function($query) {
+                // Proper Spatie role filtering
                 if ($this->assessorTypeFilter === 'expert') {
                     return $query->role('accreditation expert');
                 } else {
+                    // For "assessor only" we need users with assessor role but NOT accreditation expert
                     return $query->role('assessor')
                                 ->whereDoesntHave('roles', function($q) {
                                     $q->where('name', 'accreditation expert');
                                 });
                 }
             }, function($query) {
+                // Default case - show both types
                 return $query->role(['assessor', 'accreditation expert']);
-            });
-
-        // Simple sorting - if field is 'all', sort by name, otherwise use the field
-        if ($this->sortField === 'all') {
-            $query->orderBy('name', 'asc');
-        } else {
-            // Let the database handle NULL values naturally
-            $query->orderBy($this->sortField, $this->sortDirection);
-        }
-
-        $users = $query->with(['permissions', 'roles'])->paginate();
+            })
+            ->orderBy($this->sortField, $this->sortDirection)
+            ->with(['permissions', 'roles'])
+            ->paginate();
 
         return view('livewire.assessor-pool', [
             'users' => $users
