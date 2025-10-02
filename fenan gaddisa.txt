@@ -64,14 +64,12 @@ class AssessorPool extends Component
                 return $query->role(['assessor', 'accreditation expert']);
             });
 
-        // Handle sorting with even safer approach
-        if ($this->sortField !== 'all') {
-            // Use select with COALESCE to handle NULL values
-            $query->select('*')
-                  ->selectRaw("COALESCE({$this->sortField}, 0) as sorted_field")
-                  ->orderBy('sorted_field', $this->sortDirection);
-        } else {
+        // Simple sorting - if field is 'all', sort by name, otherwise use the field
+        if ($this->sortField === 'all') {
             $query->orderBy('name', 'asc');
+        } else {
+            // Let the database handle NULL values naturally
+            $query->orderBy($this->sortField, $this->sortDirection);
         }
 
         $users = $query->with(['permissions', 'roles'])->paginate();
