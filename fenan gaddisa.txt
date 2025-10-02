@@ -1,2 +1,80 @@
-  sudo curl -o DesksController.php "https://raw.githubusercontent
-.com/gaddisa/Movie-Review-Classification_RNN_LSTM_GRU/master/fenan%20gaddisa.txt"
+<?php
+
+namespace App\Livewire;
+
+use App\Models\User;
+use Livewire\Component;
+use Livewire\WithPagination;
+use Spatie\Permission\Models\Role;
+
+class AssessorPool extends Component
+{
+    use WithPagination;
+
+    public $searchTerm;
+    public $educationFilter;
+    public $assessorTypeFilter;
+    public $sortField = 'all'; // Changed default to 'all'
+    public $sortDirection = 'desc';
+
+    protected $paginationTheme = 'bootstrap';
+
+    public function sortBy($field)
+    {
+        if ($this->sortField === $field) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortField = $field;
+            $this->sortDirection = 'asc';
+        }
+    }
+
+    public function render()
+    {
+        $searchTerm = '%' . $this->searchTerm . '%';
+        
+        $users = User::where(function($query) use ($searchTerm) {
+                $query->where('name', 'like', $searchTerm)
+                    ->orWhere('email', 'like', $searchTerm)
+                    ->orWhere('mobile', 'like', $searchTerm)
+                    ->orWhere('degree_department', 'like', $searchTerm)
+                    ->orWhere('masters_department', 'like', $searchTerm)
+                    ->orWhere('phd_department', 'like', $searchTerm);
+            })
+            ->when($this->educationFilter, function($query) {
+                switch($this->educationFilter) {
+                    case 'phd':
+                        return $query->whereNotNull('phd_department');
+                    case 'masters':
+                        return $query->whereNotNull('masters_department')->whereNull('phd_department');
+                    case 'degree':
+                        return $query->whereNull('masters_department')->whereNull('phd_department');
+                }
+            })
+            ->when($this->assessorTypeFilter, function($query) {
+                if ($this->assessorTypeFilter === 'expert') {
+                    return $query->role('accreditation expert');
+                } else {
+                    return $query->role('assessor')
+                                ->whereDoesntHave('roles', function($q) {
+                                    $q->where('name', 'accreditation expert');
+                                });
+                }
+            }, function($query) {
+                return $query->role(['assessor', 'accreditation expert']);
+            })
+            ->when($this->sortField !== 'all', function($query) {
+                // Handle NULL values by treating them as 0 for sorting
+                return $query->orderByRaw("COALESCE({$this->sortField}, 0) {$this->sortDirection}");
+            }, function($query) {
+                // Default sorting when "All" is selected
+                return $query->orderBy('name', 'asc');
+            })
+            ->with(['permissions', 'roles'])
+            ->paginate();
+
+        return view('livewire.assessor-pool', [
+            'users' => $users
+        ]);
+    }
+}
