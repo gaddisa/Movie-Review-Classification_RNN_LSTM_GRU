@@ -1,80 +1,122 @@
-<?php
+<div>
+    <div class="row mt-4">
+        <div class="col">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <input class="form-control" type="text" placeholder="Search" wire:model.live="searchTerm" />
+                </div>
+                <div class="col-md-3">
+                    <select class="form-control" wire:model.live="educationFilter">
+                        <option value="">All Education</option>
+                        <option value="phd">PhD</option>
+                        <option value="masters">Masters</option>
+                        <option value="degree">Degree</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-control" wire:model.live="assessorTypeFilter">
+                        <option value="">All Assessor Types</option>
+                        <option value="assessor">Assessor Only</option>
+                        <option value="expert">Accreditation Expert</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-control" wire:model.live="sortField">
+                        <option value="all">All (Name)</option>
+                        <option value="tasks_completed">Tasks Completed</option>
+                        <option value="tasks_assigned">Tasks Assigned</option>
+                        <option value="tasks_cancelled">Tasks Cancelled</option>
+                        <option value="overdue_completed">Overdue Completed</option>
+                    </select>
+                </div>
+            </div>
 
-namespace App\Livewire;
-
-use App\Models\User;
-use Livewire\Component;
-use Livewire\WithPagination;
-use Spatie\Permission\Models\Role;
-
-class AssessorPool extends Component
-{
-    use WithPagination;
-
-    public $searchTerm;
-    public $educationFilter;
-    public $assessorTypeFilter;
-    public $sortField = 'all'; // Changed default to 'all'
-    public $sortDirection = 'desc';
-
-    protected $paginationTheme = 'bootstrap';
-
-    public function sortBy($field)
-    {
-        if ($this->sortField === $field) {
-            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            $this->sortField = $field;
-            $this->sortDirection = 'asc';
-        }
-    }
-
-    public function render()
-    {
-        $searchTerm = '%' . $this->searchTerm . '%';
-        
-        $users = User::where(function($query) use ($searchTerm) {
-                $query->where('name', 'like', $searchTerm)
-                    ->orWhere('email', 'like', $searchTerm)
-                    ->orWhere('mobile', 'like', $searchTerm)
-                    ->orWhere('degree_department', 'like', $searchTerm)
-                    ->orWhere('masters_department', 'like', $searchTerm)
-                    ->orWhere('phd_department', 'like', $searchTerm);
-            })
-            ->when($this->educationFilter, function($query) {
-                switch($this->educationFilter) {
-                    case 'phd':
-                        return $query->whereNotNull('phd_department');
-                    case 'masters':
-                        return $query->whereNotNull('masters_department')->whereNull('phd_department');
-                    case 'degree':
-                        return $query->whereNull('masters_department')->whereNull('phd_department');
-                }
-            })
-            ->when($this->assessorTypeFilter, function($query) {
-                if ($this->assessorTypeFilter === 'expert') {
-                    return $query->role('accreditation expert');
-                } else {
-                    return $query->role('assessor')
-                                ->whereDoesntHave('roles', function($q) {
-                                    $q->where('name', 'accreditation expert');
-                                });
-                }
-            }, function($query) {
-                return $query->role(['assessor', 'accreditation expert']);
-            })
-            ->when($this->sortField !== 'all', function($query) {
-                // Handle NULL values by treating them as 0 for sorting
-                return $query->orderByRaw("COALESCE({$this->sortField}, 0) {$this->sortDirection}");
-            }, function($query) {
-                // Default sorting when "All" is selected
-                return $query->orderBy('name', 'asc');
-            })
-            ->with(['permissions', 'roles'])
-            ->paginate();
-
-        return view('livewire.assessor-pool', [
-            'users' => $users
-        ]);
-    }
-}
+            <div class="table-responsive">
+                <table class="table table-hover table-responsive-sm" wire:loading.class="table-secondary">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th wire:click="sortBy('all')" style="cursor: pointer;">
+                                Name
+                                @if($sortField === 'all')
+                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
+                                @endif
+                            </th>
+                            <th>Type</th>
+                            <th>Department</th>
+                            <th wire:click="sortBy('tasks_assigned')" style="cursor: pointer;">
+                                Assigned
+                                @if($sortField === 'tasks_assigned')
+                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
+                                @endif
+                            </th>
+                            <th wire:click="sortBy('tasks_completed')" style="cursor: pointer;">
+                                Completed
+                                @if($sortField === 'tasks_completed')
+                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
+                                @endif
+                            </th>
+                            <th wire:click="sortBy('tasks_cancelled')" style="cursor: pointer;">
+                                Cancelled
+                                @if($sortField === 'tasks_cancelled')
+                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
+                                @endif
+                            </th>
+                            <th wire:click="sortBy('overdue_completed')" style="cursor: pointer;">
+                                Overdue
+                                @if($sortField === 'overdue_completed')
+                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
+                                @endif
+                            </th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($users as $index => $user)
+                            <tr>
+                                <td>{{ $index + 1 }}</td>
+                                <td>
+                                    <strong>
+                                        <a href="{{ route('backend.users.showAssessorProfile', $user->id) }}">
+                                            {{ $user->name }}
+                                        </a>
+                                    </strong>
+                                    <div class="small text-muted">{{ $user->email }}</div>
+                                </td>
+                                <td>
+                                    @if($user->hasRole('accreditation expert'))
+                                        <span class="badge bg-success">Expert</span>
+                                    @else
+                                        <span class="badge bg-primary">Assessor</span>
+                                    @endif
+                                </td>
+                                <td>{{ $user->degree_department }}</td>
+                                <td>{{ $user->tasks_assigned ?? 0 }}</td>
+                                <td>{{ $user->tasks_completed ?? 0 }}</td>
+                                <td>{{ $user->tasks_cancelled ?? 0 }}</td>
+                                <td>{{ $user->overdue_completed ?? 0 }}</td>
+                               <td class="text-end">
+                                    <a href="{{ route('backend.users.showAssessorProfile', $user->id) }}" 
+                                       class="btn btn-sm btn-primary"
+                                       title="View Profile">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-7">
+            <div class="float-left">{!! $users->total() !!} Assessors Found</div>
+        </div>
+        <div class="col-5">
+            <div class="float-end">
+                {!! $users->links() !!}
+            </div>
+        </div>
+    </div>
+</div>
