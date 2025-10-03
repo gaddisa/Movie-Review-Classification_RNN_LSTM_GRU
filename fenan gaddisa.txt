@@ -1,116 +1,56 @@
-<div>
-    <div class="row mt-4">
-        <div class="col">
-            <div class="row mb-3">
-                <div class="col-md-4">
-                    <input class="form-control" type="text" placeholder="Search" wire:model.live="searchTerm" />
-                </div>
-                <div class="col-md-3">
-                    <select class="form-control" wire:model.live="educationFilter">
-                        <option value="">All Education</option>
-                        <option value="phd">PhD</option>
-                        <option value="masters">Masters</option>
-                        <option value="degree">Degree</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <select class="form-control" wire:model.live="assessorTypeFilter">
-                        <option value="">All Assessor Types</option>
-                        <option value="assessor">Assessor Only</option>
-                        <option value="expert">Accreditation Expert</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <select class="form-control" wire:model.live="sortField">
-                        <option value="tasks_completed">Tasks Completed</option>
-                        <option value="tasks_assigned">Tasks Assigned</option>
-                        <option value="tasks_cancelled">Tasks Cancelled</option>
-                        <option value="overdue_completed">Overdue Completed</option>
-                    </select>
-                </div>
-            </div>
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 
-            <div class="table-responsive">
-                <table class="table table-hover table-responsive-sm" wire:loading.class="table-secondary">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Name</th>
-                            <th>Type</th>
-                            <th>Department</th>
-                            <th wire:click="sortBy('tasks_assigned')" style="cursor: pointer;">
-                                Assigned
-                                @if($sortField === 'tasks_assigned')
-                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
-                                @endif
-                            </th>
-                            <th wire:click="sortBy('tasks_completed')" style="cursor: pointer;">
-                                Completed
-                                @if($sortField === 'tasks_completed')
-                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
-                                @endif
-                            </th>
-                            <th wire:click="sortBy('tasks_cancelled')" style="cursor: pointer;">
-                                Cancelled
-                                @if($sortField === 'tasks_cancelled')
-                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
-                                @endif
-                            </th>
-                            <th wire:click="sortBy('overdue_completed')" style="cursor: pointer;">
-                                Overdue
-                                @if($sortField === 'overdue_completed')
-                                    <i class="fa fa-sort-{{ $sortDirection === 'asc' ? 'up' : 'down' }}"></i>
-                                @endif
-                            </th>
-                            <th class="text-end">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($users as $index => $user)
-                            <tr>
-                                <td>{{ $index + 1 }}</td>
-                                <td>
-                                    <strong>
-                                        <a href="{{ route('backend.users.showAssessorProfile', $user->id) }}">
-                                            {{ $user->name }}
-                                        </a>
-                                    </strong>
-                                    <div class="small text-muted">{{ $user->email }}</div>
-                                </td>
-                                <td>
-                                    @if($user->hasRole('accreditation expert'))
-                                        <span class="badge bg-success">Expert</span>
-                                    @else
-                                        <span class="badge bg-primary">Assessor</span>
-                                    @endif
-                                </td>
-                                <td>{{ $user->degree_department }}</td>
-                                <td>{{ $user->tasks_assigned }}</td>
-                                <td>{{ $user->tasks_completed }}</td>
-                                <td>{{ $user->tasks_cancelled }}</td>
-                                <td>{{ $user->overdue_completed }}</td>
-                               <td class="text-end">
-                                    <a href="{{ route('backend.users.showAssessorProfile', $user->id) }}" 
-                                       class="btn btn-sm btn-primary"
-                                       title="View Profile">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </div>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
+
+    <title>{{ config('app.name', 'Laravel') }}</title>
+
+    <!-- Add SweetAlert CSS -->
+    <link rel="stylesheet" href="{{ asset('css/sweetalert2.min.css') }}">
+
+    <!-- Scripts -->
+    @vite(['resources/css/app-frontend.css'])
+    @vite(['resources/js/app-frontend.js'])
+</head>
+
+<body class="font-sans antialiased">
+    <x-selected-theme />
+    <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
+        @include('layouts.navigation')
+
+        <!-- Page Heading -->
+        @if (isset($header))
+            <header class="bg-white shadow dark:bg-gray-800">
+                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+                    {{ $header }}
+                </div>
+            </header>
+        @endif
+
+        <!-- Page Content -->
+        <main>
+            {{ $slot }}
+        </main>
     </div>
-    <div class="row">
-        <div class="col-7">
-            <div class="float-left">{!! $users->total() !!} Assessors Found</div>
-        </div>
-        <div class="col-5">
-            <div class="float-end">
-                {!! $users->links() !!}
-            </div>
-        </div>
-    </div>
-</div>
+
+    <!-- Add SweetAlert JS -->
+    <script src="{{ asset('js/sweetalert2.min.js') }}"></script>
+    
+    <!-- Display SweetAlert from session -->
+    @if(Session::has('alert'))
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                Swal.fire({
+                    title: '{{ Session::get("alert")["title"] ?? "" }}',
+                    text: '{{ Session::get("alert")["text"] ?? "" }}',
+                    icon: '{{ Session::get("alert")["icon"] ?? "info" }}',
+                    confirmButtonText: 'OK'
+                });
+            });
+        </script>
+    @endif
+</body>
+</html>
