@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use App\Models\User;
 use RealRashid\SweetAlert\Facades\Alert;
 
@@ -13,18 +14,19 @@ class VerifyEmailController extends Controller
     /**
      * Mark the user's email address as verified.
      */
-    public function __invoke($id, $hash): RedirectResponse
+    public function __invoke(Request $request, $id, $hash): RedirectResponse
     {
+        // Find user by ID from the URL
         $user = User::find($id);
-
+        
         if (!$user) {
-            Alert::error('Error', 'Invalid verification link. User not found.')->autoClose(5000);
+            Alert::error('Error', 'Invalid verification link.')->autoClose(5000);
             return redirect('/login');
         }
 
-        // Verify the hash
-        if (!hash_equals($hash, sha1($user->getEmailForVerification()))) {
-            Alert::error('Error', 'Invalid verification link. Hash mismatch.')->autoClose(5000);
+        // Check if the hash matches
+        if (!hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
+            Alert::error('Error', 'Invalid verification link.')->autoClose(5000);
             return redirect('/login');
         }
 
@@ -35,12 +37,11 @@ class VerifyEmailController extends Controller
         }
 
         // Mark as verified
-        $user->email_verified_at = now();
-        $user->save();
+        if ($user->markEmailAsVerified()) {
+            event(new Verified($user));
+        }
 
-        event(new Verified($user));
-
-        Alert::success('Email Verified', 'Your email has been successfully verified. You can now login.')->autoClose(5000);
+        Alert::success('Success', 'Your email has been verified successfully! You can now login.')->autoClose(5000);
         return redirect('/login');
     }
 }
