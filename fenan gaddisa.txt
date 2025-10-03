@@ -1,374 +1,174 @@
-<!DOCTYPE html>
-<html lang="en">
+<?php
 
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>FDRE ETA Accreditation Portal - Login</title>
+namespace App\Http\Controllers\Auth;
 
-    <!-- SEO Meta -->
-  <meta name="description"
-    content="{{ setting('meta_description', 'Accreditation management platform for Ethiopian higher education and TVET institutions, operated by the Federal Democratic Republic of Ethiopia Education and Training Authority (FDRE ETA). Apply, track, and manage accreditation online.') }}" />
-<meta name="keywords"
-    content="{{ setting('meta_keyword', 'Ethiopia university accreditation, TVET accreditation Ethiopia, FDRE Education and Training Authority, higher education quality assurance, accreditation Ethiopia, education standards Ethiopia, quality audit Ethiopia') }}" />
-<meta name="author" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
-<meta name="copyright" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
-<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+use App\Events\Auth\UserLoginSuccess;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\View\View;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
+use RealRashid\SweetAlert\Facades\Alert;
 
-<!-- Favicons -->
-<link href="{{ asset('img/favicon.png') }}" rel="apple-touch-icon" sizes="180x180" />
-<link type="image/png" href="{{ asset('img/favicon.png') }}" rel="icon" sizes="32x32" />
-<link type="image/png" href="{{ asset('img/favicon.png') }}" rel="icon" sizes="16x16" />
-<link rel="shortcut icon" href="{{ asset('img/favicon.png') }}" />
-<meta name="theme-color" content="#0d6efd" />
-
-<!-- Open Graph / Facebook -->
-<meta property="og:type" content="website" />
-<meta property="og:title"
-    content="@yield('title') | {{ config('app.name', 'Ethiopia Higher Education Accreditation Platform - FDRE ETA') }}" />
-<meta property="og:description"
-    content="{{ setting('meta_description', 'Official accreditation management platform for Ethiopian higher education and TVET institutions.') }}" />
-<meta property="og:url" content="{{ url()->current() }}" />
-<meta property="og:site_name" content="FDRE Education and Training Authority" />
-<meta property="og:image" content="{{ asset('img/logo-square.png') }}" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta property="og:locale" content="{{ str_replace('_', '-', app()->getLocale()) }}" />
-
-<!-- Twitter -->
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:site" content="@FDRETraining" />
-<meta name="twitter:creator" content="@FDRETraining" />
-<meta name="twitter:title" content="@yield('title') | {{ config('app.name') }}" />
-<meta name="twitter:description" content="{{ setting('meta_description') }}" />
-<meta name="twitter:image" content="{{ asset('img/logo-square.png') }}" />
-
-<!-- Dublin Core -->
-<meta name="DC.title" content="@yield('title') | {{ config('app.name') }}" />
-<meta name="DC.description" content="{{ setting('meta_description') }}" />
-<meta name="DC.creator" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
-<meta name="DC.language" content="{{ str_replace('_', '-', app()->getLocale()) }}" />
-
-<!-- CSRF Token -->
-<meta name="csrf-token" content="{{ csrf_token() }}" />
-
-<!-- Canonical URL -->
-<link rel="canonical" href="{{ url()->current() }}" />
-
-
-    <!-- Bootstrap -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
-
-    <style>
-        :root {
-            --primary: #36bac0;
-            --accent: #ed6923;
-            --dark: #37517e;
+class AuthenticatedSessionController extends Controller
+{
+    /**
+     * Display the login view.
+     */
+    public function create(): View
+    {
+        $lettersOnly = 'ABCDEFGHIJKLMNPQRSTUVWXYZ'; // Exclude O
+        $randomString = '';
+        for ($i = 0; $i < 6; $i++) {
+            $randomString .= $lettersOnly[random_int(0, strlen($lettersOnly) - 1)];
         }
 
-        body {
-            font-family: 'Nunito', sans-serif;
-            min-height: 100vh;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, var(--dark) 0%, var(--primary) 60%);
-            position: relative;
-            overflow: hidden;
-        }
+        Log::info('Login page accessed', [
+            'ip' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'time' => now()->format('Y-m-d H:i:s')
+        ]);
 
-        /* decorative floating shapes */
-        body::before,
-        body::after {
-            content: "";
-            position: absolute;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.05);
-            z-index: 0;
-            animation: float 10s infinite ease-in-out;
-        }
+        return view('auth.login');
+    }
 
-        body::before {
-            width: 350px;
-            height: 350px;
-            top: -120px;
-            left: -120px;
-        }
-
-        body::after {
-            width: 250px;
-            height: 250px;
-            bottom: -80px;
-            right: -80px;
-        }
-
-        @keyframes float {
-
-            0%,
-            100% {
-                transform: translateY(0) rotate(0)
-            }
-
-            50% {
-                transform: translateY(20px) rotate(10deg)
-            }
-        }
-
-        .login-card {
-            z-index: 1;
-            width: 100%;
-            max-width: 460px;
-            padding: 2rem;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.12);
-            backdrop-filter: blur(16px);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-            color: #fff;
-            animation: fadeIn .6s ease;
-        }
-
-        /* header */
-        .login-header {
-            text-align: center;
-            margin-bottom: 1rem
-        }
-
-        .login-header img {
-            width: 85px;
-            display: block;
-            margin: 0 auto 8px
-        }
-
-        .login-header h2 {
-            font-weight: 700;
-            color: #fff;
-            margin: 0;
-            font-size: 1.25rem
-        }
-
-        .login-header p {
-            margin: 0;
-            color: rgba(255, 255, 255, 0.85);
-            font-size: .9rem
-        }
-
-        /* inputs */
-        .input-icon {
-            position: relative
-        }
-
-        .input-icon i {
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--primary);
-            z-index: 2;
-            font-size: 0.95rem;
-        }
-
-        .form-control {
-            padding-left: 44px;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.95);
-            height: 44px;
-            box-shadow: none;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
-        /* ensure invalid feedback shows and does not overlap */
-        .is-invalid {
-            border-color: #dc3545 !important;
-            box-shadow: none !important;
-        }
-
-        .invalid-feedback {
-            display: block;
-            margin-top: 6px;
-            font-size: .86rem;
-        }
-
-        /* captcha row */
-        .captcha-row img {
-            height: 46px;
-            width: auto;
-            border-radius: 6px;
-            cursor: pointer;
-            border: 1px solid rgba(0, 0, 0, 0.08)
-        }
-
-        /* buttons */
-        .btn-login {
-            background: linear-gradient(135deg, var(--primary), var(--accent));
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            height: 44px;
-        }
-
-        .btn-cancel {
-            background: rgba(255, 255, 255, 0.18);
-            border: none;
-            border-radius: 8px;
-            color: #fff;
-            height: 44px;
-        }
-
-        /* small tweaks */
-        .form-check-label {
-            color: rgba(255, 255, 255, 0.95)
-        }
-
-        .forgot-link {
-            color: rgba(255, 255, 255, 0.9);
-            text-decoration: none;
-        }
-
-        .forgot-link:hover {
-            color: var(--accent);
-            text-decoration: underline;
-        }
-
-        .login-footer {
-            text-align: center;
-            margin-top: 1rem;
-            color: rgba(255, 255, 255, 0.9)
-        }
-
-        .login-footer a {
-            color: var(--accent);
-            font-weight: 600
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(12px)
-            }
-
-            to {
-                opacity: 1;
-                transform: none
-            }
-        }
-    </style>
-	<link rel="stylesheet" href="{{ asset('css/sweetalert2.min.css') }}">
-
-</head>
-
-<body>
-
-    <div class="login-card">
-        <div class="login-header">
-            <img src="{{ asset('img/favicon.png') }}" alt="FDRE ETA logo">
-            <h2>FDRE Education & Training Authority</h2>
-            <p>Accreditation Application Portal</p>
-        </div>
-
-        <!-- session / general errors -->
-        @if (session('status'))
-            <div class="alert alert-success">{{ session('status') }}</div>
-        @endif
-
-        @if ($errors->any() && !($errors->has('email') || $errors->has('password') || $errors->has('captcha')))
-            <!-- show only non-field-global error here (you can change logic if you want global always) -->
-            <div class="alert alert-danger">{{ $errors->first() }}</div>
-        @endif
-
-        <form method="POST" action="{{ route('login') }}" novalidate>
-            @csrf
-
-            <!-- Email -->
-            <div class="mb-3">
-                <label for="email" class="visually-hidden">Email</label>
-                <div class="input-icon">
-                    <i class="fas fa-envelope"></i>
-                    <input id="email" type="email" name="email" value="{{ old('email') }}" required
-                        class="form-control {{ $errors->has('email') ? 'is-invalid' : '' }}" placeholder="Email address"
-                        autocomplete="email" autofocus>
-                </div>
-                @if ($errors->has('email'))
-                    <div class="invalid-feedback">{{ $errors->first('email') }}</div>
-                @endif
-            </div>
-
-            <!-- Password -->
-            <div class="mb-3">
-                <label for="password" class="visually-hidden">Password</label>
-                <div class="input-icon">
-                    <i class="fas fa-lock"></i>
-                    <input id="password" type="password" name="password" required
-                        class="form-control {{ $errors->has('password') ? 'is-invalid' : '' }}" placeholder="Password"
-                        autocomplete="current-password">
-                </div>
-                @if ($errors->has('password'))
-                    <div class="invalid-feedback">{{ $errors->first('password') }}</div>
-                @endif
-            </div>
-
-            <!-- Remember & Forgot -->
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="remember" id="remember"
-                        {{ old('remember') ? 'checked' : '' }}>
-                    <label class="form-check-label" for="remember">Remember me</label>
-                </div>
-
-                @if (Route::has('password.request'))
-                    <a class="forgot-link" href="{{ route('password.request') }}">Forgot password?</a>
-                @endif
-            </div>
-
-            <!-- CAPTCHA in one row -->
-            <div class="mb-3">
-                <div class="d-flex gap-2 align-items-center">
-                    <img src="{{ route('captcha') }}?{{ time() }}" alt="captcha"
-                        class="captcha-img captcha-row" onclick="this.src='{{ route('captcha') }}?'+Math.random()">
-                    <div class="flex-grow-1">
-                        <input id="captcha" type="text" name="captcha" required
-                            class="form-control {{ $errors->has('captcha') ? 'is-invalid' : '' }}"
-                            placeholder="Enter CAPTCHA">
-                        @if ($errors->has('captcha'))
-                            <div class="invalid-feedback">{{ $errors->first('captcha') }}</div>
-                        @endif
-                    </div>
-                </div>
-            </div>
-
-            <!-- Buttons -->
-            <div class="d-grid gap-2">
-                <button type="submit" class="btn btn-login text-white"><i class="fas fa-sign-in-alt me-2"></i>Sign
-                    In</button>
-                <a href="{{ url('/') }}" class="btn btn-cancel text-white"><i
-                        class="fas fa-times me-2"></i>Cancel</a>
-            </div>
-        </form>
-
-        <div class="login-footer">
-            Don't have an account? <a href="{{ route('register') }}">Register</a>
-        </div>
-    </div>
-
-    <!-- focus first invalid input when validation fails -->
-    @if ($errors->any())
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const invalid = document.querySelector('.is-invalid');
-                if (invalid) {
-                    invalid.focus();
+    /**
+     * Handle an incoming authentication request.
+     */
+    public function store(LoginRequest $request): RedirectResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required'],
+            'captcha' => ['required', 'string', function ($attribute, $value, $fail) {
+                if (strtoupper($value) !== session('captcha')) {
+                    $fail('The CAPTCHA verification failed.');
                 }
-            });
-        </script>
-    @endif
+            }],
+        ]);
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-	<script src="{{ asset('js/sweetalert2.min.js') }}"></script>
-@include('sweetalert::alert')
-</body>
+        $email = $request->email;
+        $password = $request->password;
+        $remember = $request->remember_me;
+        $ip = $request->ip();
+        $throttleKey = 'login_attempt|' . $ip . '|' . $email;
 
-</html>
+        $maxAttempts = 3;
+        $lockoutSeconds = 300; // 5 minutes
+
+        // Check if user has too many failed attempts
+        if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+            RateLimiter::hit($throttleKey, $lockoutSeconds); // Extend lockout
+
+            $seconds = RateLimiter::availableIn($throttleKey);
+            $minutes = ceil($seconds / 60);
+
+            Log::warning('User locked out due to too many attempts', [
+                'email' => $email,
+                'ip' => $ip,
+                'attempts' => RateLimiter::attempts($throttleKey),
+                'lockout_remaining' => $seconds,
+                'time' => now()->format('Y-m-d H:i:s')
+            ]);
+
+            return back()->withErrors([
+                'email' => "Too many login attempts. Please try again in {$minutes} minute(s).",
+            ]);
+        }
+
+        Log::debug('Login attempt', [
+            'email' => $email,
+            'ip' => $ip,
+            'time' => now()->format('Y-m-d H:i:s')
+        ]);
+
+        if (Auth::attempt(['email' => $email, 'password' => $password, 'status' => 1], $remember)) {
+            $user = Auth::user();
+            
+            // Check if email is verified
+            if (is_null($user->email_verified_at)) {
+                Auth::logout(); // Log them out since attempt() logged them in
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+                
+                RateLimiter::hit($throttleKey, $lockoutSeconds);
+
+                Log::warning('Login blocked - email not verified', [
+                    'user_id' => $user->id,
+                    'email' => $email,
+                    'ip' => $ip,
+                    'time' => now()->format('Y-m-d H:i:s')
+                ]);
+
+                // Use SweetAlert for email verification error
+               Alert::error('Email Not Verified', 'Your email address is not verified. Please check your email for the verification link.')
+    ->autoClose(5000)
+    ->position('center')
+    ->timerProgressBar();
+                return back()->withInput();
+            }
+
+            $request->session()->regenerate();
+            RateLimiter::clear($throttleKey); // Clear attempts on success
+
+            $user = auth()->user();
+            event(new UserLoginSuccess($request, $user));
+
+            Log::info('Login successful', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ip' => $ip,
+                'time' => now()->format('Y-m-d H:i:s')
+            ]);
+
+            // Role-based redirection
+            if ($user->hasRole('user')) {
+                return redirect()->route('backend.applications.index')
+                    ->withCookie(cookie()->forever('last_login', now()->toDateTimeString()));
+            }
+
+            return redirect()->intended(route('backend.dashboard'))
+                ->withCookie(cookie()->forever('last_login', now()->toDateTimeString()));
+        }
+
+        // Login failed: record the attempt
+        RateLimiter::hit($throttleKey, $lockoutSeconds);
+
+        Log::warning('Login failed', [
+            'email' => $email,
+            'ip' => $ip,
+            'attempts' => RateLimiter::attempts($throttleKey),
+            'remaining_attempts' => max(0, $maxAttempts - RateLimiter::attempts($throttleKey)),
+            'time' => now()->format('Y-m-d H:i:s')
+        ]);
+
+        return back()->withErrors([
+            'email' => 'Invalid credentials or inactive account',
+        ])->onlyInput('email');
+    }
+
+    /**
+     * Destroy an authenticated session.
+     */
+    public function destroy(Request $request): RedirectResponse
+    {
+        $user = Auth::user();
+
+        Log::info('User logout', [
+            'user_id' => $user?->id,
+            'email' => $user?->email,
+            'ip' => $request->ip(),
+            'time' => now()->format('Y-m-d H:i:s')
+        ]);
+
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect('/')->withoutCookie('last_login');
+    }
+}
