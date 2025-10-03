@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use RealRashid\SweetAlert\Facades\Alert;
 
-
 class AuthenticatedSessionController extends Controller
 {
     /**
@@ -28,7 +27,6 @@ class AuthenticatedSessionController extends Controller
             $randomString .= $lettersOnly[random_int(0, strlen($lettersOnly) - 1)];
         }
 
-
         Log::info('Login page accessed', [
             'ip' => request()->ip(),
             'user_agent' => request()->userAgent(),
@@ -41,121 +39,118 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-   /**
- * Handle an incoming authentication request.
- */
-public function store(LoginRequest $request): RedirectResponse
-{
-    $request->validate([
-        'email' => ['required', 'email'],
-        'password' => ['required'],
-        'captcha' => ['required', 'string', function ($attribute, $value, $fail) {
-            if (strtoupper($value) !== session('captcha')) {
-                $fail('The CAPTCHA verification failed.');
-            }
-        }],
-    ]);
+    public function store(LoginRequest $request): RedirectResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required'],
+            'captcha' => ['required', 'string', function ($attribute, $value, $fail) {
+                if (strtoupper($value) !== session('captcha')) {
+                    $fail('The CAPTCHA verification failed.');
+                }
+            }],
+        ]);
 
-    $email = $request->email;
-    $password = $request->password;
-    $remember = $request->remember_me;
-    $ip = $request->ip();
-    $throttleKey = 'login_attempt|' . $ip . '|' . $email;
+        $email = $request->email;
+        $password = $request->password;
+        $remember = $request->remember_me;
+        $ip = $request->ip();
+        $throttleKey = 'login_attempt|' . $ip . '|' . $email;
 
-    $maxAttempts = 3;
-    $lockoutSeconds = 300; // 5 minutes
+        $maxAttempts = 3;
+        $lockoutSeconds = 300; // 5 minutes
 
-    // Check if user has too many failed attempts
-    if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
-        RateLimiter::hit($throttleKey, $lockoutSeconds); // Extend lockout
+        // Check if user has too many failed attempts
+        if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+            RateLimiter::hit($throttleKey, $lockoutSeconds); // Extend lockout
 
-        $seconds = RateLimiter::availableIn($throttleKey);
-        $minutes = ceil($seconds / 60);
+            $seconds = RateLimiter::availableIn($throttleKey);
+            $minutes = ceil($seconds / 60);
 
-        Log::warning('User locked out due to too many attempts', [
+            Log::warning('User locked out due to too many attempts', [
+                'email' => $email,
+                'ip' => $ip,
+                'attempts' => RateLimiter::attempts($throttleKey),
+                'lockout_remaining' => $seconds,
+                'time' => now()->format('Y-m-d H:i:s')
+            ]);
+
+            return back()->withErrors([
+                'email' => "Too many login attempts. Please try again in {$minutes} minute(s).",
+            ]);
+        }
+
+        Log::debug('Login attempt', [
             'email' => $email,
             'ip' => $ip,
-            'attempts' => RateLimiter::attempts($throttleKey),
-            'lockout_remaining' => $seconds,
             'time' => now()->format('Y-m-d H:i:s')
         ]);
 
-        return back()->withErrors([
-            'email' => "Too many login attempts. Please try again in {$minutes} minute(s).",
-        ]);
-    }
-
-    Log::debug('Login attempt', [
-        'email' => $email,
-        'ip' => $ip,
-        'time' => now()->format('Y-m-d H:i:s')
-    ]);
-
-    if (Auth::attempt(['email' => $email, 'password' => $password, 'status' => 1], $remember)) {
-        $user = Auth::user();
-        
-        // Check if email is verified
-        if (is_null($user->email_verified_at)) {
-            Auth::logout(); // Log them out since attempt() logged them in
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
+        if (Auth::attempt(['email' => $email, 'password' => $password, 'status' => 1], $remember)) {
+            $user = Auth::user();
             
-            RateLimiter::hit($throttleKey, $lockoutSeconds);
+            // Check if email is verified
+            if (is_null($user->email_verified_at)) {
+                Auth::logout(); // Log them out since attempt() logged them in
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+                
+                RateLimiter::hit($throttleKey, $lockoutSeconds);
 
-            Log::warning('Login blocked - email not verified', [
+                Log::warning('Login blocked - email not verified', [
+                    'user_id' => $user->id,
+                    'email' => $email,
+                    'ip' => $ip,
+                    'time' => now()->format('Y-m-d H:i:s')
+                ]);
+
+                // Use SweetAlert for email verification error
+                alert()->error('Email Not Verified', 'Your email address is not verified. Please check your email for the verification link.')
+                    ->autoClose(5000)
+                    ->position('center')
+                    ->timerProgressBar();
+
+                return back()->withInput();
+            }
+
+            $request->session()->regenerate();
+            RateLimiter::clear($throttleKey); // Clear attempts on success
+
+            $user = auth()->user();
+            event(new UserLoginSuccess($request, $user));
+
+            Log::info('Login successful', [
                 'user_id' => $user->id,
-                'email' => $email,
+                'email' => $user->email,
                 'ip' => $ip,
                 'time' => now()->format('Y-m-d H:i:s')
             ]);
 
-            // Use SweetAlert for email verification error
-            Alert::error('Email Not Verified', 'Your email address is not verified. Please check your email for the verification link.')
-                ->autoClose(5000)
-                ->position('center')
-                ->timerProgressBar();
+            // Role-based redirection
+            if ($user->hasRole('user')) {
+                return redirect()->route('backend.applications.index')
+                    ->withCookie(cookie()->forever('last_login', now()->toDateTimeString()));
+            }
 
-            return back()->withInput();
-        }
-
-        $request->session()->regenerate();
-        RateLimiter::clear($throttleKey); // Clear attempts on success
-
-        $user = auth()->user();
-        event(new UserLoginSuccess($request, $user));
-
-        Log::info('Login successful', [
-            'user_id' => $user->id,
-            'email' => $user->email,
-            'ip' => $ip,
-            'time' => now()->format('Y-m-d H:i:s')
-        ]);
-
-        // Role-based redirection
-        if ($user->hasRole('user')) {
-            return redirect()->route('backend.applications.index')
+            return redirect()->intended(route('backend.dashboard'))
                 ->withCookie(cookie()->forever('last_login', now()->toDateTimeString()));
         }
 
-        return redirect()->intended(route('backend.dashboard'))
-            ->withCookie(cookie()->forever('last_login', now()->toDateTimeString()));
+        // Login failed: record the attempt
+        RateLimiter::hit($throttleKey, $lockoutSeconds);
+
+        Log::warning('Login failed', [
+            'email' => $email,
+            'ip' => $ip,
+            'attempts' => RateLimiter::attempts($throttleKey),
+            'remaining_attempts' => max(0, $maxAttempts - RateLimiter::attempts($throttleKey)),
+            'time' => now()->format('Y-m-d H:i:s')
+        ]);
+
+        return back()->withErrors([
+            'email' => 'Invalid credentials or inactive account',
+        ])->onlyInput('email');
     }
-
-    // Login failed: record the attempt
-    RateLimiter::hit($throttleKey, $lockoutSeconds);
-
-    Log::warning('Login failed', [
-        'email' => $email,
-        'ip' => $ip,
-        'attempts' => RateLimiter::attempts($throttleKey),
-        'remaining_attempts' => max(0, $maxAttempts - RateLimiter::attempts($throttleKey)),
-        'time' => now()->format('Y-m-d H:i:s')
-    ]);
-
-    return back()->withErrors([
-        'email' => 'Invalid credentials or inactive account',
-    ])->onlyInput('email');
-}
 
     /**
      * Destroy an authenticated session.
