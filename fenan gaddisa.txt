@@ -21,9 +21,10 @@ if (user_registration()) {
         Route::post('register', [RegisteredUserController::class, 'store']);
     });
 }
-Route::get('verify-email/{id}/{hash}', VerifyEmailController::class)
+Route::get('verify-email/{id}/{hash}', [VerifyEmailController::class, '__invoke'])
     ->middleware(['signed', 'throttle:6,1'])
     ->name('verification.verify');
+
 	
 Route::middleware('guest')->group(function () {
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
