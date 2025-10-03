@@ -8,9 +8,6 @@
 
     <title>{{ config('app.name', 'Laravel') }}</title>
 
-    <!-- Add SweetAlert CSS -->
-    <link rel="stylesheet" href="{{ asset('css/sweetalert2.min.css') }}">
-
     <!-- Scripts -->
     @vite(['resources/css/app-frontend.css'])
     @vite(['resources/js/app-frontend.js'])
@@ -35,22 +32,6 @@
             {{ $slot }}
         </main>
     </div>
-
-    <!-- Add SweetAlert JS -->
-    <script src="{{ asset('js/sweetalert2.min.js') }}"></script>
-    
-    <!-- Display SweetAlert from session -->
-    @if(Session::has('alert'))
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                Swal.fire({
-                    title: '{{ Session::get("alert")["title"] ?? "" }}',
-                    text: '{{ Session::get("alert")["text"] ?? "" }}',
-                    icon: '{{ Session::get("alert")["icon"] ?? "info" }}',
-                    confirmButtonText: 'OK'
-                });
-            });
-        </script>
-    @endif
 </body>
+
 </html>
