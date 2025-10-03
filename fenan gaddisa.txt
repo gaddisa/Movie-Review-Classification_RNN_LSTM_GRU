@@ -11,10 +11,33 @@
     <!-- Scripts -->
     @vite(['resources/css/app-frontend.css'])
     @vite(['resources/js/app-frontend.js'])
+    
+    <!-- Bootstrap for alerts -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 
 <body class="font-sans antialiased">
     <x-selected-theme />
+    
+    <!-- Flash Messages - ADD THIS SECTION -->
+    @if(session('success'))
+    <div class="alert alert-success alert-dismissible fade show m-0 rounded-0" role="alert">
+        <div class="container">
+            <strong>Success!</strong> {{ session('success') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+    @endif
+
+    @if(session('error'))
+    <div class="alert alert-danger alert-dismissible fade show m-0 rounded-0" role="alert">
+        <div class="container">
+            <strong>Error!</strong> {{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+    @endif
+
     <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
         @include('layouts.navigation')
 
@@ -29,9 +52,26 @@
 
         <!-- Page Content -->
         <main>
-            {{ $slot }}
+            <!-- Remove $slot and let individual views define their content -->
+            @yield('content')
         </main>
     </div>
-</body>
 
+    <!-- Bootstrap JS for alerts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Auto-dismiss alerts -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Auto-dismiss alerts after 5 seconds
+            setTimeout(function() {
+                const alerts = document.querySelectorAll('.alert');
+                alerts.forEach(function(alert) {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                });
+            }, 5000);
+        });
+    </script>
+</body>
 </html>
