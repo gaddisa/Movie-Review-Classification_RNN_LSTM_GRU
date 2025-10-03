@@ -1,157 +1,162 @@
-<nav x-data="{ open: false }" class="border-b border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800">
-    <!-- Primary Navigation Menu -->
-    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div class="flex h-16 justify-between">
-            <div class="flex">
-                <!-- Logo -->
-                <div class="flex shrink-0 items-center">
-                    <a href="{{ Auth::check() ? route('dashboard') : route('home') }}">
-                        <x-application-logo class="block h-9 w-auto fill-current text-gray-800 dark:text-gray-200" />
-                    </a>
-                </div>
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->currentLocale()) }}" dir="{{ language_direction() }}">
 
-                <!-- Navigation Links - Only show when user is authenticated -->
-                @auth
-                <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                    <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                        {{ __("Dashboard") }}
-                    </x-nav-link>
-                </div>
-                @endauth
-            </div>
+<head>
+    <!-- All your existing meta tags remain -->
+    <!-- Basic Meta Tags -->
+ <meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
-            <!-- Settings Dropdown - Only show when user is authenticated -->
-            @auth
-            <div class="hidden sm:ms-6 sm:flex sm:items-center">
-                <x-dropdown align="right" width="48">
-                    <x-slot name="trigger">
-                        <button
-                            class="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-300"
-                        >
-                            <div>{{ Auth::user()->name }}</div>
+<!-- Primary Meta Tags -->
+<title>@yield('title') | {{ config('app.name', 'Ethiopia Higher Education Accreditation Platform - FDRE ETA') }}</title>
+<meta name="description"
+    content="{{ setting('meta_description', 'Accreditation management platform for Ethiopian higher education and TVET institutions, operated by the Federal Democratic Republic of Ethiopia Education and Training Authority (FDRE ETA). Apply, track, and manage accreditation online.') }}" />
+<meta name="keywords"
+    content="{{ setting('meta_keyword', 'Ethiopia university accreditation, TVET accreditation Ethiopia, FDRE Education and Training Authority, higher education quality assurance, accreditation Ethiopia, education standards Ethiopia, quality audit Ethiopia') }}" />
+<meta name="author" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
+<meta name="copyright" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
 
-                            <div class="ms-1">
-                                <svg
-                                    class="h-4 w-4 fill-current"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                >
-                                    <path
-                                        fill-rule="evenodd"
-                                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                        clip-rule="evenodd"
-                                    />
-                                </svg>
-                            </div>
-                        </button>
-                    </x-slot>
+<!-- Favicons -->
+<link href="{{ asset('img/favicon.png') }}" rel="apple-touch-icon" sizes="180x180" />
+<link type="image/png" href="{{ asset('img/favicon.png') }}" rel="icon" sizes="32x32" />
+<link type="image/png" href="{{ asset('img/favicon.png') }}" rel="icon" sizes="16x16" />
+<link rel="shortcut icon" href="{{ asset('img/favicon.png') }}" />
+<meta name="theme-color" content="#0d6efd" />
 
-                    <x-slot name="content">
-                        <x-dropdown-link :href="route('profile.edit')">
-                            {{ __("Profile") }}
-                        </x-dropdown-link>
+<!-- Open Graph / Facebook -->
+<meta property="og:type" content="website" />
+<meta property="og:title"
+    content="@yield('title') | {{ config('app.name', 'Ethiopia Higher Education Accreditation Platform - FDRE ETA') }}" />
+<meta property="og:description"
+    content="{{ setting('meta_description', 'Official accreditation management platform for Ethiopian higher education and TVET institutions.') }}" />
+<meta property="og:url" content="{{ url()->current() }}" />
+<meta property="og:site_name" content="FDRE Education and Training Authority" />
+<meta property="og:image" content="{{ asset('img/logo-square.png') }}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:locale" content="{{ str_replace('_', '-', app()->getLocale()) }}" />
 
-                        <!-- Authentication -->
-                        <form method="POST" action="{{ route('logout') }}">
-                            @csrf
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@FDRETraining" />
+<meta name="twitter:creator" content="@FDRETraining" />
+<meta name="twitter:title" content="@yield('title') | {{ config('app.name') }}" />
+<meta name="twitter:description" content="{{ setting('meta_description') }}" />
+<meta name="twitter:image" content="{{ asset('img/logo-square.png') }}" />
 
-                            <x-dropdown-link
-                                :href="route('logout')"
-                                onclick="event.preventDefault();
-                                                this.closest('form').submit();"
-                            >
-                                {{ __("Log Out") }}
-                            </x-dropdown-link>
-                        </form>
-                    </x-slot>
-                </x-dropdown>
-            </div>
-            @else
-            <!-- Show login/register links when user is not authenticated -->
-            <div class="hidden sm:ms-6 sm:flex sm:items-center space-x-4">
-                <x-nav-link :href="route('login')">
-                    {{ __("Login") }}
-                </x-nav-link>
-                <x-nav-link :href="route('register')">
-                    {{ __("Register") }}
-                </x-nav-link>
-            </div>
-            @endauth
+<!-- Dublin Core -->
+<meta name="DC.title" content="@yield('title') | {{ config('app.name') }}" />
+<meta name="DC.description" content="{{ setting('meta_description') }}" />
+<meta name="DC.creator" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
+<meta name="DC.language" content="{{ str_replace('_', '-', app()->getLocale()) }}" />
 
-            <!-- Hamburger -->
-            <div class="-me-2 flex items-center sm:hidden">
-                <button
-                    @click="open = ! open"
-                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 transition duration-150 ease-in-out hover:bg-gray-100 hover:text-gray-500 focus:bg-gray-100 focus:text-gray-500 focus:outline-none dark:text-gray-500 dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:focus:bg-gray-900 dark:focus:text-gray-400"
-                >
-                    <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
-                        <path
-                            :class="{ 'hidden': open, 'inline-flex': !open }"
-                            class="inline-flex"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M4 6h16M4 12h16M4 18h16"
-                        />
-                        <path
-                            :class="{ 'hidden': !open, 'inline-flex': open }"
-                            class="hidden"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M6 18L18 6M6 6l12 12"
-                        />
-                    </svg>
-                </button>
-            </div>
+<!-- CSRF Token -->
+<meta name="csrf-token" content="{{ csrf_token() }}" />
+
+<!-- Canonical URL -->
+<link rel="canonical" href="{{ url()->current() }}" />
+
+<!-- PWA Manifest -->
+<link rel="manifest" href="{{ asset('manifest.json') }}">
+
+<!-- Preload Fonts -->
+<link rel="preload" href="{{ asset('fonts/fa-brands-400.woff2') }}" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{ asset('fonts/fa-solid-900.woff2') }}" as="font" type="font/woff2" crossorigin>
+
+
+    <!-- CSS and JS Assets -->
+    @vite(['resources/css/app-frontend.css', 'resources/js/app-frontend.js'])
+    @livewireStyles
+    @stack('after-styles')
+
+    <!-- Background + Glass Effect Styles -->
+    <style>
+        :root {
+            --primary: #36bac0;
+            --accent: #ed6923;
+            --dark: #37517e;
+        }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, var(--dark) 0%, var(--primary) 60%);
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before,
+        body::after {
+            content: "";
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            z-index: 0;
+            animation: float 10s infinite ease-in-out;
+        }
+
+        body::before {
+            width: 350px;
+            height: 350px;
+            top: -120px;
+            left: -120px;
+        }
+
+        body::after {
+            width: 250px;
+            height: 250px;
+            bottom: -80px;
+            right: -80px;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0) rotate(0)
+            }
+
+            50% {
+                transform: translateY(20px) rotate(10deg)
+            }
+        }
+
+        main {
+            position: relative;
+            z-index: 1;
+            padding: 2rem;
+        }
+
+        .glass-container {
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(16px);
+            border-radius: 14px;
+            padding: 2rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+        }
+    </style>
+
+    <!-- Google Analytics -->
+    <x-google-analytics />
+</head>
+
+<body>
+    @include('sweetalert::alert')
+    <x-selected-theme />
+
+    @include('frontend.includes.header')
+
+    <main role="main">
+        <div class="glass-container">
+            @yield('content')
         </div>
-    </div>
+    </main>
 
-    <!-- Responsive Navigation Menu -->
-    <div :class="{ 'block': open, 'hidden': !open }" class="hidden sm:hidden">
-        @auth
-        <div class="space-y-1 pb-3 pt-2">
-            <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                {{ __("Dashboard") }}
-            </x-responsive-nav-link>
-        </div>
+    @livewireScripts
+    @stack('after-scripts')
+</body>
 
-        <!-- Responsive Settings Options -->
-        <div class="border-t border-gray-200 pb-1 pt-4 dark:border-gray-600">
-            <div class="px-4">
-                <div class="text-base font-medium text-gray-800 dark:text-gray-200">{{ Auth::user()->name }}</div>
-                <div class="text-sm font-medium text-gray-500">{{ Auth::user()->email }}</div>
-            </div>
-
-            <div class="mt-3 space-y-1">
-                <x-responsive-nav-link :href="route('profile.edit')">
-                    {{ __("Profile") }}
-                </x-responsive-nav-link>
-
-                <!-- Authentication -->
-                <form method="POST" action="{{ route('logout') }}">
-                    @csrf
-
-                    <x-responsive-nav-link
-                        :href="route('logout')"
-                        onclick="event.preventDefault();
-                                        this.closest('form').submit();"
-                    >
-                        {{ __("Log Out") }}
-                    </x-responsive-nav-link>
-                </form>
-            </div>
-        </div>
-        @else
-        <!-- Mobile menu for guests -->
-        <div class="space-y-1 pb-3 pt-2">
-            <x-responsive-nav-link :href="route('login')">
-                {{ __("Login") }}
-            </x-responsive-nav-link>
-            <x-responsive-nav-link :href="route('register')">
-                {{ __("Register") }}
-            </x-responsive-nav-link>
-        </div>
-        @endauth
-    </div>
-</nav>
+</html>
