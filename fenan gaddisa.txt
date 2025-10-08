@@ -1,568 +1,414 @@
 <?php
-$notifications = optional(auth()->user())->unreadNotifications;
-$notifications_count = optional($notifications)->count();
-$notifications_latest = optional($notifications)->take(5);
-?>
 
-<header class="header header-sticky mb-3 p-0">
-    <!-- Top Navigation Bar -->
-    <div class="container-fluid border-bottom px-4 accreditation-top-bar">
-        <!-- Sidebar Toggle -->
-        <button class="header-toggler accreditation-toggle" type="button" style="margin-inline-start: -14px"
-            onclick="coreui.Sidebar.getInstance(document.querySelector('#sidebar')).toggle()">
-            <i class="fas fa-bars"></i>
-            <span class="accreditation-pulse"></span>
-        </button>
+namespace App\Http\Controllers\Backend;
 
-        <!-- App Name -->
-        <ul class="header-nav d-none d-lg-flex">
-            <li class="nav-item">
-                <a class="nav-link accreditation-app-name" href="{{ route('frontend.index') }}" target="_blank">
-                    <i class="fas fa-certificate accreditation-icon"></i>
-                    <span>{{ app_name() }}</span>
-                </a>
-            </li>
-        </ul>
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Gate;
+use App\Authorizable;
+use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use Yajra\DataTables\DataTables;
+use Modules\Program\Models\Program;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use RealRashid\SweetAlert\Facades\Alert;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Validator;
+use App\Http\Controllers\Backend\BackendBaseController;
 
-        <!-- Right Side Controls -->
-        <ul class="header-nav ms-auto accreditation-controls">
+class SubstandardsController extends BackendBaseController
+{
+    use Authorizable;
 
-            <!-- Notifications -->
-            <li class="nav-item dropdown accreditation-notification">
-                <button class="btn btn-link nav-link d-flex align-items-center px-2 py-2" data-coreui-toggle="dropdown"
-                    type="button" aria-expanded="false">
-                    <i class="fas fa-bell accreditation-bell-icon"></i>
-                    @if ($notifications_count)
-                        <span class="badge badge-pill accreditation-badge-alert">{{ $notifications_count }}</span>
-                        <span class="accreditation-alert-pulse"></span>
-                    @endif
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end accreditation-dropdown">
-                    <li>
-                        <div class="dropdown-header bg-body-tertiary text-body-secondary fw-semibold rounded-top mb-2">
-                            <strong>
-                                <i class="fas fa-bell"></i> @lang('You have :count notifications', ['count' => $notifications_count])
-                            </strong>
-                        </div>
-                    </li>
-                    @if ($notifications_latest)
-                        @foreach ($notifications_latest as $notification)
-                            @php
-                                $notification_text = isset($notification->data['title'])
-                                    ? $notification->data['title']
-                                    : $notification->data['module'];
-                            @endphp
+    public $module_title;
+    public $module_name;
+    public $module_path;
+    public $module_icon;
+    public $module_model;
 
-                            <li>
-                                <a class="dropdown-item d-flex align-items-center accreditation-alert-item"
-                                    href="{{ route('backend.notifications.show', $notification) }}">
-                                    <i
-                                        class="{{ isset($notification->data['icon']) ? $notification->data['icon'] : 'fas fa-bullhorn' }}"></i>
-                                    &nbsp;{{ $notification_text }}
-                                    <span
-                                        class="accreditation-alert-time">{{ $notification->created_at->diffForHumans() }}</span>
-                                </a>
-                            </li>
-                        @endforeach
-                    @endif
-                </ul>
-            </li>
-
-            <!-- Theme Switcher -->
-            <li class="nav-item dropdown">
-                <button class="btn btn-link nav-link d-flex align-items-center px-2 py-2" data-coreui-toggle="dropdown"
-                    type="button" aria-expanded="false">
-                    <svg class="theme-icon-active icon icon-lg" xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 512 512">
-                        <path class="ci-primary" fill="var(--ci-primary-color, currentColor)"
-                            d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6m0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708" />
-                    </svg>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end accreditation-dropdown" style="--cui-dropdown-min-width: 8rem">
-                    <li>
-                        <button class="dropdown-item d-flex align-items-center" data-coreui-theme-value="light"
-                            type="button">
-                            <svg class="theme-icon icon icon-lg" xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 512 512">
-                                <path class="ci-primary" fill="var(--ci-primary-color, currentColor)"
-                                    d="M256,104c-83.813,0-152,68.187-152,152s68.187,152,152,152,152-68.187,152-152S339.813,104,256,104Zm0,272A120,120,0,1,1,376,256,120.136,120.136,0,0,1,256,376Z">
-                                </path>
-                                <rect class="ci-primary" width="32" height="48" x="240" y="16"
-                                    fill="var(--ci-primary-color, currentColor)"></rect>
-                                <rect class="ci-primary" width="32" height="48" x="240" y="448"
-                                    fill="var(--ci-primary-color, currentColor)"></rect>
-                                <rect class="ci-primary" width="48" height="32" x="448" y="240"
-                                    fill="var(--ci-primary-color, currentColor)"></rect>
-                                <rect class="ci-primary" width="48" height="32" x="16" y="240"
-                                    fill="var(--ci-primary-color, currentColor)"></rect>
-                                <rect class="ci-primary" width="32" height="45.255" x="400" y="393.373"
-                                    fill="var(--ci-primary-color, currentColor)" transform="rotate(-45 416 416)"></rect>
-                                <rect class="ci-primary" width="32.001" height="45.255" x="80" y="73.373"
-                                    fill="var(--ci-primary-color, currentColor)" transform="rotate(-45 96 96)"></rect>
-                                <rect class="ci-primary" width="45.255" height="32" x="73.373" y="400"
-                                    fill="var(--ci-primary-color, currentColor)"
-                                    transform="rotate(-45.001 96.002 416.003)"></rect>
-                                <rect class="ci-primary" width="45.255" height="32.001" x="393.373" y="80"
-                                    fill="var(--ci-primary-color, currentColor)" transform="rotate(-45 416 96)"></rect>
-                            </svg>
-                            &nbsp;Light
-                        </button>
-                    </li>
-                    <li>
-                        <button class="dropdown-item d-flex align-items-center" data-coreui-theme-value="dark"
-                            type="button">
-                            <svg class="theme-icon icon icon-lg" xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 512 512">
-                                <path class="ci-primary" fill="var(--ci-primary-color, currentColor)"
-                                    d="M268.279,496c-67.574,0-130.978-26.191-178.534-73.745S16,311.293,16,243.718A252.252,252.252,0,0,1,154.183,18.676a24.44,24.44,0,0,1,34.46,28.958,220.12,220.12,0,0,0,54.8,220.923A218.746,218.746,0,0,0,399.085,333.2h0a220.2,220.2,0,0,0,65.277-9.846,24.439,24.439,0,0,1,28.959,34.461A252.256,252.256,0,0,1,268.279,496ZM153.31,55.781A219.3,219.3,0,0,0,48,243.718C48,365.181,146.816,464,268.279,464a219.3,219.3,0,0,0,187.938-105.31,252.912,252.912,0,0,1-57.13,6.513h0a250.539,250.539,0,0,1-178.268-74.016,252.147,252.147,0,0,1-67.509-235.4Z">
-                                </path>
-                            </svg>
-                            &nbsp;Dark
-                        </button>
-                    </li>
-                    <li>
-                        <button class="dropdown-item d-flex align-items-center active" data-coreui-theme-value="auto"
-                            type="button">
-                            <svg class="theme-icon icon icon-lg" xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 512 512">
-                                <path class="ci-primary" fill="var(--ci-primary-color, currentColor)"
-                                    d="M256,16C123.452,16,16,123.452,16,256S123.452,496,256,496,496,388.548,496,256,388.548,16,256,16ZM234,462.849a208.346,208.346,0,0,1-169.667-125.9c-.364-.859-.706-1.724-1.057-2.587L234,429.939Zm0-69.582L50.889,290.76A209.848,209.848,0,0,1,48,256q0-9.912.922-19.67L234,339.939Zm0-90L54.819,202.96a206.385,206.385,0,0,1,9.514-27.913Q67.1,168.5,70.3,162.191L234,253.934Zm0-86.015L86.914,134.819a209.42,209.42,0,0,1,22.008-25.9q3.72-3.72,7.6-7.228L234,166.027Zm0-87.708L144.352,80.451A206.951,206.951,0,0,1,234,49.151ZM464,256A207.775,207.775,0,0,1,266,463.761V48.239A207.791,207.791,0,0,1,464,256Z">
-                                </path>
-                            </svg>
-                            &nbsp;Auto
-                        </button>
-                    </li>
-                </ul>
-            </li>
-
-            <!-- Language Selector 
-            <li class="nav-item dropdown accreditation-language">
-                <button class="btn btn-link nav-link d-flex align-items-center px-2 py-2"
-                    data-coreui-toggle="dropdown" type="button" aria-expanded="false">
-                    <i class="fas fa-language text-white"></i>
-                    &nbsp;{{ strtoupper(App::getLocale()) }}
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end accreditation-dropdown">
-                    @foreach (config('app.available_locales') as $locale_code => $locale_name)
-                        <li>
-                            <a class="dropdown-item d-flex align-items-center accreditation-lang-item"
-                                href="{{ route('language.switch', $locale_code) }}">
-                                <i class="fas fa-globe accreditation-lang-icon"></i>
-                                {{ $locale_name }}
-                            </a>
-                        </li>
-                    @endforeach
-                </ul>
-            </li>-->
-
-            <!-- User Profile -->
-            <li class="nav-item dropdown accreditation-profile">
-                <a class="nav-link py-0 pe-0" data-coreui-toggle="dropdown" href="#" role="button"
-                    aria-haspopup="true" aria-expanded="false">
-                    <div class="accreditation-avatar">
-                         <img class="accreditation-avatar-img" 
-                 src="{{ asset(auth()->user()->avatar) }}"
-                 alt="{{ auth()->user()->name }}" 
-                 width="36" 
-                 height="36" />
-                        <span class="accreditation-status"></span>
-                    </div>
-                </a>
-                <div class="dropdown-menu dropdown-menu-end pt-0 accreditation-dropdown">
-                    <div class="accreditation-profile-header">
-                        <div class="accreditation-profile-avatar">
-                            <img src="{{ asset(auth()->user()->avatar) }}" 
-                     alt="{{ auth()->user()->name }}" 
-                     width="50" 
-                     height="50" />
-                <span class="accreditation-profile-status"></span>
-                        </div>
-                        <div class="accreditation-profile-info">
-                            <strong>{{ Auth::user()->name }}</strong>
-                            <small>{{ Auth::user()->role }}</small>
-                            <div class="accreditation-profile-id">ID #{{ Auth::id() }}</div>
-                        </div>
-                    </div>
-
-                    <a class="dropdown-item accreditation-profile-link"
-                        href="{{ route('backend.users.show', Auth::user()->id) }}">
-                        <i class="fas fa-user"></i>
-                        &nbsp;User Profile
-                    </a>
-
-                    <a class="dropdown-item accreditation-profile-link"
-                        href="{{ route('backend.notifications.index', Auth::user()->id) }}">
-                        <i class="fas fa-bell"></i>
-                        &nbsp;Notifications
-                        @if ($notifications_count)
-                            <span class="badge bg-danger ms-2">{{ $notifications_count }}</span>
-                        @endif
-                    </a>
-
-                    <div class="accreditation-profile-divider">
-                        <i class="fas fa-cog"></i> SETTINGS
-                    </div>
-
-                    <a class="dropdown-item accreditation-profile-link"
-                        href="{{ route('backend.users.userchangePassword') }}">
-                        <i class="fas fa-key"></i>
-                        &nbsp;Change Password
-                    </a>
-
-                    <a class="dropdown-item accreditation-logout" href="{{ route('login') }}"
-                        onclick="event.preventDefault(); document.getElementById('logout-form').submit();">
-                        <i class="fas fa-sign-out-alt"></i>
-                        &nbsp;Logout
-                    </a>
-
-                    <form id="logout-form" style="display: none" action="{{ route('logout') }}" method="POST">
-                        @csrf
-                    </form>
-                </div>
-            </li>
-        </ul>
-    </div>
-
-    <!-- Breadcrumb -->
-    <div class="container-fluid px-4">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb my-0 ms-2">
-                @yield('breadcrumbs')
-            </ol>
-        </nav>
-        <div class="d-none d-sm-flex float-end flex-row">
-            <div class="accreditation-date">{{ date_today() }}&nbsp;</div>
-            <div class="accreditation-clock" id="liveClock"></div>
-        </div>
-    </div>
-</header>
-
-<style>
-    /* Accreditation Theme Styles */
-    .accreditation-top-bar {
-        background: linear-gradient(to right, #2c3e50, #3498db);
-        border-bottom: 2px solid #f39c12 !important;
+    public function __construct()
+    {
+        // Page Title
+        $this->module_title = 'Sub Standards Management';
+        $this->module_title = 'Substandards';
+        $this->module_name = 'substandards';
+        $this->module_path = 'backend';
+        $this->module_icon = 'fa-solid fa-folder-tree';
+        $this->module_model = "App\\Models\\Substandard";
     }
 
-    .accreditation-toggle {
-        color: white;
-        position: relative;
-        padding-left: 10px;
-        background: transparent;
-        border: none;
+    public function standards()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+
+        $$module_name = $module_model::paginate(15);
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
+        );
     }
 
-    .accreditation-toggle:hover {
-        color: #f39c12;
+    public function create(array $additionalData = [])
+    {
+        $standards_id = request()->get('id'); // Get 'id' from the request if passed
+
+        // Other code for setting up the module
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Create';
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        // Pass the 'id' to the view if needed
+        return view(
+            "{$module_path}.{$module_name}.create",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'standards_id')
+        );
     }
 
-    .accreditation-pulse {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        background: rgba(243, 156, 18, 0.3);
-        animation: accreditationPulse 2s infinite;
-        z-index: 0;
-        opacity: 0;
-    }
+    public function store(Request $request)
+    {
+        // Get the standard_id from the request
+        $standard_id = $request->get('standards_id');
 
-    .accreditation-toggle:hover .accreditation-pulse {
-        opacity: 1;
-    }
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
 
-    .accreditation-app-name {
-        color: white !important;
-        font-weight: bold;
-        display: flex;
-        align-items: center;
-        position: relative;
-    }
+        // Authorization: check via 'manage' method which is inside AdminContentPolicy
+        $response = Gate::inspect('manage', $this->module_model);
 
-    .accreditation-icon {
-        color: #f39c12;
-        margin-right: 8px;
-        font-size: 1.2rem;
-    }
-
-    .accreditation-controls {
-        display: flex;
-        gap: 5px;
-    }
-
-    /* Notifications */
-    .accreditation-notification .nav-link {
-        color: white !important;
-        position: relative;
-    }
-
-    .accreditation-notification .nav-link:hover {
-        color: #f39c12 !important;
-    }
-
-    .accreditation-bell-icon {
-        font-size: 1.1rem;
-    }
-
-    .accreditation-badge-alert {
-        background: #e74c3c !important;
-        color: white !important;
-        font-size: 10px;
-        margin-left: 5px;
-        position: relative;
-        z-index: 1;
-    }
-
-    .accreditation-alert-pulse {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        background: rgba(231, 76, 60, 0.3);
-        animation: accreditationPulse 2s infinite;
-        z-index: 0;
-    }
-
-    /* Dropdowns */
-    .accreditation-dropdown {
-        background: #34495e;
-        border: 1px solid #2c3e50;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-    }
-
-    .accreditation-dropdown .dropdown-item {
-        color: white;
-        padding: 10px 15px;
-        border-bottom: 1px solid #2c3e50;
-    }
-
-    .accreditation-dropdown .dropdown-item:hover {
-        background: #2c3e50;
-        color: #f39c12;
-    }
-
-    .accreditation-dropdown .dropdown-header {
-        background: #2c3e50;
-        color: #f39c12;
-        border-bottom: 1px solid #2c3e50;
-        padding: 10px 15px;
-    }
-
-    /* Profile */
-    .accreditation-avatar {
-        width: 36px;
-        height: 36px;
-        position: relative;
-    }
-
-    .accreditation-avatar-img {
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 2px solid #f39c12;
-    }
-
-    .accreditation-status {
-        position: absolute;
-        bottom: 0;
-        right: 0;
-        width: 10px;
-        height: 10px;
-        background: #2ecc71;
-        border-radius: 50%;
-        border: 2px solid #3498db;
-    }
-
-    /* Profile Dropdown */
-    .accreditation-profile-header {
-        padding: 15px;
-        display: flex;
-        align-items: center;
-        background: #2c3e50;
-        border-bottom: 1px solid #2c3e50;
-    }
-
-    .accreditation-profile-avatar {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        overflow: hidden;
-        margin-right: 10px;
-        border: 2px solid #f39c12;
-        position: relative;
-    }
-
-    .accreditation-profile-avatar img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .accreditation-profile-status {
-        position: absolute;
-        bottom: 0;
-        right: 0;
-        width: 12px;
-        height: 12px;
-        background: #2ecc71;
-        border-radius: 50%;
-        border: 2px solid #2c3e50;
-    }
-
-    .accreditation-profile-info {
-        flex: 1;
-    }
-
-    .accreditation-profile-info strong {
-        display: block;
-        color: white;
-        font-size: 14px;
-    }
-
-    .accreditation-profile-info small {
-        color: #f39c12;
-        font-size: 12px;
-        font-weight: bold;
-    }
-
-    .accreditation-profile-id {
-        background: rgba(44, 62, 80, 0.5);
-        color: #a1a1a1;
-        font-size: 10px;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-top: 3px;
-        display: inline-block;
-    }
-
-    .accreditation-profile-link {
-        display: flex;
-        align-items: center;
-    }
-
-    .accreditation-profile-link i {
-        color: #f39c12;
-        width: 20px;
-        text-align: center;
-    }
-
-    .accreditation-profile-divider {
-        padding: 5px 15px;
-        background: #2c3e50;
-        color: #f39c12;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-    }
-
-    .accreditation-profile-divider i {
-        font-size: 12px;
-    }
-
-    .accreditation-logout {
-        color: #e74c3c !important;
-    }
-
-    .accreditation-logout i {
-        color: #e74c3c !important;
-    }
-
-    /* Date & Time */
-    .accreditation-date {
-        color: #a1a1a1;
-        font-family: 'Courier New', monospace;
-    }
-
-    .accreditation-clock {
-        font-family: 'Courier New', monospace;
-        color: #f39c12;
-        font-weight: bold;
-    }
-
-    /* Alert Items */
-    .accreditation-alert-item {
-        position: relative;
-        padding-right: 70px;
-    }
-
-    .accreditation-alert-time {
-        position: absolute;
-        right: 15px;
-        color: #a1a1a1;
-        font-size: 11px;
-    }
-
-    /* Language Items */
-    .accreditation-lang-item {
-        gap: 10px;
-    }
-
-    .accreditation-lang-icon {
-        color: #f39c12;
-    }
-
-    /* Animations */
-    @keyframes accreditationPulse {
-        0% {
-            transform: scale(0.95);
-            box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.7);
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
         }
 
-        70% {
-            transform: scale(1);
-            box-shadow: 0 0 0 10px rgba(243, 156, 18, 0);
+        $module_action = 'Store';
+
+        // Custom validation for substandards
+        $validator = Validator::make($request->all(), [
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('substandards')->where(function ($query) use ($standard_id) {
+                    return $query->where('standard_id', $standard_id);
+                })
+            ],
+        ], [
+            'name.unique' => 'A substandard with this name already exists for the selected standard.',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->with('toast', [
+                    'type' => 'error',
+                    'message' => $validator->errors()->first(),
+                    'position' => 'top-end'
+                ])
+                ->withInput();
         }
 
-        100% {
-            transform: scale(0.95);
-            box-shadow: 0 0 0 0 rgba(243, 156, 18, 0);
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Add the standard_id to the validated data before creating the record
+            $data = $validator->validated();
+            $data['standard_id'] = $standard_id;
+
+            // Create the new record
+            $$module_name_singular = $module_model::create($data);
+
+            // Commit the transaction
+            DB::commit();
+
+            Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+            // Redirect to index_datatable with the standard_id to filter the records
+            return redirect()->route("backend.{$module_name}.index", ['id' => $standard_id]);
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error in store: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to create record!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create record.']);
         }
     }
-</style>
 
-<script>
-    // Update live clock
-    function updateClock() {
-        const now = new Date();
-        const time = now.toLocaleTimeString();
-        if (document.getElementById('liveClock')) {
-            document.getElementById('liveClock').textContent = time;
+    public function update(Request $request, $id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        // Authorization: check via 'manage' method which is inside AdminContentPolicy
+        $response = Gate::inspect('manage', $this->module_model);
+
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
         }
-        setTimeout(updateClock, 1000);
+
+        $module_action = 'Update';
+
+        // First, find the record to get the existing standard_id
+        $$module_name_singular = $module_model::findOrFail($id);
+        
+        // Get standard_id from the existing record
+        $standard_id = $$module_name_singular->standard_id;
+
+        // Custom validation for substandards
+        $validator = Validator::make($request->all(), [
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('substandards')->where(function ($query) use ($standard_id) {
+                    return $query->where('standard_id', $standard_id);
+                })->ignore($id)
+            ],
+        ], [
+            'name.unique' => 'A substandard with this name already exists for the selected standard.',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->with('toast', [
+                    'type' => 'error',
+                    'message' => $validator->errors()->first(),
+                    'position' => 'top-end'
+                ])
+                ->withInput();
+        }
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Update the record with validated data
+            $$module_name_singular->update($validator->validated());
+
+            // Commit the transaction
+            DB::commit();
+
+            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+            return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error in update: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to update record!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
+        }
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        updateClock();
+    public function destroy($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
 
-        // Add animation to notification badge if exists
-        const notificationBadge = document.querySelector('.accreditation-badge-alert');
-        if (notificationBadge) {
-            notificationBadge.style.animation = 'pulse 2s infinite';
-        }
-    });
+        $module_action = 'destroy';
 
-    // Pulse animation for alerts
-    @keyframes pulse {
-        0 % {
-            transform: scale(1);
-            box - shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+        $$module_name_singular = $module_model::findOrFail($id);
+        
+        // Authorization: check via 'manage' method which is inside AdminContentPolicy
+        $response = Gate::inspect('manage', $this->module_model);
+
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
         }
-        70 % {
-            transform: scale(1.1);
-            box - shadow: 0 0 0 5 px rgba(231, 76, 60, 0);
-        }
-        100 % {
-            transform: scale(1);
-            box - shadow: 0 0 0 0 rgba(231, 76, 60, 0);
-        }
+
+        $$module_name_singular->delete();
+
+        Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        // Redirect to the specific URL with the id as a query parameter
+        return redirect("/admin/{$module_name}/{$module_name}?id={$id}");
     }
-</script>
+
+    public function index(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'List';
+
+        // Fetch the data using pagination for the standard table
+        $$module_name = $module_model::paginate(15);
+
+        // Get the `id` from the request
+        $id = $request->query('id');
+        
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        // Return the view with the necessary data, including the `id`
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
+        );
+    }
+
+    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
+
+        $buttonModuleName = 'indicators';
+
+        $additionalButtons = [
+            [
+                'route' => "backend.$buttonModuleName.index", // Matches the route name
+                'title' => 'Indicators',
+                'class' => 'btn-outline-info',
+                'icon' => 'fa-solid fa-diagram-project',
+            ],
+        ];
+
+        // Use provided columns or default to a basic set
+        $columns = $columns ?? ['id', 'name', 'updated_at'];
+
+        // Base query
+        $data = $module_model::select($columns)->orderBy('id', 'asc');
+
+        // Retrieve `id` from request if not passed in $additionalData
+        $id = $additionalData['id'] ?? request()->query('id');
+
+        // Filter by standard_id if an ID is provided
+        if ($id) {
+            $data = $data->where('standard_id', $id);
+        }
+
+        return Datatables::of($data)
+            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
+                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
+            })
+            ->editColumn('name', '<strong>{{$name}}</strong>')
+            ->editColumn('updated_at', function ($data) {
+                if ($data->updated_at) {
+                    $diff = Carbon::now()->diffInHours($data->updated_at);
+
+                    if ($diff < 25) {
+                        return $data->updated_at->diffForHumans();
+                    }
+
+                    return $data->updated_at->isoFormat('llll');
+                }
+
+                return 'No Date Available';
+            })
+            ->rawColumns(['name', 'action'])
+            ->orderColumns(['id'], '-:column $1')
+            ->make(true);
+    }
+
+    public function edit($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name; // e.g., "dcts"
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Edit';
+
+        $$module_name_singular = $module_model::findOrFail($id);
+
+        // Authorization: check via 'manage' method which is inside AdminContentPolicy
+        $response = Gate::inspect('manage', $this->module_model);
+
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return view(
+            "{$module_path}.{$module_name}.edit",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
+    }
+}
