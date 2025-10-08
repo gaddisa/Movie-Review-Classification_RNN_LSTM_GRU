@@ -1,189 +1,419 @@
 <?php
 
-namespace App\Models;
+namespace App\Http\Controllers\Backend;
 
-use App\Models\Question;
-use Illuminate\Database\Eloquent\Model;
-use Modules\DeskReview\Models\DeskReview;
-use Modules\Application\Models\Application;
-use Modules\DeskReview\Models\DeskheadReview;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Carbon\Carbon;
+use App\Authorizable;
+use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use Yajra\DataTables\DataTables;
+use Modules\Program\Models\Program;
+use Illuminate\Support\Facades\DB; // Add this line
+use Illuminate\Support\Facades\Log; // Add this line
+use Illuminate\Support\Facades\Gate;
+use RealRashid\SweetAlert\Facades\Alert;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Validator;
+use App\Http\Controllers\Backend\BackendBaseController;
 
-class Standard extends BaseModel
+class StandardsController extends BackendBaseController
 {
-    use HasFactory;
+    use Authorizable;
 
-    protected $fillable = [
-        'name',
-        'dct_id',
-        'weights',
-    ];
-    // Add this relationship
-    public function dct()
+    public $module_title;
+    public $module_name;
+    public $module_path;
+    public $module_icon;
+    public $module_model;
+
+    public function __construct()
     {
-        return $this->belongsTo(\Modules\DCT\Models\DCT::class, 'dct_id');
+        // Page Title
+        $this->module_title = 'Standards Management';
+        $this->module_title = 'Standards';
+        $this->module_name = 'standards';
+        $this->module_path = 'backend';
+        $this->module_icon = 'fa-solid fa-sitemap';
+        $this->module_model = "App\\Models\\Standard";
     }
-    public function substandards()
+
+    public function standards()
     {
-        return $this->hasMany(\App\Models\Substandard::class, 'standard_id');
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+
+        $$module_name = $module_model::paginate(15);
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
+        );
     }
 
-
-    // Update the `questions` method to accept `application_id`
-    public function questions($applicationId = null)
+    public function create(array $additionalData = [])
     {
-        $query = Question::whereIn('indicator_id', function ($query) {
-            $query->select('id')
-                ->from('indicators')
-                ->whereIn('substandard_id', function ($subQuery) {
-                    $subQuery->select('id')
-                        ->from('substandards')
-                        ->where('standard_id', $this->id);
-                });
-        });
+        $dct_id = request()->get('id'); // Get 'id' from the request if passed
+        // Other code for setting up the module
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Create';
 
-        // Filter by `application_id` if provided
-        if ($applicationId) {
-            $query->whereHas('answers', function ($query) use ($applicationId) {
-                $query->where('application_id', $applicationId);
-            });
+        logUserAccess($module_title . ' ' . $module_action);
+
+        // Pass the 'id' to the view if needed
+        return view(
+            "{$module_path}.{$module_name}.create",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'dct_id')
+        );
+    }
+
+   public function store(Request $request)
+{
+    // Get the dct_id from the request
+    $dct_id = $request->get('dct_id');
+
+    $module_title = $this->module_title;
+    $module_name = $this->module_name;
+    $module_path = $this->module_path;
+    $module_icon = $this->module_icon;
+    $module_model = $this->module_model;
+    $module_name_singular = Str::singular($module_name);
+
+    // Authorization: check via 'manage' method which is inside AdminContentPolicy
+    $response = Gate::inspect('manage', $this->module_model);
+
+    if (!$response->allowed()) {
+        Alert::toast($response->message(), 'warning')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return redirect()->back();
+    }
+
+    $module_action = 'Store';
+
+    // Custom validation for standards
+    $validator = Validator::make($request->all(), [
+        'name' => [
+            'required',
+            'string',
+            'max:255',
+            Rule::unique('standards')->where(function ($query) use ($dct_id) {
+                return $query->where('dct_id', $dct_id);
+            })
+        ],
+        'weights' => 'required|numeric|min:1|max:30', // Changed to numeric for float type
+    ], [
+        'name.unique' => 'A standard with this name already exists for the selected DCT.',
+        'weights.min' => 'Weight must be at least 1.',
+        'weights.max' => 'Weight cannot exceed 30.',
+        'weights.numeric' => 'Weight must be a number.',
+    ]);
+
+    if ($validator->fails()) {
+        return redirect()->back()
+            ->withErrors($validator)
+            ->with('toast', [
+                'type' => 'error',
+                'message' => $validator->errors()->first(),
+                'position' => 'top-end'
+            ])
+            ->withInput();
+    }
+
+    // Start a database transaction
+    DB::beginTransaction();
+
+    try {
+        // Add the dct_id to the validated data before creating the record
+        $data = $validator->validated();
+        $data['dct_id'] = $dct_id;
+
+        // Create the new record
+        $$module_name_singular = $module_model::create($data);
+
+        // Commit the transaction
+        DB::commit();
+
+        Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        // Redirect to index_datatable with the dct_id to filter the records
+        return redirect()->route("backend.{$module_name}.index", ['id' => $dct_id]);
+    } catch (\Exception $e) {
+        // Rollback the transaction on error
+        DB::rollBack();
+
+        // Log the error
+        Log::error("Error in store: " . $e->getMessage());
+
+        // Flash error message
+        Alert::toast('Failed to create record!', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create record.']);
+    }
+}
+
+public function update(Request $request, $id)
+{
+    $module_title = $this->module_title;
+    $module_name = $this->module_name;
+    $module_path = $this->module_path;
+    $module_icon = $this->module_icon;
+    $module_model = $this->module_model;
+    $module_name_singular = Str::singular($module_name);
+
+    // Authorization: check via 'manage' method which is inside AdminContentPolicy
+    $response = Gate::inspect('manage', $this->module_model);
+
+    if (!$response->allowed()) {
+        Alert::toast($response->message(), 'warning')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return redirect()->back();
+    }
+
+    $module_action = 'Update';
+
+    // First, find the record to get the existing dct_id
+    $$module_name_singular = $module_model::findOrFail($id);
+    
+    // Get dct_id from the existing record since it's not in the form
+    $dct_id = $$module_name_singular->dct_id;
+
+    // Custom validation for standards
+    $validator = Validator::make($request->all(), [
+        'name' => [
+            'required',
+            'string',
+            'max:255',
+            Rule::unique('standards')->where(function ($query) use ($dct_id) {
+                return $query->where('dct_id', $dct_id);
+            })->ignore($id)
+        ],
+        'weights' => 'required|numeric|min:1|max:30', // Changed to numeric for float type
+    ], [
+        'name.unique' => 'A standard with this name already exists for the selected DCT.',
+        'weights.min' => 'Weight must be at least 1.',
+        'weights.max' => 'Weight cannot exceed 30.',
+        'weights.numeric' => 'Weight must be a number.',
+    ]);
+
+    if ($validator->fails()) {
+        return redirect()->back()
+            ->withErrors($validator)
+            ->with('toast', [
+                'type' => 'error',
+                'message' => $validator->errors()->first(),
+                'position' => 'top-end'
+            ])
+            ->withInput();
+    }
+
+    // Start a database transaction
+    DB::beginTransaction();
+
+    try {
+        // Update the record with validated data (don't include dct_id since it shouldn't change)
+        $$module_name_singular->update($validator->validated());
+
+        // Commit the transaction
+        DB::commit();
+
+        Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
+    } catch (\Exception $e) {
+        // Rollback the transaction on error
+        DB::rollBack();
+
+        // Log the error
+        Log::error("Error in update: " . $e->getMessage());
+
+        // Flash error message
+        Alert::toast('Failed to update record!', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
+    }
+}
+
+    public function destroy($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'destroy';
+
+        $$module_name_singular = $module_model::findOrFail($id);
+        
+        // Authorization: check via 'manage' method whichis inside AdminContentPolicy
+        $response = Gate::inspect('manage', $this->module_model);
+
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
         }
 
-        return $query;
+        $$module_name_singular->delete();
+
+        Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        // Redirect to the specific URL with the id as a query parameter
+        return redirect("/admin/{$module_name}/{$module_name}?id={$id}");
     }
 
-    public function totalIndicators()
+    public function index(Request $request)
     {
-        return $this->substandards->flatMap(function ($substandard) {
-            return $substandard->indicators;
-        })->count();
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'List';
+
+        // Fetch the data using pagination for the standard table
+        $$module_name = $module_model::paginate(15);
+
+        // Get the `id` from the request
+        $id = $request->query('id');
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        // Return the view with the necessary data, including the `id`
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
+        );
     }
 
-    // public function reviewedIndicators($applicationId, $reviewerId)
-    // {
-    //     return DeskReview::where('application_id', $applicationId)
-    //         ->where('reviewer_id', $reviewerId)
-    //         ->where('review_type', 'dct')
-    //         ->whereIn('indicator_id', function ($query) {
-    //             $query->select('id')
-    //                 ->from('indicators')
-    //                 ->whereIn('substandard_id', function ($subQuery) {
-    //                     $subQuery->select('id')
-    //                         ->from('substandards')
-    //                         ->where('standard_id', $this->id);
-    //                 });
-    //         })
-    //         ->count();
-    // }
-
-    public function reviewedIndicators($applicationId, $reviewerId)
+    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
     {
-        // Get the current review phase from the application
-        $application = Application::find($applicationId);
-        $currentReviewPhase = $application->review_phase;
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
 
-        // Check if the reviewer is assigned to the current review phase in desk_review_assignment
-        $isAssigned = DeskReviewAssignment::where('application_id', $applicationId)
-            ->where('assessor_id', $reviewerId)
-            ->where('review_phase', $currentReviewPhase)
-            ->exists();
+        $module_action = 'List';
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
 
-        if (!$isAssigned) {
-            // If the reviewer is not assigned to the current review phase, return 0
-            return 0;
+        $buttonModuleName = 'substandards';
+
+        $additionalButtons = [
+            [
+                'route' => "backend.$buttonModuleName.index",
+                'title' => 'Substandards',
+                'class' => 'btn-outline-info',
+                'icon' => 'fa-solid fa-folder-tree',
+            ],
+        ];
+
+        // Use provided columns or default to a basic set
+        $columns = $columns ?? ['id', 'name','weights', 'updated_at'];
+
+        // Base query with sorting applied
+        $data = $module_model::select($columns)->orderBy('id', 'asc');
+
+        // Retrieve `id` from request if not passed in $additionalData
+        $id = $additionalData['id'] ?? request()->query('id');
+
+        // Filter by dct_id if an ID is provided
+        if ($id) {
+            $data = $data->where('dct_id', $id);
         }
 
-        // Get the count of reviewed indicators for the current review phase
-        return DeskReview::where('application_id', $applicationId)
-            ->where('reviewer_id', $reviewerId)
-            ->where('review_type', 'dct')
-            ->where('review_phase', $currentReviewPhase) // Filter by the current review phase
-            ->whereIn('indicator_id', function ($query) {
-                $query->select('id')
-                    ->from('indicators')
-                    ->whereIn('substandard_id', function ($subQuery) {
-                        $subQuery->select('id')
-                            ->from('substandards')
-                            ->where('standard_id', $this->id);
-                    });
+        return Datatables::of($data)
+            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
+                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
             })
-            ->count();
+            ->editColumn('name', '<strong>{{$name}}</strong>')
+            ->editColumn('updated_at', function ($data) {
+                if ($data->updated_at) {
+                    $diff = Carbon::now()->diffInHours($data->updated_at);
+
+                    if ($diff < 25) {
+                        return $data->updated_at->diffForHumans();
+                    }
+
+                    return $data->updated_at->isoFormat('llll');
+                }
+
+                return 'No Date Available';
+            })
+            ->rawColumns(['name', 'action'])
+            ->make(true);
     }
 
-    // Update the `answeredQuestions` method to correctly filter by `application_id`
-    public function answeredQuestions($applicationId)
+    public function edit($id)
     {
-        return $this->questions($applicationId)->count();
-    }
+        $module_title = $this->module_title;
+        $module_name = $this->module_name; // e.g., "dcts"
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Edit';
 
-    public function reviewedIndicatorsByDeskhead($applicationId)
-    {
-        // Get the current review phase from the application
-        $application = Application::find($applicationId);
-        if (!$application) {
-            // If the application is not found, return 0
-            return 0;
+        $$module_name_singular = $module_model::findOrFail($id);
+
+        // Authorization: check via 'manage' method whichis inside AdminContentPolicy
+        $response = Gate::inspect('manage', $this->module_model);
+
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
         }
 
-        $currentReviewPhase = $application->review_phase;
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
 
-        // Get the count of reviewed indicators for the current review phase by desk heads
-        return DeskReview::where('application_id', $applicationId)
-            ->where('reviewer_or_head', 1) // Only desk heads
-            ->where('review_type', 'dct')
-            ->where('review_phase', $currentReviewPhase) // Filter by the current review phase
-            ->whereIn('indicator_id', function ($query) {
-                $query->select('id')
-                    ->from('indicators')
-                    ->whereIn('substandard_id', function ($subQuery) {
-                        $subQuery->select('id')
-                            ->from('substandards')
-                            ->where('standard_id', $this->id);
-                    });
-            })
-            ->count();
-    }
-
-
-
-    public function reviewedIndicatorsByDeskhead2($applicationId)
-    {
-        return DeskheadReview::where('application_id', $applicationId)
-            ->whereIn('indicator_id', function ($query) {
-                $query->select('id')
-                    ->from('indicators')
-                    ->whereIn('substandard_id', function ($subQuery) {
-                        $subQuery->select('id')
-                            ->from('substandards')
-                            ->where('standard_id', $this->id);
-                    });
-            })
-            ->count();
-    }
-
-    /**
-     * Count reviewed indicators for a specific reviewer in a specific phase
-     *
-     * @param int $applicationId
-     * @param int $reviewerId
-     * @param string $reviewPhase
-     * @return int
-     */
-    public function countReviewedIndicatorsByPhase($applicationId, $reviewerId, $reviewPhase)
-    {
-        return DeskReview::where('application_id', $applicationId)
-            ->where('reviewer_id', $reviewerId)
-            ->where('review_type', 'dct')
-            ->where('review_phase', $reviewPhase)
-            ->whereIn('indicator_id', function ($query) {
-                $query->select('id')
-                    ->from('indicators')
-                    ->whereIn('substandard_id', function ($subQuery) {
-                        $subQuery->select('id')
-                            ->from('substandards')
-                            ->where('standard_id', $this->id);
-                    });
-            })
-            ->count();
+        return view(
+            "{$module_path}.{$module_name}.edit",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
     }
 }
