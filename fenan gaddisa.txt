@@ -9,8 +9,6 @@ use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Yajra\DataTables\DataTables;
 use Modules\Program\Models\Program;
-use Modules\Attachement\Models\Attachement;
-use App\Models\Indicator_attachment_direct;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RealRashid\SweetAlert\Facades\Alert;
@@ -18,7 +16,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Backend\BackendBaseController;
 
-class IndicatorsController extends BackendBaseController
+class QuestionsController extends BackendBaseController
 {
     use Authorizable;
 
@@ -31,12 +29,12 @@ class IndicatorsController extends BackendBaseController
     public function __construct()
     {
         // Page Title
-        $this->module_title = 'Indicators Management';
-        $this->module_title = 'Indicators';
-        $this->module_name = 'indicators';
+        $this->module_title = 'Indicators Questions Management';
+        $this->module_title = 'Questions';
+        $this->module_name = 'questions';
         $this->module_path = 'backend';
-        $this->module_icon = "fa-solid fa-diagram-project";
-        $this->module_model = "App\\Models\\Indicator";
+        $this->module_icon = 'fa-solid fa-folder-tree';
+        $this->module_model = "App\\Models\\Question";
     }
 
     public function standards()
@@ -62,7 +60,7 @@ class IndicatorsController extends BackendBaseController
 
     public function create(array $additionalData = [])
     {
-        $substandard_id = request()->get('id'); // Get 'id' from the request if passed
+        $indicator_id = request()->get('id'); // Get 'id' from the request if passed
 
         // Other code for setting up the module
         $module_title = $this->module_title;
@@ -77,48 +75,14 @@ class IndicatorsController extends BackendBaseController
         // Pass the 'id' to the view if needed
         return view(
             "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'substandard_id')
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'indicator_id')
         );
-    }
-    
-    /**
-     * Create attachment and pivot record for indicator
-     */
-    private function createIndicatorAttachment($indicator, $dct_id)
-    {
-        try {
-            // Create the attachment
-            $attachment = \Modules\Attachement\Models\Attachement::create([
-                'name' => "Others - Indicator " . $indicator->id,
-                'attachement_type' => 'others',
-                'dct_id' => $dct_id,
-                'table_html' => null,
-                'status' => 'Active',
-                'is_required' => 'Optional',
-                'created_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
-
-            // Create the pivot record in indicator_attachment table
-            \App\Models\Indicator_attachment_direct::create([
-                'indicator_id' => $indicator->id,
-                'attachment_id' => $attachment->id,
-                'created_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
-
-            return true;
-        } catch (\Exception $e) {
-            logger()->error('Error creating indicator attachment: ' . $e->getMessage());
-            return false;
-        }
     }
 
     public function store(Request $request)
     {
-        $substandard_id = $request->get('substandard_id');
-        $substandard = \App\Models\Substandard::find($substandard_id);
-        $dct_id = $substandard->standard->dct_id;
+        // Get the indicator_id from the request
+        $indicator_id = $request->get('indicator_id');
 
         $module_title = $this->module_title;
         $module_name = $this->module_name;
@@ -129,7 +93,7 @@ class IndicatorsController extends BackendBaseController
 
         // Authorization: check via 'manage' method which is inside AdminContentPolicy
         $response = Gate::inspect('manage', $this->module_model);
-                
+
         if (!$response->allowed()) {
             Alert::toast($response->message(), 'warning')
                 ->position('top-end')
@@ -140,18 +104,18 @@ class IndicatorsController extends BackendBaseController
 
         $module_action = 'Store';
 
-        // Custom validation for indicators
+        // Custom validation for questions
         $validator = Validator::make($request->all(), [
-            'name' => [
+            'question_text' => [
                 'required',
                 'string',
-                'max:255',
-                Rule::unique('indicators')->where(function ($query) use ($substandard_id) {
-                    return $query->where('substandard_id', $substandard_id);
+                'max:1000',
+                Rule::unique('questions')->where(function ($query) use ($indicator_id) {
+                    return $query->where('indicator_id', $indicator_id);
                 })
             ],
         ], [
-            'name.unique' => 'An indicator with this name already exists for the selected substandard.',
+            'question_text.unique' => 'A question with this text already exists for the selected indicator.',
         ]);
 
         if ($validator->fails()) {
@@ -169,15 +133,12 @@ class IndicatorsController extends BackendBaseController
         DB::beginTransaction();
 
         try {
-            // Add the substandard_id to the validated data before creating the record
+            // Add the indicator_id to the validated data before creating the record
             $data = $validator->validated();
-            $data['substandard_id'] = $substandard_id;
+            $data['indicator_id'] = $indicator_id;
 
             // Create the new record
             $$module_name_singular = $module_model::create($data);
-
-            // Create attachment and pivot record
-            $this->createIndicatorAttachment($$module_name_singular, $dct_id);
 
             // Commit the transaction
             DB::commit();
@@ -189,8 +150,8 @@ class IndicatorsController extends BackendBaseController
 
             logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
 
-            // Redirect to index_datatable with the substandard_id to filter the records
-            return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
+            // Redirect to index_datatable with the indicator_id to filter the records
+            return redirect()->route("backend.{$module_name}.index", ['id' => $indicator_id]);
         } catch (\Exception $e) {
             // Rollback the transaction on error
             DB::rollBack();
@@ -219,7 +180,7 @@ class IndicatorsController extends BackendBaseController
 
         // Authorization: check via 'manage' method which is inside AdminContentPolicy
         $response = Gate::inspect('manage', $this->module_model);
-                
+
         if (!$response->allowed()) {
             Alert::toast($response->message(), 'warning')
                 ->position('top-end')
@@ -230,24 +191,24 @@ class IndicatorsController extends BackendBaseController
 
         $module_action = 'Update';
 
-        // First, find the record to get the existing substandard_id
+        // First, find the record to get the existing indicator_id
         $$module_name_singular = $module_model::findOrFail($id);
         
-        // Get substandard_id from the existing record
-        $substandard_id = $$module_name_singular->substandard_id;
+        // Get indicator_id from the existing record
+        $indicator_id = $$module_name_singular->indicator_id;
 
-        // Custom validation for indicators
+        // Custom validation for questions
         $validator = Validator::make($request->all(), [
-            'name' => [
+            'question_text' => [
                 'required',
                 'string',
-                'max:255',
-                Rule::unique('indicators')->where(function ($query) use ($substandard_id) {
-                    return $query->where('substandard_id', $substandard_id);
+                'max:1000',
+                Rule::unique('questions')->where(function ($query) use ($indicator_id) {
+                    return $query->where('indicator_id', $indicator_id);
                 })->ignore($id)
             ],
         ], [
-            'name.unique' => 'An indicator with this name already exists for the selected substandard.',
+            'question_text.unique' => 'A question with this text already exists for the selected indicator.',
         ]);
 
         if ($validator->fails()) {
@@ -296,29 +257,6 @@ class IndicatorsController extends BackendBaseController
         }
     }
 
-    /**
-     * Delete attachment and pivot records for indicator
-     */
-    private function deleteIndicatorAttachment($indicatorId)
-    {
-        try {
-            // Find and delete the pivot records
-            $indicatorAttachments = \App\Models\Indicator_attachment_direct::where('indicator_id', $indicatorId)->get();
-            
-            foreach ($indicatorAttachments as $indicatorAttachment) {
-                // Delete the attachment
-                \Modules\Attachement\Models\Attachement::where('id', $indicatorAttachment->attachment_id)->delete();
-                // Delete the pivot record
-                $indicatorAttachment->delete();
-            }
-            
-            return true;
-        } catch (\Exception $e) {
-            logger()->error('Error deleting indicator attachment: ' . $e->getMessage());
-            return false;
-        }
-    }
-
     public function destroy($id)
     {
         $module_title = $this->module_title;
@@ -329,10 +267,10 @@ class IndicatorsController extends BackendBaseController
         $module_name_singular = Str::singular($module_name);
 
         $module_action = 'destroy';
-        
+
         // Authorization: check via 'manage' method which is inside AdminContentPolicy
         $response = Gate::inspect('manage', $this->module_model);
-                
+
         if (!$response->allowed()) {
             Alert::toast($response->message(), 'warning')
                 ->position('top-end')
@@ -340,19 +278,16 @@ class IndicatorsController extends BackendBaseController
                 ->timerProgressBar();
             return redirect()->back();
         }
-        
+
         $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get the substandard_id BEFORE deleting so we can redirect properly
-        $substandard_id = $$module_name_singular->substandard_id;
+
+        // Get the indicator_id BEFORE deleting so we can redirect properly
+        $indicator_id = $$module_name_singular->indicator_id;
 
         // Start a database transaction
         DB::beginTransaction();
 
         try {
-            // Delete associated attachments
-            $this->deleteIndicatorAttachment($id);
-
             $$module_name_singular->delete();
 
             // Commit the transaction
@@ -365,8 +300,8 @@ class IndicatorsController extends BackendBaseController
 
             logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
 
-            // Redirect back to the indicators list filtered by substandard_id
-            return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
+            // Redirect to index_datatable with the indicator_id to filter the records
+            return redirect()->route("backend.{$module_name}.index", ['id' => $indicator_id]);
         } catch (\Exception $e) {
             // Rollback the transaction on error
             DB::rollBack();
@@ -422,40 +357,27 @@ class IndicatorsController extends BackendBaseController
         $page_heading = label_case($module_title);
         $title = $page_heading . ' ' . label_case($module_action);
 
-        $buttonModuleName = 'questions';
-
-        $additionalButtons = [
-            [
-                'route' => "backend.$buttonModuleName.index", // Matches the route name
-                'title' => 'Questions',
-                'class' => 'btn-outline-info',
-                'icon' => 'fa-solid fa-question-circle',
-            ],
-            [
-                'route' => "backend.indicator_attachments.index", // Matches the route name
-                'title' => 'Required Attachements',
-                'class' => 'btn-outline-info',
-                'icon' => 'fas fa-paperclip',
-            ],
-        ];
-
-        $columns = $columns ?? ['id', 'name', 'updated_at'];
+        // Use provided columns or default to a basic set
+        $columns = $columns ?? ['id', 'question_text', 'updated_at'];
 
         // Base query
         $data = $module_model::select($columns)->orderBy('id', 'asc');
 
         // Retrieve `id` from request if not passed in $additionalData
         $id = $additionalData['id'] ?? request()->query('id');
-        // Filter by substandard_id if an ID is provided
+
+        // Filter by indicator_id if an ID is provided
         if ($id) {
-            $data = $data->where('substandard_id', $id);
+            $data = $data->where('indicator_id', $id);
         }
 
         return Datatables::of($data)
             ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
                 return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
             })
-            ->editColumn('name', '<strong>{{$name}}</strong>')
+            ->editColumn('question_text', function ($data) {
+                return '<strong>' . $data->question_text . '</strong>';
+            })
             ->editColumn('updated_at', function ($data) {
                 if ($data->updated_at) {
                     $diff = Carbon::now()->diffInHours($data->updated_at);
@@ -469,7 +391,7 @@ class IndicatorsController extends BackendBaseController
 
                 return 'No Date Available';
             })
-            ->rawColumns(['name', 'action'])
+            ->rawColumns(['question_text', 'action'])
             ->orderColumns(['id'], '-:column $1')
             ->make(true);
     }
