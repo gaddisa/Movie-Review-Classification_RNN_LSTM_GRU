@@ -170,41 +170,71 @@ private function createIndicatorAttachment($indicator, $dct_id)
     return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
 }
 
-    public function destroy($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'destroy';
-  // Authorization: check via 'manage' method whichis inside AdminContentPolicy
-          $response = Gate::inspect('manage', $this->module_model);
-
-            
-        if (!$response->allowed()) {
-            Alert::toast($response->message(), 'warning')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return redirect()->back();
+/**
+ * Delete attachment and pivot records for indicator
+ */
+ private function deleteIndicatorAttachment($indicatorId)
+{
+    try {
+        // Find and delete the pivot records
+        $indicatorAttachments = \App\Models\Indicator_attachment_direct::where('indicator_id', $indicatorId)->get();
+        
+        foreach ($indicatorAttachments as $indicatorAttachment) {
+            // Delete the attachment
+            \Modules\Attachement\Models\Attachement::where('id', $indicatorAttachment->attachment_id)->delete();
+            // Delete the pivot record
+            $indicatorAttachment->delete();
         }
-        $$module_name_singular = $module_model::findOrFail($id);
-
-        $$module_name_singular->delete();
-
-        Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
-            ->position('top-end')  // Position: 'top-start', 'top-end', 'center', etc.
-            ->autoClose(5000)      // Duration in milliseconds (5 seconds here)
-            ->timerProgressBar();  // Show a progress bar
-
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-        // Redirect to the specific URL with the id as a query parameter
-        return redirect("/admin/{$module_name}/{$module_name}?id={$id}");
+        
+        return true;
+    } catch (\Exception $e) {
+        logger()->error('Error deleting indicator attachment: ' . $e->getMessage());
+        return false;
     }
+}
+
+public function destroy($id)
+{
+    $module_title = $this->module_title;
+    $module_name = $this->module_name;
+    $module_path = $this->module_path;
+    $module_icon = $this->module_icon;
+    $module_model = $this->module_model;
+    $module_name_singular = Str::singular($module_name);
+
+    $module_action = 'destroy';
+    
+    // Authorization: check via 'manage' method which is inside AdminContentPolicy
+    $response = Gate::inspect('manage', $this->module_model);
+            
+    if (!$response->allowed()) {
+        Alert::toast($response->message(), 'warning')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return redirect()->back();
+    }
+    
+    $$module_name_singular = $module_model::findOrFail($id);
+    
+    // Get the substandard_id BEFORE deleting so we can redirect properly
+    $substandard_id = $$module_name_singular->substandard_id;
+
+    // Delete associated attachments
+    $this->deleteIndicatorAttachment($id);
+
+    $$module_name_singular->delete();
+
+    Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
+        ->position('top-end')
+        ->autoClose(5000)
+        ->timerProgressBar();
+
+    logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+    // Redirect back to the indicators list filtered by substandard_id
+    return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
+}
 
 
 
