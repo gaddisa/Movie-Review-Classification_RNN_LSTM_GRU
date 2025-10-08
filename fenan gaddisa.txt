@@ -1,47 +1,335 @@
 <?php
 
-namespace App\Http\Controllers\Auth;
+namespace App\Http\Controllers\Backend;
 
-use App\Http\Controllers\Controller;
-use Illuminate\Auth\Events\Verified;
-use Illuminate\Http\RedirectResponse;
+use Carbon\Carbon;
+        use Illuminate\Support\Facades\Gate;
+
+use App\Authorizable;
+use Illuminate\Support\Str;
 use Illuminate\Http\Request;
-use App\Models\User;
+use Yajra\DataTables\DataTables;
+use Modules\Program\Models\Program;
+use Modules\Attachement\Models\Attachement;
+use App\Models\Indicator_attachment_direct;
 use RealRashid\SweetAlert\Facades\Alert;
+use App\Http\Controllers\Backend\BackendBaseController;
 
-class VerifyEmailController extends Controller
+class IndicatorsController extends BackendBaseController
 {
-    /**
-     * Mark the user's email address as verified.
-     */
-    public function __invoke(Request $request, $id, $hash): RedirectResponse
+    use Authorizable;
+
+    public $module_title;
+
+    public $module_name;
+
+    public $module_path;
+
+    public $module_icon;
+
+    public $module_model;
+
+
+
+
+    public function __construct()
     {
-        // Find user by ID from the URL
-        $user = User::find($id);
-        
-        if (!$user) {
-            Alert::error('Error', 'Invalid verification link.')->autoClose(5000);
-            return redirect('/login');
+        // Page Title
+        $this->module_title = 'Indicators Management';
+        $this->module_title = 'Indicators';
+        $this->module_name = 'indicators';
+        $this->module_path = 'backend';
+        $this->module_icon = "fa-solid fa-diagram-project";
+        $this->module_model = "App\\Models\\Indicator";
+    }
+    public function standards()
+    {
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+
+        $$module_name = $module_model::paginate(15);
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
+        );
+    }
+
+
+    // Override the index_data method to include additional buttons
+    // Override the index_data method to include additional buttons
+
+
+    public function create(array $additionalData = [])
+    {
+        $substandard_id = request()->get('id'); // Get 'id' from the request if passed
+
+        // Other code for setting up the module
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Create';
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        // Pass the 'id' to the view if needed
+        return view(
+            "{$module_path}.{$module_name}.create",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'substandard_id')
+        );
+    }
+    
+    /**
+ * Create attachment and pivot record for indicator
+ */
+private function createIndicatorAttachment($indicator, $dct_id)
+{
+    try {
+        // Create the attachment
+        $attachment = \Modules\Attachement\Models\Attachement::create([
+            'name' => "Others - Indicator " . $indicator->id,
+            'attachement_type' => 'others',
+            'dct_id' => $dct_id,
+            'table_html' => null,
+            'status' => 'Active',
+            'is_required' => 'Optional',
+            'created_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        // Create the pivot record in indicator_attachment table
+        \App\Models\Indicator_attachment_direct::create([
+            'indicator_id' => $indicator->id,
+            'attachment_id' => $attachment->id,
+            'created_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return true;
+    } catch (\Exception $e) {
+        logger()->error('Error creating indicator attachment: ' . $e->getMessage());
+        return false;
+    }
+}
+
+   public function store(Request $request)
+{
+    $substandard_id = $request->get('substandard_id');
+    $substandard = \App\Models\Substandard::find($substandard_id);
+    $dct_id = $substandard->standard->dct_id;
+
+    $module_title = $this->module_title;
+    $module_name = $this->module_name;
+    $module_path = $this->module_path;
+    $module_icon = $this->module_icon;
+    $module_model = $this->module_model;
+    $module_name_singular = Str::singular($module_name);
+
+    $module_action = 'Store';
+    
+    // Authorization: check via 'manage' method which is inside AdminContentPolicy
+    $response = Gate::inspect('manage', $this->module_model);
+            
+    if (!$response->allowed()) {
+        Alert::toast($response->message(), 'warning')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return redirect()->back();
+    }
+    
+    // Add the substandard_id to the request data before creating the record
+    $data = $request->all();
+    $data['substandard_id'] = $substandard_id;
+
+    // Create the new record
+    $$module_name_singular = $module_model::create($data);
+
+    // Create attachment and pivot record
+    $this->createIndicatorAttachment($$module_name_singular, $dct_id);
+
+    Alert::toast(Str::singular($module_title) . "' Added Successfully", 'success')
+        ->position('top-end')
+        ->autoClose(5000)
+        ->timerProgressBar();
+
+    logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+    // Redirect to index_datatable with the substandard_id to filter the records
+    return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
+}
+
+    public function destroy($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'destroy';
+  // Authorization: check via 'manage' method whichis inside AdminContentPolicy
+          $response = Gate::inspect('manage', $this->module_model);
+
+            
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+        $$module_name_singular = $module_model::findOrFail($id);
+
+        $$module_name_singular->delete();
+
+        Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
+            ->position('top-end')  // Position: 'top-start', 'top-end', 'center', etc.
+            ->autoClose(5000)      // Duration in milliseconds (5 seconds here)
+            ->timerProgressBar();  // Show a progress bar
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        // Redirect to the specific URL with the id as a query parameter
+        return redirect("/admin/{$module_name}/{$module_name}?id={$id}");
+    }
+
+
+
+    public function index(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'List';
+
+        // Fetch the data using pagination for the standard table
+        $$module_name = $module_model::paginate(15);
+
+        // Get the `id` from the request
+        $id = $request->query('id');
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        // Return the view with the necessary data, including the `id`
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
+        );
+    }
+
+    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
+
+        // Use provided columns or default to a basic set
+
+        $buttonModuleName = 'questions';
+
+        $additionalButtons = [
+            [
+                'route' => "backend.$buttonModuleName.index", // Matches the route name
+                'title' => 'Questions',
+                'class' => 'btn-outline-info',
+                'icon' => 'fa-solid fa-question-circle',
+            ],
+            [
+                'route' => "backend.indicator_attachments.index", // Matches the route name
+                'title' => 'Required Attachements',
+                'class' => 'btn-outline-info',
+                'icon' => 'fas fa-paperclip',
+            ],
+        ];
+
+        $columns = $columns ?? ['id', 'name', 'updated_at'];
+
+        // Base query
+        $data = $module_model::select($columns)->orderBy('id', 'asc');
+
+        // Retrieve `id` from request if not passed in $additionalData
+        $id = $additionalData['id'] ?? request()->query('id');
+        // Filter by dct_id if an ID is provided
+        if ($id) {
+            $data = $data->where('substandard_id', $id);
         }
 
-        // Check if the hash matches
-        if (!hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
-            Alert::error('Error', 'Invalid verification link.')->autoClose(5000);
-            return redirect('/login');
-        }
+        return Datatables::of($data)
+            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
+                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
+            })
+            ->editColumn('name', '<strong>{{$name}}</strong>')
+            ->editColumn('updated_at', function ($data) {
+                if ($data->updated_at) {
+                    $diff = Carbon::now()->diffInHours($data->updated_at);
 
-        // Check if already verified
-        if ($user->hasVerifiedEmail()) {
-            Alert::info('Already Verified', 'Your email is already verified.')->autoClose(5000);
-            return redirect('/login');
-        }
+                    if ($diff < 25) {
+                        return $data->updated_at->diffForHumans();
+                    }
 
-        // Mark as verified
-        if ($user->markEmailAsVerified()) {
-            event(new Verified($user));
-        }
+                    return $data->updated_at->isoFormat('llll');
+                }
 
-        Alert::success('Success', 'Your email has been verified successfully! You can now login.')->autoClose(5000);
-        return redirect('/login');
+                return 'No Date Available';
+            })
+            ->rawColumns(['name', 'action'])
+            ->orderColumns(['id'], '-:column $1')
+            ->make(true);
+    }
+
+
+
+    public function edit($id)
+    {
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name; // e.g., "dcts"
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Edit';
+  // Authorization: check via 'manage' method whichis inside AdminContentPolicy
+          $response = Gate::inspect('manage', $this->module_model);
+
+            
+        if (!$response->allowed()) {
+            Alert::toast($response->message(), 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+        $$module_name_singular = $module_model::findOrFail($id);
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return view(
+            "{$module_path}.{$module_name}.edit",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
     }
 }
