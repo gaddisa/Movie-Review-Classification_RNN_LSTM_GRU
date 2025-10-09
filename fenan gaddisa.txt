@@ -1,369 +1,1027 @@
-@extends('backend.layouts.app')
+           @extends('backend.layouts.app')
 
-@section('title', 'Review and Assessment')
+           @section('title')
+               Review Application Profile
+           @endsection
 
-@section('breadcrumbs')
-    <x-backend.breadcrumbs>
-        <x-backend.breadcrumb-item route="{{ route('backend.applications.index') }}" icon="fa-solid fa-folder">
-            {{ __('Applications') }}
-        </x-backend.breadcrumb-item>
-        <x-backend.breadcrumb-item
-            route="{{ route('backend.applications.showStandardsForDeskReview', ['id' => $application_id]) }}"
-            icon="fa-solid fa-list">
-            {{ __('Standards') }}
-        </x-backend.breadcrumb-item>
-        <x-backend.breadcrumb-item type="active">{{ __('Desk Review') }}</x-backend.breadcrumb-item>
-    </x-backend.breadcrumbs>
-@endsection
+           @section('breadcrumbs')
+               <x-backend.breadcrumbs>
+                   <x-backend.breadcrumb-item route='{{ route("backend.$module_name.index") }}' icon='{{ $module_icon }}'>
+                       {{ __($module_title) }}
+                   </x-backend.breadcrumb-item>
+                   <x-backend.breadcrumb-item type="active">Review Application</x-backend.breadcrumb-item>
+               </x-backend.breadcrumbs>
+           @endsection
 
-@section('content')
-    <div class="card">
-        <div class="card-header bg-primary text-white">
-            <h4 class="mb-0">{{ $standard->name }}</h4>
-        </div>
-        <div class="card-body">
+           @php
+               use App\Enums\ApplicationStatusEnum;
+           @endphp
 
-            @if ($substandards->isNotEmpty())
-                <div class="card mb-3">
-                    <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0">{{ $currentSubStandard->name }}</h5>
-                    </div>
-                    <div class="card-body">
-                        @if ($indicators->isNotEmpty())
-                            <div class="card mb-3">
-                                <div class="card-header bg-info text-white">
-                                    <h6 class="mb-0">{{ $currentIndicator->name }}</h6>
-                                </div>
-                                <div class="card-body">
-                                    <!-- Readonly Questions Section -->
-                                    @foreach ($questions as $question)
-                                        <div class="card mb-3">
-                                            <div class="card-header bg-light">
-                                                <h6 class="mb-0">
-                                                    <i class="fa-solid fa-question-circle text-primary"></i>
-                                                    {{ $question->question_text }}
-                                                </h6>
-                                            </div>
-                                            <div class="card-body">
-                                                <textarea name="answers[{{ $question->id }}][answer]" class="form-control summernote readonly-summernote" readonly>
-                                                    {{ old("answers.$question->id.answer", $answers[$question->id] ?? '') }}
-                                                </textarea>
-                                                <input type="hidden" name="answers[{{ $question->id }}][question_id]"
-                                                    value="{{ $question->id }}">
-                                            </div>
+           @section('content')
+               <div class="card">
+
+                   <div class="card-body">
+                       <!-- Application Details -->
+
+                       <div class="card mb-4">
+                           <div class="card-header">
+                               <h5 class="card-title mb-0">
+                                   <i class="fas fa-file-alt me-2"></i> Application Details
+                               </h5>
+                               <a href="{{ url()->previous() }}" class="btn btn-sm btn-outline-secondary float-end">
+                                   <i class="fas fa-arrow-left me-2"></i>Back
+                               </a>
+                           </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <!-- Left Column -->
+                                <div class="col-md-6">
+                                    <div class="application-detail-section mb-4">
+                                        <h5 class="section-title text-primary mb-3">
+                                            <i class="fas fa-file-alt me-2"></i>Application Details
+                                        </h5>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-id-badge me-2"></i>Application ID:</span>
+                                            <span class="detail-value badge bg-secondary">{{ $application->name }}</span>
                                         </div>
-                                    @endforeach
-
-                                    <!-- Required Attachments Section -->
-                                    @if ($attachments->isNotEmpty())
-                                        <div class="card mt-4">
-                                            <div class="card-header bg-warning text-dark">
-                                                <h6 class="mb-0">Required Attachments</h6>
-                                            </div>
-                                            <div class="card-body">
-                                                <div class="alert alert-info p-3 rounded">
-                                                    <strong>ðŸ“Œ Important:</strong> All attachments must be in <strong>PDF
-                                                        format</strong>.
-                                                </div>
-                                                <table class="table table-bordered shadow-sm">
-                                                    <thead class="table-light">
-                                                        <tr>
-                                                            <th style="width: 5%;" class="text-center">#</th>
-                                                            <th style="width: 55%;">Attachment</th>
-                                                            <th style="width: 20%;" class="text-center">Status</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        @foreach ($attachments as $index => $attachment)
-                                                            <tr class="align-middle">
-                                                                <td class="text-center fw-bold">{{ $index + 1 }}</td>
-                                                              <td>{{ str_starts_with($attachment->name, 'Others') ? 'Others' : $attachment->name }}</td>
-                                                                <td class="text-center">
-                                                                    <span
-                                                                        class="badge rounded-pill {{ $attachment->status === 'Completed' ? 'bg-success text-white' : 'bg-danger text-white' }} px-3 py-2">
-                                                                        @if ($attachment->status === 'Completed')
-                                                                            <i class="fas fa-check-circle"></i>
-                                                                            {{ $attachment->status }}
-                                                                        @else
-                                                                            <i class="fas fa-times-circle"></i>
-                                                                            {{ $attachment->status }}
-                                                                        @endif
-                                                                    </span>
-                                                                    @if ($attachment->status === 'Completed')
-                                                                        <div class="mt-2">
-                                                                            <button type="button"
-                                                                                class="btn btn-outline-success btn-sm view-pdf"
-                                                                                data-bs-toggle="modal"
-                                                                                data-bs-target="#pdfModal{{ $attachment->id }}"
-                                                                                data-pdf-url="{{ route('backend.applications.viewMedia', ['application_id' => $application_id, 'attachment_id' => $attachment->id]) }}#page={{ $attachment->start_page ?? 1 }}"
-                                                                                data-start-page="{{ $attachment->start_page ?? 1 }}">
-                                                                                <i class="fas fa-file-pdf"></i> View
-                                                                            </button>
-                                                                        </div>
-                                                                    @endif
-                                                                </td>
-                                                            </tr>
-                                                        @endforeach
-                                                    </tbody>
-                                                </table>
-                                                @foreach ($attachments as $attachment)
-                                                    @if ($attachment->status === 'Completed')
-                                                        <!-- PDF Viewer Modal -->
-                                                        <div class="modal fade" id="pdfModal{{ $attachment->id }}"
-                                                            tabindex="-1"
-                                                            aria-labelledby="pdfModalLabel{{ $attachment->id }}"
-                                                            aria-hidden="true">
-                                                            <div class="modal-dialog modal-dialog-centered modal-xl">
-                                                                <div class="modal-content shadow-lg">
-                                                                    <div class="modal-header bg-primary text-white">
-                                                                        <h5 class="modal-title"
-                                                                            id="pdfModalTitle{{ $attachment->id }}">
-                                                                            <i class="fas fa-file-pdf"></i> ETA
-                                                                            Accreditation System:
-                                                                            {{ str_starts_with($attachment->name, 'Others') ? 'Others' : $attachment->name }}
-                                                                        </h5>
-                                                                        <button type="button" class="btn-close"
-                                                                            data-bs-dismiss="modal"
-                                                                            aria-label="Close"></button>
-                                                                    </div>
-                                                                    <div class="modal-body">
-                                                                        <!-- Responsive iframe to view PDF -->
-                                                                        <iframe id="pdfViewer{{ $attachment->id }}"
-                                                                            src="{{ route('backend.applications.viewMedia', ['application_id' => $application_id, 'attachment_id' => $attachment->id]) }}?page={{ $attachment->start_page ?? 1 }}"
-                                                                            width="100%" height="600px" frameborder="0">
-                                                                        </iframe>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    @endif
-                                                @endforeach
-
-                                                <script>
-                                                    document.addEventListener('DOMContentLoaded', function() {
-                                                        document.querySelectorAll('.view-pdf').forEach(function(button) {
-                                                            button.addEventListener('click', function() {
-                                                                var pdfUrl = this.getAttribute('data-pdf-url');
-                                                                var modalId = this.getAttribute('data-bs-target').replace('#', '');
-                                                                document.querySelector('#' + modalId + ' iframe').setAttribute('src', pdfUrl);
-                                                            });
-                                                        });
-                                                    });
-                                                </script>
-                                            </div>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-graduation-cap me-2"></i>Program:</span>
+                                            <span class="detail-value text-muted">{{ $application->program->name }}</span>
                                         </div>
-                                    @endif
-
-                                    <!-- All Reviewers Comment Section for Chairperson -->
-                                    @if ($isChairperson && $allReviews->isNotEmpty() && $review_phase == 'desk_review')
-                                        <div class="card mt-4">
-                                            <div
-                                                class="card-header bg-light d-flex justify-content-between align-items-center">
-                                                <h6 class="mb-0">All Reviewers Comment</h6>
-                                                <i class="fas fa-copy text-primary" id="copyText" style="cursor: pointer;"
-                                                    title="Copy All Reviews"></i>
-                                            </div>
-                                            <div class="card-body" id="reviewContent">
-                                                @foreach ($allReviews as $review)
-                                                    <div class="mb-4">
-                                                        <strong><u>{{ $review->reviewer->name ?? 'Unknown Reviewer' }}</u></strong>
-                                                        <div class="mt-2">
-                                                            {!! $review->comment !!}
-                                                        </div>
-                                                        <div class="mt-2">
-                                                            Rating Score: {{ $review->rating_value }}
-                                                        </div>
-                                                    </div>
-                                                    @if (!$loop->last)
-                                                        <hr class="my-3">
-                                                    @endif
-                                                @endforeach
-                                            </div>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-info-circle me-2"></i>Description:</span>
+                                            <span class="detail-value text-muted">{{ $application->program->description }}</span>
                                         </div>
-                                        <script>
-                                            document.getElementById('copyText').addEventListener('click', function() {
-                                                // Get the review content
-                                                let reviewContent = document.getElementById('reviewContent').innerText;
+                                    </div>
 
-                                                // Create a temporary textarea to copy text
-                                                let tempTextArea = document.createElement('textarea');
-                                                tempTextArea.value = reviewContent;
-                                                document.body.appendChild(tempTextArea);
-
-                                                // Select and copy the text
-                                                tempTextArea.select();
-                                                document.execCommand('copy');
-
-                                                // Remove the temporary textarea
-                                                document.body.removeChild(tempTextArea);
-
-                                                // Show a success message (optional)
-                                                alert('All reviewer comments copied to clipboard!');
-                                            });
-                                        </script>
-                                    @endif
-
-                                    <!-- Your Review Section -->
-                                    <div class="card mt-4">
-                                        <div class="card-header bg-success text-white">
-                                            <h6 class="mb-0">{{ $label }}</h6> <!-- Dynamic label -->
+                                    <div class="application-detail-section mb-4">
+                                        <h5 class="section-title text-primary mb-3">
+                                            <i class="fas fa-university me-2"></i>Institution Details
+                                        </h5>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-school me-2"></i>Institute:</span>
+                                            <span class="detail-value text-muted">{{ $application->institute->name }}</span>
                                         </div>
-                                        <div class="card-body">
-                                            
-											<form method="POST"
-												action="{{ route('backend.applications.submitDeskReview') }}"
-												enctype="multipart/form-data" id="reviewForm">
-												@csrf
-												<input type="hidden" name="application_id" value="{{ $application_id }}">
-												<input type="hidden" name="standard_id" value="{{ $standard_id }}">
-												<input type="hidden" name="substandard_id" value="{{ $currentSubStandard->id }}">
-												<input type="hidden" name="indicator_id" value="{{ $currentIndicator->id }}">
-												<input type="hidden" name="review_phase" value="{{ $review_phase }}">
-
-												<!-- Dynamic textarea -->
-												@if ($review_phase == 'toa_second_round' && !$isChairperson)
-													<!-- Hidden field with NA value for non-chairpersons in toa_second_round -->
-													<input type="hidden" name="{{ $field_name }}" value="NA">
-													<div class="alert alert-info mt-2">
-														Only chairperson can provide review comments in the second round. Your review will be recorded as "NA".
-													</div>
-												@else
-													<!-- Dynamic textarea for chairpersons or other phases -->
-													<textarea name="{{ $field_name }}" 
-															  class="form-control summernote" 
-															  id="reviewTextarea" 
-															  required>
-														{{ $ownReview->comment ?? '' }}
-													</textarea>
-												@endif
-
-												@if ($review_phase === 'toa_first_round' || $review_phase === 'toa_second_round')
-													<div class="mb-3">
-														<label for="rating_value" class="form-label">Rating Value (1-5)</label>
-														<input type="number" name="rating_value" class="form-control"
-															min="1" max="5"
-															value="{{ $ownReview->rating_value ?? '' }}" required>
-													</div>
-												@endif
-
-												<div class="d-flex justify-content-between mt-3">
-													<!-- Previous button as separate form/link -->
-													@if ($currentIndicator->id != $indicators->first()->id)
-														@php
-															// Find previous indicator
-															$currentIndex = $indicators->search(function ($item) use ($currentIndicator) {
-																return $item->id == $currentIndicator->id;
-															});
-															$previousIndicator = $indicators[$currentIndex - 1] ?? null;
-														@endphp
-														
-														@if($previousIndicator)
-															<a href="{{ route('backend.applications.fillReviews', [
-																'application_id' => $application_id,
-																'standard_id' => $standard_id,
-																'substandard_id' => $currentSubStandard->id,
-																'indicator_id' => $previousIndicator->id
-															]) }}" class="btn btn-warning btn-sm">
-																<i class="fas fa-reply"></i> Previous
-															</a>
-														@endif
-													@endif
-
-													<a href="{{ route('backend.applications.showStandardsForDeskReview', ['id' => $application_id]) }}"
-														class="btn btn-outline-secondary btn-sm d-flex align-items-center"
-														data-bs-toggle="tooltip"
-														title="{{ __('Back to Standards Home') }}">
-														<i class="fas fa-clipboard-check me-2"></i>
-														{{ __('Standards Home') }}
-													</a>
-
-													<!-- Save & Next button (stays in main form) -->
-													<button type="submit" name="direction" value="next" class="btn btn-primary">
-														<i class="fa fa-save"></i> Save & Next
-													</button>
-												</div>
-											</form>
-											
-											
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-map-marker-alt me-2"></i>Campus:</span>
+                                            <span class="detail-value text-muted">{{ $application->campus->name }}</span>
+                                        </div>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label">
+                                                <i class="fas {{ $application->institute_ownership == 'Public' ? 'fa-landmark' : 'fa-building' }} me-2"></i>Ownership:
+                                            </span>
+                                            <span class="detail-value badge bg-{{ $application->institute_ownership == 'Public' ? 'info' : 'secondary' }}">
+                                                {{ $application->institute_ownership }}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- Right Column -->
+                                <div class="col-md-6">
+                                    <div class="application-detail-section mb-4">
+                                        <h5 class="section-title text-primary mb-3">
+                                            <i class="fas fa-chart-line me-2"></i>Program Statistics
+                                        </h5>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-calendar-alt me-2"></i>Start Year:</span>
+                                            <span class="detail-value text-muted">{{ $application->program_start_year ?? 'N/A' }}</span>
+                                        </div>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-repeat me-2"></i>Graduation Cycles:</span>
+                                            <span class="detail-value text-muted">{{ $application->graduation_cycles }}</span>
+                                        </div>
+                                        <div class="detail-item mb-2">
+                                            <span class="detail-label"><i class="fas fa-users me-2"></i>Students Graduated:</span>
+                                            <span class="detail-value text-muted">{{ number_format($application->students_graduated) }}</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="application-detail-section">
+                                        <h5 class="section-title text-primary mb-3">
+                                            <i class="fas fa-tasks me-2"></i>Application Status
+                                        </h5>
+                                        <div class="detail-item">
+                                            <span class="detail-label"><i class="fas fa-info-circle me-2"></i>Current Status:</span>
+                                            <span class="detail-value badge bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : 'warning') }} text-capitalize">
+                                                {{ $application->status }}
+                                            </span>
+                                        </div>
+                                        @if($application->status_reason)
+                                        <div class="detail-item mt-2">
+                                            <span class="detail-label"><i class="fas fa-comment me-2"></i>Status Notes:</span>
+                                            <span class="detail-value text-muted">{{ $application->status_reason }}</span>
+                                        </div>
+                                        @endif
+                                    </div>
+                                </div>
                             </div>
-                        @else
-                            <p class="alert alert-warning">No indicators found for this substandard.</p>
-                        @endif
-                    </div>
-                </div>
-            @else
-                <p class="alert alert-danger">No substandards found for this standard.</p>
-            @endif
-        </div>
-    </div>
-@endsection
-
-@push('after-styles')
-    <link href="https://cdn.jsdelivr.net/npm/summernote@0.9.0/dist/summernote-lite.min.css" rel="stylesheet" />
-    <style>
-        .note-editor.note-frame:after {
-            display: none;
-        }
-
-        .note-editor .note-toolbar .note-dropdown-menu,
-        .note-popover .popover-content .note-dropdown-menu {
-            min-width: 180px;
-        }
-
-        /* Fix Summernote fullscreen */
-        .modal-open .note-editor {
-            z-index: 1050 !important;
-        }
-    </style>
-@endpush
-
-@push('after-scripts')
-    <script src="https://cdn.jsdelivr.net/npm/summernote@0.9.0/dist/summernote-lite.min.js"></script>
-    <script>
-        $(document).ready(function() {
-            $('.summernote').each(function() {
-                var $this = $(this); // Get the current textarea
-
-                // Initialize Summernote
-                $this.summernote({
-                    height: 150,
-                    toolbar: [
-                        ['style', ['bold', 'italic', 'underline']],
-                        ['para', ['ul', 'ol', 'paragraph']]
-                    ],
-                    callbacks: {
-                        onInit: function() {
-                            $(".note-editor").css("width", "100%");
-                        },
-                        onPaste: function(e) {
-                            e.preventDefault();
-
-                            // Get plain text only, strip all formatting
-                            let bufferText = ((e.originalEvent || e).clipboardData || window
-                                .clipboardData).getData('text/plain');
-
-                            // Paste as plain text
-                            document.execCommand('insertText', false, bufferText);
-                        }
-                    }
-                });
+                        </div>
 
 
-                // Disable Summernote if it has the "readonly-summernote" class
-                if ($this.hasClass('readonly-summernote')) {
-                    $this.summernote('disable');
-                }
-            });
+                       </div>
 
-            // Ensure Fullscreen Works Properly
-            $(document).on('click', '.note-btn.fullscreen', function() {
-                setTimeout(function() {
-                    $(".note-editable").css("height", $(window).height() - 150 + "px");
-                }, 500);
-            });
-        });
-    </script>
-@endpush
+
+                       <hr>
+
+
+
+                       <!-- Attachments -->
+                       <h5 class="card-title mb-4">
+                           <i class="fas fa-paperclip me-2"></i>Attachments
+                       </h5>
+                       <div class="mb-4">
+                           @if ($delegation_letter = $$module_name_singular->getFirstMedia('delegation_letters'))
+                               <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+                                   data-bs-target="#delegationLetterModal">
+                                   <i class="fas fa-file-pdf me-2"></i>View Delegation Letter
+                               </button>
+                           @else
+                               <p class="text-muted"><i class="fas fa-times-circle me-2"></i>No delegation letter uploaded.
+                               </p>
+                           @endif
+
+                           @if ($application->hasMedia('application_forms'))
+                               <button type="button" class="btn btn-outline-primary btn-sm ms-2" data-bs-toggle="modal"
+                                   data-bs-target="#applicationFormModal">
+                                   <i class="fas fa-file-pdf me-2"></i>View Application Form
+                               </button>
+                           @else
+                               <p class="text-muted"><i class="fas fa-times-circle me-2"></i>No application form uploaded.
+                               </p>
+                           @endif
+                       </div>
+
+
+
+
+                       <hr>
+                       <!-- Application Status Actions -->
+
+                       @php
+                           // Define allowed statuses and roles for this button
+                           $allowedStatuses = [ApplicationStatusEnum::DOCS_SUB, ApplicationStatusEnum::DOCS_CEO];
+                           $allowedRoles = ['ceo'];
+                       @endphp
+
+                       @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                           <div class="d-flex align-items-center gap-3">
+                               <!-- Button to Assign/Change Handling Unit -->
+                               <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#assignDeskModal">
+                                   <i class="fas fa-tasks me-2"></i>
+                                   {{ $application->desk ? 'Change Handling Unit' : 'Assign Handling Unit' }}
+                               </button>
+
+                               <!-- Display Assigned Desk or "Not assigned yet" -->
+                               <div class="desk-info">
+                                   <strong>Assigned Desk:</strong>
+                                   @if ($application->desk)
+                                       <span class="badge bg-success">{{ $application->desk->name }}</span>
+                                   @else
+                                       <span class="badge bg-secondary">Not assigned yet</span>
+                                   @endif
+                               </div>
+                           </div>
+                       @endif
+                       <hr>
+
+
+                       <div class="card">
+                           <div class="card-body">
+
+
+                               {{-- In your Blade template --}}
+                               @php
+                                   $allowedStatuses = [ApplicationStatusEnum::DOCS_SUB];
+                                   $allowedRoles = [
+                                       'user',
+                                       'deputy director',
+                                       'super admin',
+                                       'ceo',
+                                       'council member',
+                                       'assessor',
+                                       'accreditation expert',
+                                   ];
+
+                                   $isAssignedReviewer = $application->isAssignedAsDeskReviewer();
+                                   $isOwner = auth()->check() && $application->created_by == auth()->id();
+                                   $userRole = auth()->user()->roles->first()->name ?? null;
+                                   $showDeskReviewOptions =
+                                       ($isAssignedReviewer && $userRole === 'assessor') ||
+                                       ($isOwner && $userRole === 'user') ||
+                                       in_array($userRole, [
+                                           'deputy director',
+                                           'super admin',
+                                           'ceo',
+                                           'council member',
+
+                                           'accreditation expert',
+                                       ]);
+                               @endphp
+
+                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles, $allowedStatuses))
+                                   <!-- Dropdown Button -->
+                                   <div class="dropdown">
+                                       <button class="btn btn-primary dropdown-toggle mt-3" type="button"
+                                           id="downloadDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                           <i class="fas fa-download" style="color: white;"></i> Downloadble Files
+                                       </button>
+                                       <ul class="dropdown-menu" aria-labelledby="downloadDropdown">
+                                           <!-- Standard download options for all authorized users -->
+
+                                           @if ($application->doc_version > 5 && $application->desk_decision != 'rejected' && auth()->user()->hasRole('user'))
+                                               <li>
+                                                   <a class="dropdown-item"
+                                                       href="{{ route('backend.applications.viewCertificate', $application->id) }}"
+                                                       target="_blank">
+                                                       <i class="fas fa-certificate"></i>
+                                                       {{ $application->certificate?->getFirstMedia('certificate_pdf') ? 'View Certificate' : 'Generate Certificate' }}
+                                                   </a>
+
+                                               </li>
+                                               <li>
+                                                   <a class="dropdown-item download-link"
+                                                       href="{{ route('backend.applications.downloadCombinedAssessmentReport', $application->id) }}"
+                                                       target="_blank">
+                                                       <i class="fas fa-file-pdf"></i> Final Result and Findings
+                                                   </a>
+                                               </li>
+                                           @endif
+                                           @if ($application->doc_version < 3)
+                                               @unless (auth()->user()->hasRole('user'))
+                                                   <li>
+                                                       <a class="dropdown-item download-link"
+                                                           href="{{ route('backend.applications.downloadDctNarrativeResponseWord', $application->id) }}"
+                                                           target="_blank">
+                                                           <i class="fas fa-file-word"></i> Download as Word (questions and
+                                                           comment
+                                                           form)
+                                                       </a>
+                                                   </li>
+                                               @endunless
+
+                                               <li>
+
+                                                   <a class="dropdown-item download-link"
+                                                       href="{{ route('backend.applications.downloadDctNarrativeResponsePdf', $application->id) }}"
+                                                       target="_blank">
+                                                       <i class="fas fa-file-pdf"></i> Download as PDF (Question and
+                                                       Response)
+                                                   </a>
+                                               </li>
+                                           @else
+                                               <li>
+                                                   <a class="dropdown-item download-link"
+                                                       href="{{ route('backend.applications.downloadDctNarrativeResponseWord', $application->id) }}"
+                                                       target="_blank">
+                                                       <i class="fas fa-file-word"></i> Download as Word (questions and
+                                                       comment
+                                                       form)
+                                                   </a>
+                                               </li>
+                                               @if ($application->doc_version > 3)
+                                                   <li class="dropdown-divider"></li>
+
+                                                   <a href="{{ route('backend.applications.viewExitReport', $application->id) }}"
+                                                       target="_blank" class="dropdown-item download-link">
+                                                       <i class="fas fa-file-pdf me-1"></i> View Site Visit Exit Report
+                                                   </a>
+                                               @endif
+                                           @endif
+
+                                           <!-- Desk review options (shown based on role and assignment) -->
+                                           @if ($showDeskReviewOptions)
+                                               <li class="dropdown-divider"></li>
+                            {{-- Allow normal user to download only under specific conditions --}}
+                                @if (
+                                    auth()->user()->hasRole('user') &&
+                                    $application->desk_decision == 'desk_review_revision_requested'
+                                )
+                                    <li>
+                                        <a class="dropdown-item download-link"
+                                            href="{{ route('backend.applications.downloadSummarizedDeskReviewinPdf', $application->id) }}"
+                                            target="_blank">
+                                            <i class="fas fa-file-pdf"></i> Download Full Desk Review (PDF)
+                                        </a>
+                                    </li>
+                                @endif
+                                               @unless (auth()->user()->hasRole('user'))
+                                                   <li>
+                                                       <a class="dropdown-item download-link"
+                                                           href="{{ route('backend.applications.downloadDeskReviewinPdf', $application->id) }}"
+                                                           target="_blank">
+                                                           <i class="fas fa-file-pdf"></i> Download Full Desk Review (PDF)
+                                                       </a>
+                                                   </li>
+                                                   @if (auth()->user()->hasAnyRole(['assessor', 'accreditation expert']))
+                                                       <li>
+                                                           <a class="dropdown-item download-link"
+                                                               href="{{ route('backend.applications.downloadMyDeskReviewPdf', $application->id) }}"
+                                                               target="_blank">
+                                                               <i class="fas fa-file-pdf"></i> Download My Desk Review
+                                                           </a>
+                                                       </li>
+
+                                                       <li>
+                                                           <a class="dropdown-item download-link"
+                                                               href="{{ route('backend.applications.downloadMyAssessmentReport', $application->id) }}"
+                                                               target="_blank">
+                                                               <i class="fas fa-file-pdf"></i> Download My Assessment
+                                                           </a>
+                                                       </li>
+                                                   @endif
+
+                                                   @if (auth()->user()->hasAnyRole(['ceo', 'deputy director', 'council member', 'director general', 'system admin']))
+                                                       @if ($application->doc_version > 3)
+                                                           <li>
+                                                               <a class="dropdown-item"
+                                                                   href="{{ route('backend.applications.downloadToaFirstRoundinPdf', $application->id) }}"
+                                                                   target="_blank">
+                                                                   <i class="fas fa-file-pdf"></i> Download Document Review
+                                                                   (ToA
+                                                                   First Round)
+                                                               </a>
+                                                           </li>
+
+                                                           <li>
+                                                               <a class="dropdown-item"
+                                                                   href="{{ route('backend.applications.downloadToaSecondRoundinPdf', $application->id) }}"
+                                                                   target="_blank">
+                                                                   <i class="fas fa-file-pdf"></i> Download Site Visit Review
+                                                               </a>
+                                                           </li>
+                                                           <li>
+                                                               <a class="dropdown-item"
+                                                                   href="{{ route('backend.applications.downloadToaAllRoundinPdf', $application->id) }}"
+                                                                   target="_blank">
+                                                                   <i class="fas fa-file-pdf"></i> Download Final Result
+                                                               </a>
+                                                           </li>
+                                                           @if ($application->doc_version > 5 && $application->desk_decision != 'rejected')
+                                                               <li>
+                                                                   <a class="dropdown-item"
+                                                                       href="{{ route('backend.applications.viewCertificate', $application->id) }}"
+                                                                       target="_blank">
+                                                                       <i class="fas fa-certificate"></i>
+                                                                       {{ $application->certificate?->getFirstMedia('certificate_pdf') ? 'View Certificate' : 'Generate Certificate' }}
+                                                                   </a>
+
+                                                               </li>
+                                                           @endif
+                                                       @endif
+                                                   @endif
+                                               @endunless
+
+                                               @php
+                                                   $userAllowedStatuses = [ApplicationStatusEnum::DESK_REV_REQ];
+                                                   $userAllowedRoles = ['user'];
+                                                   $showToUser = shouldShowButton(
+                                                       $application,
+                                                       $userAllowedStatuses,
+                                                       $userAllowedRoles,
+                                                       $userAllowedStatuses,
+                                                   );
+                                                   $hideFromUser = in_array($application->status, [
+                                                       'completed',
+                                                       'desk_review_revision_requested',
+                                                   ]);
+                                               @endphp
+
+                                               @if (!auth()->user()->hasRole('user') || ($showToUser && !$hideFromUser))
+                                                   @if (
+                                                       !auth()->user()->hasRole('user') ||
+                                                           in_array($application->status, ['completed', 'desk_review_revision_requested']) ||
+                                                           $application->doc_version > 2)
+                                                       <li class="dropdown-divider"></li>
+                                                       <li>
+                                                           <a class="dropdown-item download-link"
+                                                               href="{{ route('backend.applications.downloadSummarizedDeskReviewinPdf', $application->id) }}"
+                                                               target="_blank">
+                                                               <i class="fas fa-file-pdf"></i> Download Summarized Desk
+                                                               Review (PDF)
+                                                           </a>
+                                                       </li>
+                                                   @endif
+                                               @endif
+                                           @endif
+                                       </ul>
+                                   </div>
+                               @endif
+
+                               @php
+                                   // Define allowed statuses and roles for this button
+
+                                   $allowedStatuses = [ApplicationStatusEnum::DESK_DEP];
+                                   $allowedRoles = ['deputy director'];
+                               @endphp
+                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
+                                       class="btn btn-secondary mt-3">
+                                       @if ($application->review_phase === 'desk_review' && $application->doc_version == 2)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
+                                           Finalize Revised comments forwared by CEO (Second Time Desk Revision)
+                                       @elseif ($application->review_phase === 'desk_review' && $application->doc_version == 1)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
+                                           Finalize Revised comments forwared by CEO (Second Time Revision)
+                                       @elseif ($application->review_phase === 'toa_first_round' && $application->doc_version == 3)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
+                                           Approve ToA First Round Review and Notify CEO to begin Site Visit
+                                       @elseif ($application->review_phase === 'toa_second_round' && $application->doc_version == 4)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Finalize
+                                           Site Visit
+                                           comments
+                                           and Notify Accreditation Council Members
+                                       @endif
+                                   </a>
+                               @endif
+
+                               @php
+                                   // Define allowed statuses and roles for this button
+
+                                   $allowedStatuses = [ApplicationStatusEnum::DOCS_COUNCIL];
+                                   $allowedRoles = ['deputy director', 'ceo'];
+                               @endphp
+                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                                   @if ($application->doc_version == 5)
+                                       <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
+                                           class="btn btn-secondary mt-3">
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
+
+                                           Time to Submit Council Members Decision
+
+                                       </a>
+                                   @endif
+                               @endif
+
+                               @php
+                                   // Define allowed statuses and roles for this button
+
+                                   $allowedStatuses = [ApplicationStatusEnum::DESK_CEO];
+                                   $allowedRoles = ['ceo'];
+                               @endphp
+                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
+                                       class="btn btn-secondary mt-3">
+                                       @if ($application->review_phase === 'desk_review' && $application->doc_version == 2)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve
+                                           Revised Desk
+                                           Review Comments and Forward it to Deputy Director
+                                       @elseif ($application->review_phase === 'desk_review' && $application->doc_version == 1)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve Desk
+                                           Review
+                                           Comments and Forward it to Deputy Director
+                                       @elseif ($application->review_phase === 'toa_first_round' && $application->doc_version == 3)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve TOA
+                                           First Round
+                                           Review
+                                           and Forward it to Deputy Director
+                                       @elseif ($application->review_phase === 'toa_second_round' && $application->doc_version == 4)
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve Site
+                                           Visist
+                                           Review
+                                           and Forward it to Deputy Director
+                                       @endif
+
+                                   </a>
+                               @endif
+
+
+
+                               @php
+                                   // Define allowed statuses and roles for this button
+
+                                   $allowedStatuses = [ApplicationStatusEnum::DESK_REV_REQ];
+                                   $allowedRoles = ['user'];
+                               @endphp
+                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                                   <!-- Dropdown Button -->
+                                   <div class="dropdown">
+
+
+                                       <a href="{{ route('backend.applications.beginresponse', $application->id) }}"
+                                           class="btn btn-primary mt-3">
+                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Revise your
+                                           application
+                                       </a>
+                                   </div>
+                               @endif
+
+
+                               {{-- //end for applicant to see their comments and proceed to revise desk review comments --}}
+
+                           </div>
+                       </div>
+
+
+
+
+                       <!-- Comments and Actions Card -->
+                       @php
+                           $user = auth()->user();
+                           $status = $application->status;
+
+                       @endphp
+
+                       @if (
+                           ($status === 'documents_submitted' && ($user->hasRole('super admin') || $user->hasRole('deputy director'))) ||
+                               ($status === 'documents_to_ceo' && $user->hasRole('ceo')) ||
+                               ($status === 'toa_first_round' && $user->hasRole('ceo')) ||
+                               ($status === 'toa_first_round_approved_by_desk' && $user->hasRole('ceo')))
+                           <div class="card mb-4 shadow-sm">
+                               <div class="card-header bg-primary text-white">
+                                   <h5 class="card-title mb-0">
+                                       <i class="fas fa-comment me-2"></i>Comments & Actions
+                                   </h5>
+                               </div>
+                               <div class="card-body">
+                                   <form action="{{ route('backend.applications.profiledecision', $application->id) }}"
+                                       method="POST">
+                                       @csrf
+                                       <div class="form-group mb-3">
+                                           <label for="comments" class="form-label">Add Comments</label>
+                                           <textarea name="comments" id="comments" class="form-control" rows="3"
+                                               placeholder="(optional)Enter your comments here..."></textarea>
+                                       </div>
+
+                                       <div class="d-flex gap-2">
+                                           @if ($status === 'profile_submitted' && $user->hasRole('super admin'))
+                                               <button type="submit" name="action" value="PROFILE_ACC"
+                                                   class="btn btn-outline-success">
+                                                   <i class="fas fa-check-circle me-2"></i>Approve Profile
+                                               </button>
+
+                                               <button type="submit" name="action" value="PROFILE_REV"
+                                                   class="btn btn-outline-warning">
+                                                   <i class="fas fa-comment"></i>Request Revision
+                                               </button>
+
+                                               <button type="submit" name="action" value="PROFILE_REJ"
+                                                   class="btn btn-outline-danger">
+                                                   <i class="fas fa-times-circle me-2"></i>Reject Profile
+                                               </button>
+                                           @endif
+
+                                           @php
+                                               $allowedStatuses = [ApplicationStatusEnum::DOCS_SUB];
+                                               $allowedRoles = ['deputy director'];
+                                           @endphp
+                                           @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                                               <button type="submit" name="action" value="DOCS_CEO"
+                                                   class="btn btn-secondary mt-3">
+                                                   <i class="fas fa-share me-2 blinking"></i>
+                                                   @if ($application->doc_version == 2)
+                                                       Forward Revised Application Documents to CEO
+                                                   @else
+                                                       Forward Application Documents to CEO
+                                                   @endif
+                                               </button>
+                                               @if ($application->review_phase === 'profile_stage')
+                                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
+                                                       class="btn btn-secondary mt-3">
+                                                       <i class="fas fa-check-circle blinking" style="color: white;"></i>
+                                                       Verify
+                                                   </a>
+                                               @endif
+                                           @endif
+
+                                           @php
+                                               $allowedStatuses = [
+                                                   ApplicationStatusEnum::DOCS_CEO,
+                                                   ApplicationStatusEnum::TOA_R1_DESK,
+                                               ];
+                                               $allowedRoles = ['ceo'];
+                                           @endphp
+                                           @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                                               <button type="submit" name="action" value="DOCS_DESK"
+                                                   class="btn btn-secondary mt-3">
+                                                   <i class="fas fa-share me-2 blinking"></i>
+                                                   @if ($application->review_phase == 'toa_first_round')
+                                                       Forward Document to Assessors for First Round Team of Assessor Review
+                                                   @elseif ($application->review_phase == 'toa_second_round')
+                                                       Forward Document to Desk for Site Visit Review
+                                                   @elseif ($application->doc_version == 2)
+                                                       Forward Revised Application Documents to Desk
+                                                   @else
+                                                       Forward Submitted Application Documents to Desk
+                                                   @endif
+
+                                               </button>
+
+                                               @if ($application->desk_decision === 'Not Decided' && $application->review_phase === 'desk_review')
+                                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
+                                                       class="btn btn-secondary mt-3">
+                                                       <i class="fas fa-check-circle blinking" style="color: white;"></i>
+                                                       Verify
+                                                   </a>
+                                               @endif
+                                           @endif
+
+
+                                           @php
+                                               $allowedStatuses = [ApplicationStatusEnum::TOA_R1_ACC];
+                                               $allowedRoles = ['ceo'];
+                                           @endphp
+                                           @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                                               <button type="submit" name="action" value="TOA_R2_DESK"
+                                                   class="btn btn-secondary">
+                                                   <i class="fas fa-share me-2 blinking"></i>
+                                                   @if ($application->status == 'toa_first_round_approved_by_desk')
+                                                       Forward Document to Assessors for Site Visit (Second Round) Review
+                                                   @endif
+                                               </button>
+                                           @endif
+                                       </div>
+                                   </form>
+                               </div>
+                           </div>
+                       @endif
+
+
+                       <hr>
+
+                       <!-- Status History Timeline -->
+                       <!-- Application Timeline -->
+                       <h3 class="timeline-heading">ðŸ“Œ Application Timeline</h3>
+
+                       <!-- Status History Timeline -->
+                       <div class="timeline">
+                           @foreach ($application->statusHistory->sortBy('created_at') as $index => $history)
+                               <div class="timeline-item">
+                                   <div class="timeline-line"></div> <!-- Main line -->
+
+                                   <!-- Branching line for alternative paths -->
+                                   @if ($history->status == 'Processing' || $history->status == 'Delayed')
+                                       <div class="timeline-branch"></div>
+                                   @endif
+
+                                   <!-- Timeline Icon -->
+                                   <div class="timeline-icon
+                @if ($loop->last) blinking @endif"
+                                       style="background-color:
+                    @if ($history->status === 'profile_rejected') red;
+                    @else {{ sprintf('#%06X', mt_rand(0, 0xffffff)) }}; @endif
+                ">
+                                       <i class="fas fa-circle"></i>
+                                   </div>
+
+                                   <!-- Timeline Content -->
+                                   <!-- Timeline Content -->
+                                   <div class="timeline-content">
+                                       <span class="label label-danger">{{ ucfirst($history->status) }}</span>
+                                       <p class="text-muted mb-1">{{ $history->created_at->format('M d, Y h:i A') }}</p>
+                                       @if ($history->comments)
+                                           <p class="mb-0"><strong>Comments:</strong> {{ $history->comments }}</p>
+                                       @endif
+                                       @if ($history->status == 'documents_to_desk' && !auth()->user()->hasRole('user'))
+                                           <div class="mt-2">
+                                               <a href="{{ route('backend.applications.reviewers-progress', $application->id) }}"
+                                                   class="btn btn-sm btn-outline-primary">
+                                                   <i class="fas fa-users"></i> View Reviewers Progress
+                                               </a>
+                                           </div>
+                                       @endif
+                                   </div>
+                               </div>
+                           @endforeach
+                       </div>
+
+
+
+
+                       <hr>
+
+                       <!-- Comments and Actions -->
+
+                       @php
+                           // Define allowed statuses and roles for this button
+
+                           $allowedStatuses = [ApplicationStatusEnum::PROFILE_SUB];
+                           $allowedRoles = ['deputy director'];
+                       @endphp
+                       @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
+                           <h5 class="card-title mb-4">
+                               <i class="fas fa-comment me-2"></i>Comments & Actions
+                           </h5>
+                           <form action="{{ route('backend.applications.profiledecision', $application->id) }}"
+                               method="POST">
+                               @csrf
+                               <div class="form-group mb-3">
+                                   <label for="comments" class="form-label">Add Comments</label>
+                                   <textarea name="comments" id="comments" class="form-control" rows="3"
+                                       placeholder="Enter your comments here..."></textarea>
+                               </div>
+
+                               <div class="d-flex gap-2">
+                                   <button type="submit" name="action" value="PROFILE_ACC"
+                                       class="btn btn-outline-success">
+                                       <i class="fas fa-check-circle me-2"></i>Approve Profile
+                                   </button>
+
+                                   <button type="submit" name="action" value="PROFILE_REV"
+                                       class="btn btn-outline-warning">
+                                       <i class="fas fa-comment"></i>Request Revision
+                                   </button>
+
+                                   <button type="submit" name="action" value="PROFILE_REJ"
+                                       class="btn btn-outline-danger">
+                                       <i class="fas fa-times-circle me-2"></i>Reject Profile
+                                   </button>
+                                   {{-- <button type="submit" name="action" value="forward" class="btn btn-primary">
+                        <i class="fas fa-share me-2"></i>Forward to CEO
+                    </button> --}}
+                               </div>
+                           </form>
+                       @endif
+
+                   </div>
+               </div>
+
+
+
+
+               <!-- Assign Application to Desk Modal by CEO or Deputy -->
+               <div class="modal fade" id="assignDeskModal" tabindex="-1" aria-labelledby="assignDeskModalLabel"
+                   aria-hidden="true">
+                   <div class="modal-dialog">
+                       <div class="modal-content">
+                           <div class="modal-header bg-secondary text-white">
+                               <h5 class="modal-title"><i class="fas fa-tasks"></i> Assign Handling Unit</h5>
+                               <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                   aria-label="Close"></button>
+                           </div>
+                           <form action="{{ route('backend.applications.updateDesk', $application->id) }}"
+                               method="POST">
+                               @csrf
+                               @method('PATCH')
+                               <div class="modal-body">
+                                   <div class="form-group">
+                                       <label for="desk_id" class="fw-bold">Select Handling Unit</label>
+                                       <select name="desk_id" id="desk_id" class="form-select" required>
+                                           <option value="">-- Select a Unit --</option>
+                                           @foreach ($desks as $desk)
+                                               <option value="{{ $desk->id }}">{{ $desk->name }}</option>
+                                           @endforeach
+                                       </select>
+                                   </div>
+                               </div>
+                               <div class="modal-footer">
+                                   <button type="submit" class="btn btn-success">Save</button>
+                                   <button type="button" class="btn btn-secondary"
+                                       data-bs-dismiss="modal">Cancel</button>
+                               </div>
+                           </form>
+                       </div>
+                   </div>
+               </div>
+
+               <!-- Modals for Attachments -->
+               @if ($delegation_letter)
+                   <div class="modal fade" id="delegationLetterModal" tabindex="-1"
+                       aria-labelledby="delegationLetterModalLabel" aria-hidden="true">
+                       <div class="modal-dialog modal-dialog-centered modal-xl">
+                           <div class="modal-content">
+                               <div class="modal-header bg-primary text-white">
+                                   <h5 class="modal-title" id="delegationLetterModalLabel">Delegation Letter</h5>
+                                   <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                       aria-label="Close"></button>
+                               </div>
+                               <div class="modal-body">
+                                   <iframe
+                                       src="{{ route('backend.applications.delegation_letter', ['id' => $$module_name_singular->id]) }}"
+                                       width="100%" height="500px" style="border: none;"></iframe>
+                               </div>
+                               <div class="modal-footer">
+                                   <button type="button" class="btn btn-secondary"
+                                       data-bs-dismiss="modal">Close</button>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               @endif
+
+               <!-- Application Form Modal -->
+               @if ($application_form)
+                   <div class="modal fade" id="applicationFormModal" tabindex="-1"
+                       aria-labelledby="applicationFormModalLabel" aria-hidden="true">
+                       <div class="modal-dialog modal-dialog-centered modal-xl">
+                           <div class="modal-content">
+                               <div class="modal-header bg-primary text-white">
+                                   <h5 class="modal-title" id="applicationFormModalLabel">Application Form</h5>
+                                   <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                       aria-label="Close"></button>
+                               </div>
+                               <div class="modal-body">
+                                   <iframe
+                                       src="{{ route('backend.applications.application_form', ['id' => $$module_name_singular->id]) }}"
+                                       width="100%" height="500px" style="border: none;"></iframe>
+                               </div>
+                               <div class="modal-footer">
+                                   <button type="button" class="btn btn-secondary"
+                                       data-bs-dismiss="modal">Close</button>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               @endif
+           @endsection
+
+
+           @push('after-styles')
+               <style>
+                   /* Overall timeline styling */
+                   .timeline {
+                       position: relative;
+                       max-width: 800px;
+                       margin: 50px auto;
+                       padding-left: 20px;
+                   }
+
+                   .timeline-heading {
+                       text-align: center;
+                       font-size: 22px;
+                       font-weight: bold;
+                       margin-bottom: 20px;
+                   }
+
+                   /* Timeline item */
+                   .timeline-item {
+                       display: flex;
+                       align-items: center;
+                       position: relative;
+                       width: 100%;
+                       margin-bottom: 40px;
+                       transition: transform 0.3s ease-in-out;
+                   }
+
+                   .timeline-item:hover {
+                       transform: scale(1.02);
+                   }
+
+                   /* Alternating left and right layout */
+                   .timeline-item:nth-child(even) {
+                       flex-direction: row-reverse;
+                       text-align: right;
+                   }
+
+                   /* Timeline icon */
+                   .timeline-icon {
+                       width: 50px;
+                       height: 50px;
+                       border-radius: 50%;
+                       color: white;
+                       font-size: 20px;
+                       display: flex;
+                       justify-content: center;
+                       align-items: center;
+                       margin: 0 15px;
+                       box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.2);
+                   }
+
+                   /* Different background colors for each status */
+                   .timeline-icon.submitted {
+                       background: #3498db;
+                   }
+
+                   /* Blue */
+                   .timeline-icon.under-review {
+                       background: #f39c12;
+                   }
+
+                   /* Orange */
+                   .timeline-icon.processing {
+                       background: #9b59b6;
+                   }
+
+                   /* Purple */
+                   .timeline-icon.approved {
+                       background: #2ecc71;
+                   }
+
+                   /* Green */
+                   .timeline-icon.rejected {
+                       background: #e74c3c;
+                   }
+
+                   /* Red */
+                   .timeline-icon.on-hold {
+                       background: #ffcc00;
+                   }
+
+                   /* Yellow */
+                   .timeline-icon.finalized {
+                       background: #34495e;
+                   }
+
+                   /* Dark Grey */
+
+                   /* Timeline content styling */
+                   .timeline-content {
+                       background: white;
+                       padding: 15px;
+                       border-radius: 10px;
+                       box-shadow: 0px 3px 10px rgba(0, 0, 0, 0.1);
+                       position: relative;
+                       width: 60%;
+                   }
+
+                   /* Gradient timeline line */
+                   .timeline::before {
+                       content: "";
+                       position: absolute;
+                       width: 5px;
+                       height: 100%;
+                       background: linear-gradient(to bottom, #3498db, #2ecc71);
+                       left: 50%;
+                       top: 0;
+                       transform: translateX(-50%);
+                   }
+
+                   /* Styling for the last/current status */
+                   .current-status .timeline-icon {
+                       background: #2ecc71 !important;
+                       /* Make the last one stand out */
+                       animation: pulse 1.5s infinite alternate;
+                   }
+
+                   .current-status .timeline-content {
+                       border: 2px solid #2ecc71;
+                   }
+
+                   /* Status text */
+                   .status-label {
+                       font-size: 16px;
+                       font-weight: bold;
+                       text-transform: uppercase;
+                   }
+
+                   /* Muted text */
+                   .text-muted {
+                       font-size: 14px;
+                       color: gray;
+                   }
+
+                   /* Glowing effect for current status */
+                   @keyframes pulse {
+                       0% {
+                           box-shadow: 0 0 10px rgba(46, 204, 113, 0.7);
+                       }
+
+                       100% {
+                           box-shadow: 0 0 20px rgba(46, 204, 113, 1);
+                       }
+                   }
+
+                   /* Blinking animation */
+                   @keyframes blink {
+                       0% {
+                           opacity: 1;
+                       }
+
+                       50% {
+                           opacity: 0;
+                       }
+
+                       100% {
+                           opacity: 1;
+                       }
+                   }
+
+                   .blinking {
+                       animation: blink 1s infinite;
+                       /* Adjust the duration as needed */
+                   }
+               </style>
+
+               <style>
+    .application-detail-section {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 2px 4px rgba(136, 176, 236, 0.05);
+    }
+    .section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 8px;
+    }
+    .detail-item {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 8px;
+    }
+    .detail-label {
+        font-weight: 600;
+        min-width: 160px;
+        color: #6da3d9;
+    }
+    .detail-value {
+        flex: 1;
+        color: #eff1f3;
+    }
+    .badge {
+        font-size: 0.85em;
+        padding: 5px 10px;
+    }
+</style>
+           @endpush
