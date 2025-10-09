@@ -1,289 +1,344 @@
 <?php
 
-namespace App\Http\Controllers\Backend;
+namespace App\Livewire\Dashboard;
 
-use Illuminate\Support\Facades\Auth;
-use App\Http\Controllers\Controller;
+use Livewire\Component;
+use Livewire\WithPagination;
 use Modules\Application\Models\Application;
 use Modules\Certificate\Models\Certificate;
+use App\Models\DeskReviewAssignment;
+use App\Models\User;
+use App\Models\ApplicationStatusHistory; 
 
-class BackendController extends Controller
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+use Modules\Mainsetting\Models\Mainsetting;
+
+class ApplicationStatusTable extends Component
 {
-    public function index()
+    use WithPagination;
+
+    // Filters
+    public $search = '';
+    public $instituteType = '';
+    public $instituteOwnership = '';
+    public $status = '';
+    public $startMonth;
+    public $startYear;
+    public $endMonth;
+    public $endYear;
+    public $perPage = 10;
+
+    protected $queryString = [
+        'search' => ['except' => ''],
+        'instituteType' => ['except' => ''],
+        'instituteOwnership' => ['except' => ''],
+        'status' => ['except' => ''],
+        'startMonth' => ['except' => ''],
+        'startYear' => ['except' => ''],
+        'endMonth' => ['except' => ''],
+        'endYear' => ['except' => ''],
+    ];
+
+    public function mount()
     {
-        $user = Auth::user();
-
-        if ($user->hasRole('user')) {
-            $application = Application::where('created_by', $user->id)
-                ->latest()
-                ->first();
-
-            if ($application) {
-                return redirect()->route('backend.applications.profileview', ['id' => $application->id]);
-            }
-            return redirect()->route('backend.applications.index');
-        }
-
-        $stats = $this->getDashboardStatistics();
-        $chartData = $this->getChartData();
-        $recentActivities = $this->getRecentActivities();
-        $topInstitutions = $this->getTopInstitutions();
-        $accreditationStatus = $this->getAccreditationStatus();
-
-        $viewData = [
-            'stats' => $stats,
-            'chartData' => $chartData,
-            'recentActivities' => $recentActivities,
-            'topInstitutions' => $topInstitutions,
-            'accreditationStatus' => $accreditationStatus,
-            'getActivityColor' => function($type) {
-                switch ($type) {
-                    case 'Full Accreditation Granted': return 'success';
-                    case 'Provisional Accreditation Granted': return 'warning';
-                    case 'Application Rejected': return 'danger';
-                    default: return 'info';
-                }
-            },
-            'getActivityIcon' => function($type) {
-                switch ($type) {
-                    case 'Full Accreditation Granted': return 'certificate';
-                    case 'Provisional Accreditation Granted': return 'certificate';
-                    case 'Application Rejected': return 'times-circle';
-                    default: return 'clipboard-check';
-                }
-            },
-            'getRankColor' => function($index) {
-                switch ($index) {
-                    case 0: return 'primary';
-                    case 1: return 'secondary';
-                    case 2: return 'warning';
-                    default: return 'light';
-                }
-            }
-        ];
-
-        return view('backend.dashboard', $viewData);
+        // Set default date range to current year
+        $this->startMonth = now()->startOfYear()->month;
+        $this->startYear = now()->year;
+        $this->endMonth = now()->endOfYear()->month;
+        $this->endYear = now()->year;
     }
 
-    protected function getDashboardStatistics()
+    public function render()
     {
-        // Exclude profile_draft applications from all statistics
-        $totalApplications = Application::where('status', '!=', 'profile_draft')->count();
-        $certifiedApplications = Certificate::count();
-        
-        return [
-            'total_applications' => $totalApplications,
-            'certified_applications' => $certifiedApplications,
-            'pending_applications' => $totalApplications - $certifiedApplications,
-            'full_accreditations' => Certificate::where('accreditation_status', 'Full Accreditation')->count(),
-            'provisional_accreditations' => Certificate::where('accreditation_status', 'Provisional Accreditation')->count(),
-            'institutions_count' => Certificate::distinct('institute_id')->count(),
-            'programs_count' => Certificate::distinct('program_name')->count(),
-        ];
-    }
+        // Build date range
+        $currentYear = now()->year;
+        $this->startYear = is_numeric($this->startYear) ? max(2025, min($currentYear + 1, (int)$this->startYear)) : $currentYear;
+        $this->endYear = is_numeric($this->endYear) ? max(2025, min($currentYear + 1, (int)$this->endYear)) : $currentYear;
+        $this->startMonth = is_numeric($this->startMonth) ? max(1, min(12, (int)$this->startMonth)) : 1;
+        $this->endMonth = is_numeric($this->endMonth) ? max(1, min(12, (int)$this->endMonth)) : 12;
 
-    protected function getChartData()
-    {
-        // Applications status breakdown - exclude profile_draft
-        $applicationsByStatus = [
-            'Fully Accredited' => Certificate::where('accreditation_status', 'Full Accreditation')->count(),
-            'Provisionally Accredited' => Certificate::where('accreditation_status', 'Provisional Accreditation')->count(),
-            'Pending Review' => Application::where('status', '!=', 'profile_draft')
-                ->doesntHave('certificate')
-                ->count(),
-            'Rejected' => Application::where('status', 'accreditation_rejected')
-                ->where('status', '!=', 'profile_draft')
-                ->count(),
-        ];
-
-        // Accreditation by program type (top 6)
-        $accreditationByProgram = Certificate::select('program_name')
-            ->selectRaw('COUNT(*) as count')
-            ->groupBy('program_name')
-            ->orderByDesc('count')
-            ->limit(6)
-            ->get()
-            ->pluck('count', 'program_name')
-            ->toArray();
-
-        // Accreditation timeline (last 12 months)
-        $accreditationTimeline = [];
-        for ($i = 11; $i >= 0; $i--) {
-            $date = now()->subMonths($i);
-            $monthYear = $date->format('M Y');
+        // Build date range
+        try {
+            $startDate = now()
+                ->setYear($this->startYear)
+                ->setMonth($this->startMonth)
+                ->startOfMonth();
             
-            $accreditationTimeline[$monthYear] = [
-                'Full' => Certificate::where('accreditation_status', 'Full Accreditation')
-                    ->whereYear('issued_date', $date->year)
-                    ->whereMonth('issued_date', $date->month)
-                    ->count(),
-                'Provisional' => Certificate::where('accreditation_status', 'Provisional Accreditation')
-                    ->whereYear('issued_date', $date->year)
-                    ->whereMonth('issued_date', $date->month)
-                    ->count(),
-            ];
+            $endDate = now()
+                ->setYear($this->endYear)
+                ->setMonth($this->endMonth)
+                ->endOfMonth();
+        } catch (\Exception $e) {
+            // Fallback to current year if date creation fails
+            $startDate = now()->startOfYear();
+            $endDate = now()->endOfYear();
         }
-        
-        // Ownership status - exclude profile_draft
-        $ownershipStatus = [
-            'Public' => [
-                'Fully Accredited' => Certificate::where('accreditation_status', 'Full Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_ownership', 'Public')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Provisionally Accredited' => Certificate::where('accreditation_status', 'Provisional Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_ownership', 'Public')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Pending' => Application::where('status', '!=', 'profile_draft')
-                    ->doesntHave('certificate')
-                    ->where('institute_ownership', 'Public')
-                    ->count(),
-                'Rejected' => Application::where('status', 'accreditation_rejected')
-                    ->where('institute_ownership', 'Public')
-                    ->count(),
-            ],
-            'Private' => [
-                'Fully Accredited' => Certificate::where('accreditation_status', 'Full Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_ownership', 'Private')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Provisionally Accredited' => Certificate::where('accreditation_status', 'Provisional Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_ownership', 'Private')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Pending' => Application::where('status', '!=', 'profile_draft')
-                    ->doesntHave('certificate')
-                    ->where('institute_ownership', 'Private')
-                    ->count(),
-                'Rejected' => Application::where('status', 'accreditation_rejected')
-                    ->where('institute_ownership', 'Private')
-                    ->count(),
-            ]
-        ];
 
-        // Institute type status - exclude profile_draft
-        $instituteTypeStatus = [
-            'TVET' => [
-                'Fully Accredited' => Certificate::where('accreditation_status', 'Full Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_type', 'TVET')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Provisionally Accredited' => Certificate::where('accreditation_status', 'Provisional Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_type', 'TVET')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Pending' => Application::where('status', '!=', 'profile_draft')
-                    ->doesntHave('certificate')
-                    ->where('institute_type', 'TVET')
-                    ->count(),
-                'Rejected' => Application::where('status', 'accreditation_rejected')
-                    ->where('institute_type', 'TVET')
-                    ->count(),
-            ],
-            'HEI' => [
-                'Fully Accredited' => Certificate::where('accreditation_status', 'Full Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_type', 'HEI')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Provisionally Accredited' => Certificate::where('accreditation_status', 'Provisional Accreditation')
-                    ->whereHas('application', fn($q) => $q->where('institute_type', 'HEI')
-                        ->where('status', '!=', 'profile_draft'))
-                    ->count(),
-                'Pending' => Application::where('status', '!=', 'profile_draft')
-                    ->doesntHave('certificate')
-                    ->where('institute_type', 'HEI')
-                    ->count(),
-                'Rejected' => Application::where('status', 'accreditation_rejected')
-                    ->where('institute_type', 'HEI')
-                    ->count(),
-            ]
-        ];
-
-        return [
-            'applications_by_status' => $applicationsByStatus,
-            'accreditation_by_program' => $accreditationByProgram,
-            'accreditation_timeline' => $accreditationTimeline,
-            'ownership_status' => $ownershipStatus,
-            'institute_type_status' => $instituteTypeStatus
-        ];
-    }
-
-    protected function getRecentActivities()
-    {
-        // Exclude profile_draft applications from recent activities
-        return Application::with(['institute', 'program'])
-            ->where('status', '!=', 'profile_draft')
-            ->orderBy('updated_at', 'desc')
-            ->limit(5)
-            ->get()
-            ->map(function ($app) {
-                return [
-                    'type' => $this->getActivityType($app),
-                    'institute' => $app->institute->name ?? 'N/A',
-                    'program' => $app->program->name ?? 'N/A',
-                    'time' => $app->updated_at->diffForHumans(),
-                    'status' => $app->status,
-                ];
-            });
-    }
-
-    protected function getTopInstitutions()
-    {
-        // Only include certificates from non-profile_draft applications
-        return Certificate::whereHas('application', function($query) {
-                $query->where('status', '!=', 'profile_draft');
+        // Get applications with optional certificate - EXCLUDE profile_draft
+        $applications = Application::with(['certificate', 'institute', 'program'])
+            ->where('status', '!=', 'profile_draft') // Exclude profile_draft applications
+            ->when($this->search, function ($query) {
+                $query->where(function ($q) {
+                    $q->whereHas('institute', fn($q) => $q->where('name', 'like', "%{$this->search}%"))
+                      ->orWhereHas('program', fn($q) => $q->where('name', 'like', "%{$this->search}%"));
+                });
             })
-            ->select('institute_name')
-            ->selectRaw('COUNT(*) as program_count')
-            ->selectRaw('SUM(CASE WHEN accreditation_status = "Full Accreditation" THEN 1 ELSE 0 END) as full_count')
-            ->groupBy('institute_name')
-            ->orderByDesc('program_count')
-            ->limit(5)
-            ->get()
-            ->map(function ($cert) {
-                return [
-                    'name' => $cert->institute_name,
-                    'program_count' => $cert->program_count,
-                    'full_count' => $cert->full_count,
-                    'provisional_count' => $cert->program_count - $cert->full_count,
-                ];
-            });
+            ->when($this->instituteType, function ($query) {
+                $query->where('institute_type', $this->instituteType);
+            })
+            ->when($this->instituteOwnership, function ($query) {
+                $query->where('institute_ownership', $this->instituteOwnership);
+            })
+            ->when($this->status, function ($query) {
+                if ($this->status === 'Fully Accredited') {
+                    $query->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Full Accreditation'));
+                } elseif ($this->status === 'Provisionally Accredited') {
+                    $query->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Provisional Accreditation'));
+                } elseif ($this->status === 'Pending') {
+                    $query->doesntHave('certificate');
+                } elseif ($this->status === 'Rejected') {
+                    $query->where('status', 'accreditation_rejected');
+                }
+            })
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->orderBy('created_at', 'desc')
+            ->paginate($this->perPage);
+
+        // Get statistics for the current filter - EXCLUDE profile_draft from all statistics
+        $stats = [
+            'total' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'fully_accredited' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Full Accreditation'))
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'provisionally_accredited' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Provisional Accreditation'))
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'pending' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->doesntHave('certificate')
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'rejected' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->where('status', 'accreditation_rejected')
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+        ];
+
+        $topAssessors = $this->getTopAssessors();
+
+        return view('livewire.dashboard.application-status-table', [
+            'applications' => $applications,
+            'stats' => $stats,
+            'months' => [
+                1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
+                5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
+                9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December'
+            ],
+            'years' => range(now()->year - 5, now()->year),
+            'topAssessors' => $topAssessors
+        ]);
     }
 
-    protected function getAccreditationStatus()
+    public function applyFilters()
     {
-        // Only include certificates from non-profile_draft applications
+        $this->resetPage();
+    }
+
+    public function resetFilters()
+    {
+        $this->reset([
+            'search',
+            'instituteType',
+            'instituteOwnership',
+            'status',
+            'startMonth',
+            'startYear',
+            'endMonth',
+            'endYear',
+        ]);
+        $this->mount(); // Reset to current year
+        $this->resetPage();
+    }
+
+    public function updated($property)
+    {
+        // Reset pagination when any filter changes
+        if (!in_array($property, ['perPage', 'page'])) {
+            $this->resetPage();
+        }
+    }
+    
+    protected function getTopAssessors()
+    {
+        $assessors = User::role(['assessor', 'accreditation expert'])
+            ->get()
+            ->map(function($user) {
+                $assignments = DeskReviewAssignment::where('assessor_id', $user->id)
+                    ->where('conflict_of_interest', '!=', 'YES')
+                    ->whereBetween('created_at', [
+                        Carbon::create($this->startYear, $this->startMonth)->startOfMonth(),
+                        Carbon::create($this->endYear, $this->endMonth)->endOfMonth()
+                    ])
+                    ->get();
+
+                $stats = [
+                    'tasks_assigned' => $assignments->count(),
+                    'tasks_completed' => 0,
+                    'tasks_cancelled' => 0,
+                    'overdue_completed' => 0,
+                ];
+
+                foreach ($assignments as $assignment) {
+                    if (!is_null($assignment->deleted_at)) {
+                        $stats['tasks_cancelled']++;
+                        continue;
+                    }
+
+                    if ($assignment->status === 'Completed') {
+                        $stats['tasks_completed']++;
+                        $deadline = $this->getDeadlineForAssignment($assignment);
+                        if ($assignment->updated_at && $deadline && $assignment->updated_at->gt($deadline)) {
+                            $stats['overdue_completed']++;
+                        }
+                    }
+                }
+
+                // Only calculate score if they have at least one assignment
+                if ($stats['tasks_assigned'] > 0) {
+                    $performanceScore = $this->calculatePerformanceScore($stats);
+                    return [
+                        'user' => $user,
+                        'score' => $performanceScore['score'],
+                        'level' => $performanceScore['level'],
+                        'has_reviews' => true,
+                        'tasks_completed' => $stats['tasks_completed'],
+                        'tasks_assigned' => $stats['tasks_assigned']
+                    ];
+                } else {
+                    return [
+                        'user' => $user,
+                        'score' => null,
+                        'level' => 'No Reviews',
+                        'has_reviews' => false,
+                        'tasks_completed' => 0,
+                        'tasks_assigned' => 0
+                    ];
+                }
+            })
+            ->sortByDesc(function($assessorData) {
+                // Sort by: has reviews, then score, then number of completed tasks
+                return [
+                    $assessorData['has_reviews'],
+                    $assessorData['score'] ?? 0,
+                    $assessorData['tasks_completed']
+                ];
+            })
+            ->take(10)
+            ->values();
+
+        return $assessors;
+    }
+    
+    protected function getDeadlineForAssignment($assignment)
+    {
+        if (!$assignment->created_at) {
+            return null;
+        }
+
+        $daysAllowed = 0;
+        
+        switch ($assignment->review_phase) {
+            case 'desk_review':
+                // Check if this application went through revision
+                $hasRevision = ApplicationStatusHistory::where('application_id', $assignment->application_id)
+                    ->where('status', 'desk_review_revision_requested')
+                    ->exists();
+                
+                if ($hasRevision) {
+                    // Get the timestamp when documents were resubmitted
+                    $resubmittedAt = ApplicationStatusHistory::where('application_id', $assignment->application_id)
+                        ->where('status', 'documents_to_desk')
+                        ->orderBy('created_at', 'desc')
+                        ->first()
+                        ?->created_at;
+                    
+                    if ($resubmittedAt) {
+                        return $resubmittedAt->copy()->addDays(
+                            (int)Mainsetting::get('allowed_days_for_desk_review', 15)
+                        );
+                    }
+                }
+                // Fall through to default desk review handling
+                $daysAllowed = (int)Mainsetting::get('allowed_days_for_desk_review', 15);
+                break;
+                
+            case 'toa_first_round':
+                $daysAllowed = (int)Mainsetting::get('allowed_days_for_toa_first_round', 15);
+                break;
+                
+            case 'toa_second_round':
+                $daysAllowed = (int)Mainsetting::get('allowed_days_for_toa_second_round', 15);
+                break;
+                
+            default:
+                $daysAllowed = 15;
+        }
+
+        return $assignment->created_at->copy()->addDays($daysAllowed);
+    }
+
+    protected function calculatePerformanceScore($stats)
+    {
+        $weights = [
+            'completed' => 0.5,
+            'cancelled' => -0.3,
+            'overdue' => -0.2
+        ];
+
+        $totalAssigned = max($stats['tasks_assigned'], 1);
+        
+        $completionRate = ($stats['tasks_completed'] / $totalAssigned) * 100;
+        $cancellationRate = ($stats['tasks_cancelled'] / $totalAssigned) * 100;
+        $overdueRate = ($stats['overdue_completed'] / max($stats['tasks_completed'], 1)) * 100;
+
+        $rawScore = ($completionRate * $weights['completed']) 
+                  + ($cancellationRate * $weights['cancelled']) 
+                  + ($overdueRate * $weights['overdue']);
+
+        $score = max(0, min(100, 50 + $rawScore));
+
+        $performanceLevel = $this->getPerformanceLevel($score);
+
         return [
-            'expiring_soon' => Certificate::whereHas('application', function($query) {
-                    $query->where('status', '!=', 'profile_draft');
-                })
-                ->where('valid_until', '<=', now()->addMonths(3))
-                ->where('valid_until', '>=', now())
-                ->orderBy('valid_until')
-                ->limit(5)
-                ->get(),
-            'recently_accredited' => Certificate::whereHas('application', function($query) {
-                    $query->where('status', '!=', 'profile_draft');
-                })
-                ->orderBy('issued_date', 'desc')
-                ->limit(5)
-                ->get(),
+            'score' => round($score, 1),
+            'level' => $performanceLevel,
+            'completion_rate' => round($completionRate, 1),
+            'cancellation_rate' => round($cancellationRate, 1),
+            'overdue_rate' => round($overdueRate, 1),
         ];
     }
 
-    protected function getActivityType($application)
+    protected function getPerformanceLevel($score)
     {
-        if ($application->certificate) {
-            return $application->certificate->accreditation_status === 'Full Accreditation' 
-                ? 'Full Accreditation Granted' 
-                : 'Provisional Accreditation Granted';
-        }
-        
-        if ($application->status === 'accreditation_rejected') {
-            return 'Application Rejected';
-        }
-        
-        return 'Application Under Review';
+        if ($score >= 90) return 'Excellent';
+        if ($score >= 80) return 'Very Good';
+        if ($score >= 70) return 'Good';
+        if ($score >= 60) return 'Satisfactory';
+        if ($score >= 50) return 'Needs Improvement';
+        return 'Poor';
     }
 }
