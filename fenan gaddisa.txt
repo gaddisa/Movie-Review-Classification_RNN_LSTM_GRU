@@ -1,507 +1,344 @@
 <?php
 
-namespace App\Http\Controllers\Backend;
+namespace App\Livewire\Dashboard;
 
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Gate;
-use App\Authorizable;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use Yajra\DataTables\DataTables;
-use Modules\Program\Models\Program;
-use Modules\Attachement\Models\Attachement;
-use App\Models\Indicator_attachment_direct;
+use Livewire\Component;
+use Livewire\WithPagination;
+use Modules\Application\Models\Application;
+use Modules\Certificate\Models\Certificate;
+use App\Models\DeskReviewAssignment;
+use App\Models\User;
+use App\Models\ApplicationStatusHistory; 
+
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use RealRashid\SweetAlert\Facades\Alert;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Backend\BackendBaseController;
+use Carbon\Carbon;
+use Modules\Mainsetting\Models\Mainsetting;
 
-class IndicatorsController extends BackendBaseController
+class ApplicationStatusTable extends Component
 {
-    use Authorizable;
+    use WithPagination;
 
-    public $module_title;
-    public $module_name;
-    public $module_path;
-    public $module_icon;
-    public $module_model;
+    // Filters
+    public $search = '';
+    public $instituteType = '';
+    public $instituteOwnership = '';
+    public $status = '';
+    public $startMonth;
+    public $startYear;
+    public $endMonth;
+    public $endYear;
+    public $perPage = 10;
 
-    public function __construct()
+    protected $queryString = [
+        'search' => ['except' => ''],
+        'instituteType' => ['except' => ''],
+        'instituteOwnership' => ['except' => ''],
+        'status' => ['except' => ''],
+        'startMonth' => ['except' => ''],
+        'startYear' => ['except' => ''],
+        'endMonth' => ['except' => ''],
+        'endYear' => ['except' => ''],
+    ];
+
+    public function mount()
     {
-        // Page Title
-        $this->module_title = 'Indicators Management';
-        $this->module_title = 'Indicators';
-        $this->module_name = 'indicators';
-        $this->module_path = 'backend';
-        $this->module_icon = "fa-solid fa-diagram-project";
-        $this->module_model = "App\\Models\\Indicator";
+        // Set default date range to current year
+        $this->startMonth = now()->startOfYear()->month;
+        $this->startYear = now()->year;
+        $this->endMonth = now()->endOfYear()->month;
+        $this->endYear = now()->year;
     }
 
-    public function standards()
+    public function render()
     {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
+        // Build date range
+        $currentYear = now()->year;
+        $this->startYear = is_numeric($this->startYear) ? max(2025, min($currentYear + 1, (int)$this->startYear)) : $currentYear;
+        $this->endYear = is_numeric($this->endYear) ? max(2025, min($currentYear + 1, (int)$this->endYear)) : $currentYear;
+        $this->startMonth = is_numeric($this->startMonth) ? max(1, min(12, (int)$this->startMonth)) : 1;
+        $this->endMonth = is_numeric($this->endMonth) ? max(1, min(12, (int)$this->endMonth)) : 12;
 
-        $module_action = 'List';
-
-        $$module_name = $module_model::paginate(15);
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.index_datatable",
-            compact('module_title', 'module_name', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
-        );
-    }
-
-    public function create(array $additionalData = [])
-    {
-        $substandard_id = request()->get('id'); // Get 'id' from the request if passed
-
-        // Other code for setting up the module
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Create';
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        // Pass the 'id' to the view if needed
-        return view(
-            "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'substandard_id')
-        );
-    }
-    
-    /**
-     * Create attachment and pivot record for indicator
-     */
-    private function createIndicatorAttachment($indicator, $dct_id)
-    {
+        // Build date range
         try {
-            // Create the attachment
-            $attachment = \Modules\Attachement\Models\Attachement::create([
-                'name' => "Others - Indicator " . $indicator->id,
-                'attachement_type' => 'others',
-                'dct_id' => $dct_id,
-                'table_html' => null,
-                'status' => 'Active',
-                'is_required' => 'Optional',
-                'created_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
-
-            // Create the pivot record in indicator_attachment table
-            \App\Models\Indicator_attachment_direct::create([
-                'indicator_id' => $indicator->id,
-                'attachment_id' => $attachment->id,
-                'created_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
-
-            return true;
-        } catch (\Exception $e) {
-            logger()->error('Error creating indicator attachment: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    public function store(Request $request)
-    {
-        $substandard_id = $request->get('substandard_id');
-        $substandard = \App\Models\Substandard::find($substandard_id);
-        $dct_id = $substandard->standard->dct_id;
-
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-        $response = Gate::inspect('manage', $this->module_model);
-                
-        if (!$response->allowed()) {
-            Alert::toast($response->message(), 'warning')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return redirect()->back();
-        }
-
-        $module_action = 'Store';
-
-        // Custom validation for indicators
-        $validator = Validator::make($request->all(), [
-            'name' => [
-                'required',
-                'string',
-                'max:1255',
-                Rule::unique('indicators')->where(function ($query) use ($substandard_id) {
-                    return $query->where('substandard_id', $substandard_id);
-                })
-            ],
-        ], [
-            'name.unique' => 'An indicator with this name already exists for the selected substandard.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->with('toast', [
-                    'type' => 'error',
-                    'message' => $validator->errors()->first(),
-                    'position' => 'top-end'
-                ])
-                ->withInput();
-        }
-
-        // Start a database transaction
-        DB::beginTransaction();
-
-        try {
-            // Add the substandard_id to the validated data before creating the record
-            $data = $validator->validated();
-            $data['substandard_id'] = $substandard_id;
-
-            // Create the new record
-            $$module_name_singular = $module_model::create($data);
-
-            // Create attachment and pivot record
-            $this->createIndicatorAttachment($$module_name_singular, $dct_id);
-
-            // Commit the transaction
-            DB::commit();
-
-            Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect to index_datatable with the substandard_id to filter the records
-            return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
-        } catch (\Exception $e) {
-            // Rollback the transaction on error
-            DB::rollBack();
-
-            // Log the error
-            Log::error("Error in store: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to create record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create record.']);
-        }
-    }
-
-    public function update(Request $request, $id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-        $response = Gate::inspect('manage', $this->module_model);
-                
-        if (!$response->allowed()) {
-            Alert::toast($response->message(), 'warning')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return redirect()->back();
-        }
-
-        $module_action = 'Update';
-
-        // First, find the record to get the existing substandard_id
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get substandard_id from the existing record
-        $substandard_id = $$module_name_singular->substandard_id;
-
-        // Custom validation for indicators
-        $validator = Validator::make($request->all(), [
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('indicators')->where(function ($query) use ($substandard_id) {
-                    return $query->where('substandard_id', $substandard_id);
-                })->ignore($id)
-            ],
-        ], [
-            'name.unique' => 'An indicator with this name already exists for the selected substandard.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->with('toast', [
-                    'type' => 'error',
-                    'message' => $validator->errors()->first(),
-                    'position' => 'top-end'
-                ])
-                ->withInput();
-        }
-
-        // Start a database transaction
-        DB::beginTransaction();
-
-        try {
-            // Update the record with validated data
-            $$module_name_singular->update($validator->validated());
-
-            // Commit the transaction
-            DB::commit();
-
-            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
-        } catch (\Exception $e) {
-            // Rollback the transaction on error
-            DB::rollBack();
-
-            // Log the error
-            Log::error("Error in update: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to update record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
-        }
-    }
-
-    /**
-     * Delete attachment and pivot records for indicator
-     */
-    private function deleteIndicatorAttachment($indicatorId)
-    {
-        try {
-            // Find and delete the pivot records
-            $indicatorAttachments = \App\Models\Indicator_attachment_direct::where('indicator_id', $indicatorId)->get();
+            $startDate = now()
+                ->setYear($this->startYear)
+                ->setMonth($this->startMonth)
+                ->startOfMonth();
             
-            foreach ($indicatorAttachments as $indicatorAttachment) {
-                // Delete the attachment
-                \Modules\Attachement\Models\Attachement::where('id', $indicatorAttachment->attachment_id)->delete();
-                // Delete the pivot record
-                $indicatorAttachment->delete();
-            }
-            
-            return true;
+            $endDate = now()
+                ->setYear($this->endYear)
+                ->setMonth($this->endMonth)
+                ->endOfMonth();
         } catch (\Exception $e) {
-            logger()->error('Error deleting indicator attachment: ' . $e->getMessage());
-            return false;
+            // Fallback to current year if date creation fails
+            $startDate = now()->startOfYear();
+            $endDate = now()->endOfYear();
         }
-    }
 
-    public function destroy($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
+        // Get applications with optional certificate - EXCLUDE profile_draft
+        $applications = Application::with(['certificate', 'institute', 'program'])
+            ->where('status', '!=', 'profile_draft') // Exclude profile_draft applications
+            ->when($this->search, function ($query) {
+                $query->where(function ($q) {
+                    $q->whereHas('institute', fn($q) => $q->where('name', 'like', "%{$this->search}%"))
+                      ->orWhereHas('program', fn($q) => $q->where('name', 'like', "%{$this->search}%"));
+                });
+            })
+            ->when($this->instituteType, function ($query) {
+                $query->where('institute_type', $this->instituteType);
+            })
+            ->when($this->instituteOwnership, function ($query) {
+                $query->where('institute_ownership', $this->instituteOwnership);
+            })
+            ->when($this->status, function ($query) {
+                if ($this->status === 'Fully Accredited') {
+                    $query->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Full Accreditation'));
+                } elseif ($this->status === 'Provisionally Accredited') {
+                    $query->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Provisional Accreditation'));
+                } elseif ($this->status === 'Pending') {
+                    $query->doesntHave('certificate');
+                } elseif ($this->status === 'Rejected') {
+                    $query->where('status', 'accreditation_rejected');
+                }
+            })
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->orderBy('created_at', 'desc')
+            ->paginate($this->perPage);
 
-        $module_action = 'destroy';
-        
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-        $response = Gate::inspect('manage', $this->module_model);
-                
-        if (!$response->allowed()) {
-            Alert::toast($response->message(), 'warning')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return redirect()->back();
-        }
-        
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get the substandard_id BEFORE deleting so we can redirect properly
-        $substandard_id = $$module_name_singular->substandard_id;
-
-        // Start a database transaction
-        DB::beginTransaction();
-
-        try {
-            // Delete associated attachments
-            $this->deleteIndicatorAttachment($id);
-
-            $$module_name_singular->delete();
-
-            // Commit the transaction
-            DB::commit();
-
-            Alert::toast(Str::singular($module_title) . ' Deleted Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect back to the indicators list filtered by substandard_id
-            return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
-        } catch (\Exception $e) {
-            // Rollback the transaction on error
-            DB::rollBack();
-
-            // Log the error
-            Log::error("Error in destroy: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to delete record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withErrors(['error' => 'Failed to delete record.']);
-        }
-    }
-
-    public function index(Request $request)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'List';
-
-        // Fetch the data using pagination for the standard table
-        $$module_name = $module_model::paginate(15);
-
-        // Get the `id` from the request
-        $id = $request->query('id');
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        // Return the view with the necessary data, including the `id`
-        return view(
-            "{$module_path}.{$module_name}.index_datatable",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
-        );
-    }
-
-    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'List';
-        $page_heading = label_case($module_title);
-        $title = $page_heading . ' ' . label_case($module_action);
-
-        $buttonModuleName = 'questions';
-
-        $additionalButtons = [
-            [
-                'route' => "backend.$buttonModuleName.index", // Matches the route name
-                'title' => 'Questions',
-                'class' => 'btn-outline-info',
-                'icon' => 'fa-solid fa-question-circle',
-            ],
-            [
-                'route' => "backend.indicator_attachments.index", // Matches the route name
-                'title' => 'Required Attachements',
-                'class' => 'btn-outline-info',
-                'icon' => 'fas fa-paperclip',
-            ],
+        // Get statistics for the current filter - EXCLUDE profile_draft from all statistics
+        $stats = [
+            'total' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'fully_accredited' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Full Accreditation'))
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'provisionally_accredited' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('certificate', fn($q) => $q->where('accreditation_status', 'Provisional Accreditation'))
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'pending' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->doesntHave('certificate')
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
+            'rejected' => Application::where('status', '!=', 'profile_draft')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->where('status', 'accreditation_rejected')
+                ->when($this->instituteType, fn($q) => $q->where('institute_type', $this->instituteType))
+                ->when($this->instituteOwnership, fn($q) => $q->where('institute_ownership', $this->instituteOwnership))
+                ->count(),
         ];
 
-        $columns = $columns ?? ['id', 'name', 'updated_at'];
+        $topAssessors = $this->getTopAssessors();
 
-        // Base query
-        $data = $module_model::select($columns)->orderBy('id', 'asc');
-
-        // Retrieve `id` from request if not passed in $additionalData
-        $id = $additionalData['id'] ?? request()->query('id');
-        // Filter by substandard_id if an ID is provided
-        if ($id) {
-            $data = $data->where('substandard_id', $id);
-        }
-
-        return Datatables::of($data)
-            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
-                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
-            })
-            ->editColumn('name', '<strong>{{$name}}</strong>')
-            ->editColumn('updated_at', function ($data) {
-                if ($data->updated_at) {
-                    $diff = Carbon::now()->diffInHours($data->updated_at);
-
-                    if ($diff < 25) {
-                        return $data->updated_at->diffForHumans();
-                    }
-
-                    return $data->updated_at->isoFormat('llll');
-                }
-
-                return 'No Date Available';
-            })
-            ->rawColumns(['name', 'action'])
-            ->orderColumns(['id'], '-:column $1')
-            ->make(true);
+        return view('livewire.dashboard.application-status-table', [
+            'applications' => $applications,
+            'stats' => $stats,
+            'months' => [
+                1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
+                5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
+                9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December'
+            ],
+            'years' => range(now()->year - 5, now()->year),
+            'topAssessors' => $topAssessors
+        ]);
     }
 
-    public function edit($id)
+    public function applyFilters()
     {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name; // e.g., "dcts"
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Edit';
+        $this->resetPage();
+    }
 
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-        $response = Gate::inspect('manage', $this->module_model);
+    public function resetFilters()
+    {
+        $this->reset([
+            'search',
+            'instituteType',
+            'instituteOwnership',
+            'status',
+            'startMonth',
+            'startYear',
+            'endMonth',
+            'endYear',
+        ]);
+        $this->mount(); // Reset to current year
+        $this->resetPage();
+    }
 
-        if (!$response->allowed()) {
-            Alert::toast($response->message(), 'warning')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return redirect()->back();
+    public function updated($property)
+    {
+        // Reset pagination when any filter changes
+        if (!in_array($property, ['perPage', 'page'])) {
+            $this->resetPage();
+        }
+    }
+    
+    protected function getTopAssessors()
+    {
+        $assessors = User::role(['assessor', 'accreditation expert'])
+            ->get()
+            ->map(function($user) {
+                $assignments = DeskReviewAssignment::where('assessor_id', $user->id)
+                    ->where('conflict_of_interest', '!=', 'YES')
+                    ->whereBetween('created_at', [
+                        Carbon::create($this->startYear, $this->startMonth)->startOfMonth(),
+                        Carbon::create($this->endYear, $this->endMonth)->endOfMonth()
+                    ])
+                    ->get();
+
+                $stats = [
+                    'tasks_assigned' => $assignments->count(),
+                    'tasks_completed' => 0,
+                    'tasks_cancelled' => 0,
+                    'overdue_completed' => 0,
+                ];
+
+                foreach ($assignments as $assignment) {
+                    if (!is_null($assignment->deleted_at)) {
+                        $stats['tasks_cancelled']++;
+                        continue;
+                    }
+
+                    if ($assignment->status === 'Completed') {
+                        $stats['tasks_completed']++;
+                        $deadline = $this->getDeadlineForAssignment($assignment);
+                        if ($assignment->updated_at && $deadline && $assignment->updated_at->gt($deadline)) {
+                            $stats['overdue_completed']++;
+                        }
+                    }
+                }
+
+                // Only calculate score if they have at least one assignment
+                if ($stats['tasks_assigned'] > 0) {
+                    $performanceScore = $this->calculatePerformanceScore($stats);
+                    return [
+                        'user' => $user,
+                        'score' => $performanceScore['score'],
+                        'level' => $performanceScore['level'],
+                        'has_reviews' => true,
+                        'tasks_completed' => $stats['tasks_completed'],
+                        'tasks_assigned' => $stats['tasks_assigned']
+                    ];
+                } else {
+                    return [
+                        'user' => $user,
+                        'score' => null,
+                        'level' => 'No Reviews',
+                        'has_reviews' => false,
+                        'tasks_completed' => 0,
+                        'tasks_assigned' => 0
+                    ];
+                }
+            })
+            ->sortByDesc(function($assessorData) {
+                // Sort by: has reviews, then score, then number of completed tasks
+                return [
+                    $assessorData['has_reviews'],
+                    $assessorData['score'] ?? 0,
+                    $assessorData['tasks_completed']
+                ];
+            })
+            ->take(10)
+            ->values();
+
+        return $assessors;
+    }
+    
+    protected function getDeadlineForAssignment($assignment)
+    {
+        if (!$assignment->created_at) {
+            return null;
         }
 
-        $$module_name_singular = $module_model::findOrFail($id);
+        $daysAllowed = 0;
+        
+        switch ($assignment->review_phase) {
+            case 'desk_review':
+                // Check if this application went through revision
+                $hasRevision = ApplicationStatusHistory::where('application_id', $assignment->application_id)
+                    ->where('status', 'desk_review_revision_requested')
+                    ->exists();
+                
+                if ($hasRevision) {
+                    // Get the timestamp when documents were resubmitted
+                    $resubmittedAt = ApplicationStatusHistory::where('application_id', $assignment->application_id)
+                        ->where('status', 'documents_to_desk')
+                        ->orderBy('created_at', 'desc')
+                        ->first()
+                        ?->created_at;
+                    
+                    if ($resubmittedAt) {
+                        return $resubmittedAt->copy()->addDays(
+                            (int)Mainsetting::get('allowed_days_for_desk_review', 15)
+                        );
+                    }
+                }
+                // Fall through to default desk review handling
+                $daysAllowed = (int)Mainsetting::get('allowed_days_for_desk_review', 15);
+                break;
+                
+            case 'toa_first_round':
+                $daysAllowed = (int)Mainsetting::get('allowed_days_for_toa_first_round', 15);
+                break;
+                
+            case 'toa_second_round':
+                $daysAllowed = (int)Mainsetting::get('allowed_days_for_toa_second_round', 15);
+                break;
+                
+            default:
+                $daysAllowed = 15;
+        }
 
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+        return $assignment->created_at->copy()->addDays($daysAllowed);
+    }
 
-        return view(
-            "{$module_path}.{$module_name}.edit",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
-        );
+    protected function calculatePerformanceScore($stats)
+    {
+        $weights = [
+            'completed' => 0.5,
+            'cancelled' => -0.3,
+            'overdue' => -0.2
+        ];
+
+        $totalAssigned = max($stats['tasks_assigned'], 1);
+        
+        $completionRate = ($stats['tasks_completed'] / $totalAssigned) * 100;
+        $cancellationRate = ($stats['tasks_cancelled'] / $totalAssigned) * 100;
+        $overdueRate = ($stats['overdue_completed'] / max($stats['tasks_completed'], 1)) * 100;
+
+        $rawScore = ($completionRate * $weights['completed']) 
+                  + ($cancellationRate * $weights['cancelled']) 
+                  + ($overdueRate * $weights['overdue']);
+
+        $score = max(0, min(100, 50 + $rawScore));
+
+        $performanceLevel = $this->getPerformanceLevel($score);
+
+        return [
+            'score' => round($score, 1),
+            'level' => $performanceLevel,
+            'completion_rate' => round($completionRate, 1),
+            'cancellation_rate' => round($cancellationRate, 1),
+            'overdue_rate' => round($overdueRate, 1),
+        ];
+    }
+
+    protected function getPerformanceLevel($score)
+    {
+        if ($score >= 90) return 'Excellent';
+        if ($score >= 80) return 'Very Good';
+        if ($score >= 70) return 'Good';
+        if ($score >= 60) return 'Satisfactory';
+        if ($score >= 50) return 'Needs Improvement';
+        return 'Poor';
     }
 }
