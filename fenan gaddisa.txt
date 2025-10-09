@@ -1,1027 +1,2232 @@
-           @extends('backend.layouts.app')
-
-           @section('title')
-               Review Application Profile
-           @endsection
-
-           @section('breadcrumbs')
-               <x-backend.breadcrumbs>
-                   <x-backend.breadcrumb-item route='{{ route("backend.$module_name.index") }}' icon='{{ $module_icon }}'>
-                       {{ __($module_title) }}
-                   </x-backend.breadcrumb-item>
-                   <x-backend.breadcrumb-item type="active">Review Application</x-backend.breadcrumb-item>
-               </x-backend.breadcrumbs>
-           @endsection
-
-           @php
-               use App\Enums\ApplicationStatusEnum;
-           @endphp
-
-           @section('content')
-               <div class="card">
-
-                   <div class="card-body">
-                       <!-- Application Details -->
-
-                       <div class="card mb-4">
-                           <div class="card-header">
-                               <h5 class="card-title mb-0">
-                                   <i class="fas fa-file-alt me-2"></i> Application Details
-                               </h5>
-                               <a href="{{ url()->previous() }}" class="btn btn-sm btn-outline-secondary float-end">
-                                   <i class="fas fa-arrow-left me-2"></i>Back
-                               </a>
-                           </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <!-- Left Column -->
-                                <div class="col-md-6">
-                                    <div class="application-detail-section mb-4">
-                                        <h5 class="section-title text-primary mb-3">
-                                            <i class="fas fa-file-alt me-2"></i>Application Details
-                                        </h5>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-id-badge me-2"></i>Application ID:</span>
-                                            <span class="detail-value badge bg-secondary">{{ $application->name }}</span>
-                                        </div>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-graduation-cap me-2"></i>Program:</span>
-                                            <span class="detail-value text-muted">{{ $application->program->name }}</span>
-                                        </div>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-info-circle me-2"></i>Description:</span>
-                                            <span class="detail-value text-muted">{{ $application->program->description }}</span>
-                                        </div>
-                                    </div>
-
-                                    <div class="application-detail-section mb-4">
-                                        <h5 class="section-title text-primary mb-3">
-                                            <i class="fas fa-university me-2"></i>Institution Details
-                                        </h5>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-school me-2"></i>Institute:</span>
-                                            <span class="detail-value text-muted">{{ $application->institute->name }}</span>
-                                        </div>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-map-marker-alt me-2"></i>Campus:</span>
-                                            <span class="detail-value text-muted">{{ $application->campus->name }}</span>
-                                        </div>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label">
-                                                <i class="fas {{ $application->institute_ownership == 'Public' ? 'fa-landmark' : 'fa-building' }} me-2"></i>Ownership:
-                                            </span>
-                                            <span class="detail-value badge bg-{{ $application->institute_ownership == 'Public' ? 'info' : 'secondary' }}">
-                                                {{ $application->institute_ownership }}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Right Column -->
-                                <div class="col-md-6">
-                                    <div class="application-detail-section mb-4">
-                                        <h5 class="section-title text-primary mb-3">
-                                            <i class="fas fa-chart-line me-2"></i>Program Statistics
-                                        </h5>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-calendar-alt me-2"></i>Start Year:</span>
-                                            <span class="detail-value text-muted">{{ $application->program_start_year ?? 'N/A' }}</span>
-                                        </div>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-repeat me-2"></i>Graduation Cycles:</span>
-                                            <span class="detail-value text-muted">{{ $application->graduation_cycles }}</span>
-                                        </div>
-                                        <div class="detail-item mb-2">
-                                            <span class="detail-label"><i class="fas fa-users me-2"></i>Students Graduated:</span>
-                                            <span class="detail-value text-muted">{{ number_format($application->students_graduated) }}</span>
-                                        </div>
-                                    </div>
-
-                                    <div class="application-detail-section">
-                                        <h5 class="section-title text-primary mb-3">
-                                            <i class="fas fa-tasks me-2"></i>Application Status
-                                        </h5>
-                                        <div class="detail-item">
-                                            <span class="detail-label"><i class="fas fa-info-circle me-2"></i>Current Status:</span>
-                                            <span class="detail-value badge bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : 'warning') }} text-capitalize">
-                                                {{ $application->status }}
-                                            </span>
-                                        </div>
-                                        @if($application->status_reason)
-                                        <div class="detail-item mt-2">
-                                            <span class="detail-label"><i class="fas fa-comment me-2"></i>Status Notes:</span>
-                                            <span class="detail-value text-muted">{{ $application->status_reason }}</span>
-                                        </div>
-                                        @endif
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-
-                       </div>
-
-
-                       <hr>
-
-
-
-                       <!-- Attachments -->
-                       <h5 class="card-title mb-4">
-                           <i class="fas fa-paperclip me-2"></i>Attachments
-                       </h5>
-                       <div class="mb-4">
-                           @if ($delegation_letter = $$module_name_singular->getFirstMedia('delegation_letters'))
-                               <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
-                                   data-bs-target="#delegationLetterModal">
-                                   <i class="fas fa-file-pdf me-2"></i>View Delegation Letter
-                               </button>
-                           @else
-                               <p class="text-muted"><i class="fas fa-times-circle me-2"></i>No delegation letter uploaded.
-                               </p>
-                           @endif
-
-                           @if ($application->hasMedia('application_forms'))
-                               <button type="button" class="btn btn-outline-primary btn-sm ms-2" data-bs-toggle="modal"
-                                   data-bs-target="#applicationFormModal">
-                                   <i class="fas fa-file-pdf me-2"></i>View Application Form
-                               </button>
-                           @else
-                               <p class="text-muted"><i class="fas fa-times-circle me-2"></i>No application form uploaded.
-                               </p>
-                           @endif
-                       </div>
-
-
-
-
-                       <hr>
-                       <!-- Application Status Actions -->
-
-                       @php
-                           // Define allowed statuses and roles for this button
-                           $allowedStatuses = [ApplicationStatusEnum::DOCS_SUB, ApplicationStatusEnum::DOCS_CEO];
-                           $allowedRoles = ['ceo'];
-                       @endphp
-
-                       @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                           <div class="d-flex align-items-center gap-3">
-                               <!-- Button to Assign/Change Handling Unit -->
-                               <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#assignDeskModal">
-                                   <i class="fas fa-tasks me-2"></i>
-                                   {{ $application->desk ? 'Change Handling Unit' : 'Assign Handling Unit' }}
-                               </button>
-
-                               <!-- Display Assigned Desk or "Not assigned yet" -->
-                               <div class="desk-info">
-                                   <strong>Assigned Desk:</strong>
-                                   @if ($application->desk)
-                                       <span class="badge bg-success">{{ $application->desk->name }}</span>
-                                   @else
-                                       <span class="badge bg-secondary">Not assigned yet</span>
-                                   @endif
-                               </div>
-                           </div>
-                       @endif
-                       <hr>
-
-
-                       <div class="card">
-                           <div class="card-body">
-
-
-                               {{-- In your Blade template --}}
-                               @php
-                                   $allowedStatuses = [ApplicationStatusEnum::DOCS_SUB];
-                                   $allowedRoles = [
-                                       'user',
-                                       'deputy director',
-                                       'super admin',
-                                       'ceo',
-                                       'council member',
-                                       'assessor',
-                                       'accreditation expert',
-                                   ];
-
-                                   $isAssignedReviewer = $application->isAssignedAsDeskReviewer();
-                                   $isOwner = auth()->check() && $application->created_by == auth()->id();
-                                   $userRole = auth()->user()->roles->first()->name ?? null;
-                                   $showDeskReviewOptions =
-                                       ($isAssignedReviewer && $userRole === 'assessor') ||
-                                       ($isOwner && $userRole === 'user') ||
-                                       in_array($userRole, [
-                                           'deputy director',
-                                           'super admin',
-                                           'ceo',
-                                           'council member',
-
-                                           'accreditation expert',
-                                       ]);
-                               @endphp
-
-                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles, $allowedStatuses))
-                                   <!-- Dropdown Button -->
-                                   <div class="dropdown">
-                                       <button class="btn btn-primary dropdown-toggle mt-3" type="button"
-                                           id="downloadDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                                           <i class="fas fa-download" style="color: white;"></i> Downloadble Files
-                                       </button>
-                                       <ul class="dropdown-menu" aria-labelledby="downloadDropdown">
-                                           <!-- Standard download options for all authorized users -->
-
-                                           @if ($application->doc_version > 5 && $application->desk_decision != 'rejected' && auth()->user()->hasRole('user'))
-                                               <li>
-                                                   <a class="dropdown-item"
-                                                       href="{{ route('backend.applications.viewCertificate', $application->id) }}"
-                                                       target="_blank">
-                                                       <i class="fas fa-certificate"></i>
-                                                       {{ $application->certificate?->getFirstMedia('certificate_pdf') ? 'View Certificate' : 'Generate Certificate' }}
-                                                   </a>
-
-                                               </li>
-                                               <li>
-                                                   <a class="dropdown-item download-link"
-                                                       href="{{ route('backend.applications.downloadCombinedAssessmentReport', $application->id) }}"
-                                                       target="_blank">
-                                                       <i class="fas fa-file-pdf"></i> Final Result and Findings
-                                                   </a>
-                                               </li>
-                                           @endif
-                                           @if ($application->doc_version < 3)
-                                               @unless (auth()->user()->hasRole('user'))
-                                                   <li>
-                                                       <a class="dropdown-item download-link"
-                                                           href="{{ route('backend.applications.downloadDctNarrativeResponseWord', $application->id) }}"
-                                                           target="_blank">
-                                                           <i class="fas fa-file-word"></i> Download as Word (questions and
-                                                           comment
-                                                           form)
-                                                       </a>
-                                                   </li>
-                                               @endunless
-
-                                               <li>
-
-                                                   <a class="dropdown-item download-link"
-                                                       href="{{ route('backend.applications.downloadDctNarrativeResponsePdf', $application->id) }}"
-                                                       target="_blank">
-                                                       <i class="fas fa-file-pdf"></i> Download as PDF (Question and
-                                                       Response)
-                                                   </a>
-                                               </li>
-                                           @else
-                                               <li>
-                                                   <a class="dropdown-item download-link"
-                                                       href="{{ route('backend.applications.downloadDctNarrativeResponseWord', $application->id) }}"
-                                                       target="_blank">
-                                                       <i class="fas fa-file-word"></i> Download as Word (questions and
-                                                       comment
-                                                       form)
-                                                   </a>
-                                               </li>
-                                               @if ($application->doc_version > 3)
-                                                   <li class="dropdown-divider"></li>
-
-                                                   <a href="{{ route('backend.applications.viewExitReport', $application->id) }}"
-                                                       target="_blank" class="dropdown-item download-link">
-                                                       <i class="fas fa-file-pdf me-1"></i> View Site Visit Exit Report
-                                                   </a>
-                                               @endif
-                                           @endif
-
-                                           <!-- Desk review options (shown based on role and assignment) -->
-                                           @if ($showDeskReviewOptions)
-                                               <li class="dropdown-divider"></li>
-                            {{-- Allow normal user to download only under specific conditions --}}
-                                @if (
-                                    auth()->user()->hasRole('user') &&
-                                    $application->desk_decision == 'desk_review_revision_requested'
-                                )
-                                    <li>
-                                        <a class="dropdown-item download-link"
-                                            href="{{ route('backend.applications.downloadSummarizedDeskReviewinPdf', $application->id) }}"
-                                            target="_blank">
-                                            <i class="fas fa-file-pdf"></i> Download Full Desk Review (PDF)
-                                        </a>
-                                    </li>
-                                @endif
-                                               @unless (auth()->user()->hasRole('user'))
-                                                   <li>
-                                                       <a class="dropdown-item download-link"
-                                                           href="{{ route('backend.applications.downloadDeskReviewinPdf', $application->id) }}"
-                                                           target="_blank">
-                                                           <i class="fas fa-file-pdf"></i> Download Full Desk Review (PDF)
-                                                       </a>
-                                                   </li>
-                                                   @if (auth()->user()->hasAnyRole(['assessor', 'accreditation expert']))
-                                                       <li>
-                                                           <a class="dropdown-item download-link"
-                                                               href="{{ route('backend.applications.downloadMyDeskReviewPdf', $application->id) }}"
-                                                               target="_blank">
-                                                               <i class="fas fa-file-pdf"></i> Download My Desk Review
-                                                           </a>
-                                                       </li>
-
-                                                       <li>
-                                                           <a class="dropdown-item download-link"
-                                                               href="{{ route('backend.applications.downloadMyAssessmentReport', $application->id) }}"
-                                                               target="_blank">
-                                                               <i class="fas fa-file-pdf"></i> Download My Assessment
-                                                           </a>
-                                                       </li>
-                                                   @endif
-
-                                                   @if (auth()->user()->hasAnyRole(['ceo', 'deputy director', 'council member', 'director general', 'system admin']))
-                                                       @if ($application->doc_version > 3)
-                                                           <li>
-                                                               <a class="dropdown-item"
-                                                                   href="{{ route('backend.applications.downloadToaFirstRoundinPdf', $application->id) }}"
-                                                                   target="_blank">
-                                                                   <i class="fas fa-file-pdf"></i> Download Document Review
-                                                                   (ToA
-                                                                   First Round)
-                                                               </a>
-                                                           </li>
-
-                                                           <li>
-                                                               <a class="dropdown-item"
-                                                                   href="{{ route('backend.applications.downloadToaSecondRoundinPdf', $application->id) }}"
-                                                                   target="_blank">
-                                                                   <i class="fas fa-file-pdf"></i> Download Site Visit Review
-                                                               </a>
-                                                           </li>
-                                                           <li>
-                                                               <a class="dropdown-item"
-                                                                   href="{{ route('backend.applications.downloadToaAllRoundinPdf', $application->id) }}"
-                                                                   target="_blank">
-                                                                   <i class="fas fa-file-pdf"></i> Download Final Result
-                                                               </a>
-                                                           </li>
-                                                           @if ($application->doc_version > 5 && $application->desk_decision != 'rejected')
-                                                               <li>
-                                                                   <a class="dropdown-item"
-                                                                       href="{{ route('backend.applications.viewCertificate', $application->id) }}"
-                                                                       target="_blank">
-                                                                       <i class="fas fa-certificate"></i>
-                                                                       {{ $application->certificate?->getFirstMedia('certificate_pdf') ? 'View Certificate' : 'Generate Certificate' }}
-                                                                   </a>
-
-                                                               </li>
-                                                           @endif
-                                                       @endif
-                                                   @endif
-                                               @endunless
-
-                                               @php
-                                                   $userAllowedStatuses = [ApplicationStatusEnum::DESK_REV_REQ];
-                                                   $userAllowedRoles = ['user'];
-                                                   $showToUser = shouldShowButton(
-                                                       $application,
-                                                       $userAllowedStatuses,
-                                                       $userAllowedRoles,
-                                                       $userAllowedStatuses,
-                                                   );
-                                                   $hideFromUser = in_array($application->status, [
-                                                       'completed',
-                                                       'desk_review_revision_requested',
-                                                   ]);
-                                               @endphp
-
-                                               @if (!auth()->user()->hasRole('user') || ($showToUser && !$hideFromUser))
-                                                   @if (
-                                                       !auth()->user()->hasRole('user') ||
-                                                           in_array($application->status, ['completed', 'desk_review_revision_requested']) ||
-                                                           $application->doc_version > 2)
-                                                       <li class="dropdown-divider"></li>
-                                                       <li>
-                                                           <a class="dropdown-item download-link"
-                                                               href="{{ route('backend.applications.downloadSummarizedDeskReviewinPdf', $application->id) }}"
-                                                               target="_blank">
-                                                               <i class="fas fa-file-pdf"></i> Download Summarized Desk
-                                                               Review (PDF)
-                                                           </a>
-                                                       </li>
-                                                   @endif
-                                               @endif
-                                           @endif
-                                       </ul>
-                                   </div>
-                               @endif
-
-                               @php
-                                   // Define allowed statuses and roles for this button
-
-                                   $allowedStatuses = [ApplicationStatusEnum::DESK_DEP];
-                                   $allowedRoles = ['deputy director'];
-                               @endphp
-                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
-                                       class="btn btn-secondary mt-3">
-                                       @if ($application->review_phase === 'desk_review' && $application->doc_version == 2)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
-                                           Finalize Revised comments forwared by CEO (Second Time Desk Revision)
-                                       @elseif ($application->review_phase === 'desk_review' && $application->doc_version == 1)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
-                                           Finalize Revised comments forwared by CEO (Second Time Revision)
-                                       @elseif ($application->review_phase === 'toa_first_round' && $application->doc_version == 3)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
-                                           Approve ToA First Round Review and Notify CEO to begin Site Visit
-                                       @elseif ($application->review_phase === 'toa_second_round' && $application->doc_version == 4)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Finalize
-                                           Site Visit
-                                           comments
-                                           and Notify Accreditation Council Members
-                                       @endif
-                                   </a>
-                               @endif
-
-                               @php
-                                   // Define allowed statuses and roles for this button
-
-                                   $allowedStatuses = [ApplicationStatusEnum::DOCS_COUNCIL];
-                                   $allowedRoles = ['deputy director', 'ceo'];
-                               @endphp
-                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                                   @if ($application->doc_version == 5)
-                                       <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
-                                           class="btn btn-secondary mt-3">
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i>
-
-                                           Time to Submit Council Members Decision
-
-                                       </a>
-                                   @endif
-                               @endif
-
-                               @php
-                                   // Define allowed statuses and roles for this button
-
-                                   $allowedStatuses = [ApplicationStatusEnum::DESK_CEO];
-                                   $allowedRoles = ['ceo'];
-                               @endphp
-                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
-                                       class="btn btn-secondary mt-3">
-                                       @if ($application->review_phase === 'desk_review' && $application->doc_version == 2)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve
-                                           Revised Desk
-                                           Review Comments and Forward it to Deputy Director
-                                       @elseif ($application->review_phase === 'desk_review' && $application->doc_version == 1)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve Desk
-                                           Review
-                                           Comments and Forward it to Deputy Director
-                                       @elseif ($application->review_phase === 'toa_first_round' && $application->doc_version == 3)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve TOA
-                                           First Round
-                                           Review
-                                           and Forward it to Deputy Director
-                                       @elseif ($application->review_phase === 'toa_second_round' && $application->doc_version == 4)
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Approve Site
-                                           Visist
-                                           Review
-                                           and Forward it to Deputy Director
-                                       @endif
-
-                                   </a>
-                               @endif
-
-
-
-                               @php
-                                   // Define allowed statuses and roles for this button
-
-                                   $allowedStatuses = [ApplicationStatusEnum::DESK_REV_REQ];
-                                   $allowedRoles = ['user'];
-                               @endphp
-                               @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                                   <!-- Dropdown Button -->
-                                   <div class="dropdown">
-
-
-                                       <a href="{{ route('backend.applications.beginresponse', $application->id) }}"
-                                           class="btn btn-primary mt-3">
-                                           <i class="fas fa-check-circle blinking" style="color: white;"></i> Revise your
-                                           application
-                                       </a>
-                                   </div>
-                               @endif
-
-
-                               {{-- //end for applicant to see their comments and proceed to revise desk review comments --}}
-
-                           </div>
-                       </div>
-
-
-
-
-                       <!-- Comments and Actions Card -->
-                       @php
-                           $user = auth()->user();
-                           $status = $application->status;
-
-                       @endphp
-
-                       @if (
-                           ($status === 'documents_submitted' && ($user->hasRole('super admin') || $user->hasRole('deputy director'))) ||
-                               ($status === 'documents_to_ceo' && $user->hasRole('ceo')) ||
-                               ($status === 'toa_first_round' && $user->hasRole('ceo')) ||
-                               ($status === 'toa_first_round_approved_by_desk' && $user->hasRole('ceo')))
-                           <div class="card mb-4 shadow-sm">
-                               <div class="card-header bg-primary text-white">
-                                   <h5 class="card-title mb-0">
-                                       <i class="fas fa-comment me-2"></i>Comments & Actions
-                                   </h5>
-                               </div>
-                               <div class="card-body">
-                                   <form action="{{ route('backend.applications.profiledecision', $application->id) }}"
-                                       method="POST">
-                                       @csrf
-                                       <div class="form-group mb-3">
-                                           <label for="comments" class="form-label">Add Comments</label>
-                                           <textarea name="comments" id="comments" class="form-control" rows="3"
-                                               placeholder="(optional)Enter your comments here..."></textarea>
-                                       </div>
-
-                                       <div class="d-flex gap-2">
-                                           @if ($status === 'profile_submitted' && $user->hasRole('super admin'))
-                                               <button type="submit" name="action" value="PROFILE_ACC"
-                                                   class="btn btn-outline-success">
-                                                   <i class="fas fa-check-circle me-2"></i>Approve Profile
-                                               </button>
-
-                                               <button type="submit" name="action" value="PROFILE_REV"
-                                                   class="btn btn-outline-warning">
-                                                   <i class="fas fa-comment"></i>Request Revision
-                                               </button>
-
-                                               <button type="submit" name="action" value="PROFILE_REJ"
-                                                   class="btn btn-outline-danger">
-                                                   <i class="fas fa-times-circle me-2"></i>Reject Profile
-                                               </button>
-                                           @endif
-
-                                           @php
-                                               $allowedStatuses = [ApplicationStatusEnum::DOCS_SUB];
-                                               $allowedRoles = ['deputy director'];
-                                           @endphp
-                                           @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                                               <button type="submit" name="action" value="DOCS_CEO"
-                                                   class="btn btn-secondary mt-3">
-                                                   <i class="fas fa-share me-2 blinking"></i>
-                                                   @if ($application->doc_version == 2)
-                                                       Forward Revised Application Documents to CEO
-                                                   @else
-                                                       Forward Application Documents to CEO
-                                                   @endif
-                                               </button>
-                                               @if ($application->review_phase === 'profile_stage')
-                                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
-                                                       class="btn btn-secondary mt-3">
-                                                       <i class="fas fa-check-circle blinking" style="color: white;"></i>
-                                                       Verify
-                                                   </a>
-                                               @endif
-                                           @endif
-
-                                           @php
-                                               $allowedStatuses = [
-                                                   ApplicationStatusEnum::DOCS_CEO,
-                                                   ApplicationStatusEnum::TOA_R1_DESK,
-                                               ];
-                                               $allowedRoles = ['ceo'];
-                                           @endphp
-                                           @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                                               <button type="submit" name="action" value="DOCS_DESK"
-                                                   class="btn btn-secondary mt-3">
-                                                   <i class="fas fa-share me-2 blinking"></i>
-                                                   @if ($application->review_phase == 'toa_first_round')
-                                                       Forward Document to Assessors for First Round Team of Assessor Review
-                                                   @elseif ($application->review_phase == 'toa_second_round')
-                                                       Forward Document to Desk for Site Visit Review
-                                                   @elseif ($application->doc_version == 2)
-                                                       Forward Revised Application Documents to Desk
-                                                   @else
-                                                       Forward Submitted Application Documents to Desk
-                                                   @endif
-
-                                               </button>
-
-                                               @if ($application->desk_decision === 'Not Decided' && $application->review_phase === 'desk_review')
-                                                   <a href="{{ route('backend.desks.ceodeputystartdeskheadReview', $application->id) }}"
-                                                       class="btn btn-secondary mt-3">
-                                                       <i class="fas fa-check-circle blinking" style="color: white;"></i>
-                                                       Verify
-                                                   </a>
-                                               @endif
-                                           @endif
-
-
-                                           @php
-                                               $allowedStatuses = [ApplicationStatusEnum::TOA_R1_ACC];
-                                               $allowedRoles = ['ceo'];
-                                           @endphp
-                                           @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                                               <button type="submit" name="action" value="TOA_R2_DESK"
-                                                   class="btn btn-secondary">
-                                                   <i class="fas fa-share me-2 blinking"></i>
-                                                   @if ($application->status == 'toa_first_round_approved_by_desk')
-                                                       Forward Document to Assessors for Site Visit (Second Round) Review
-                                                   @endif
-                                               </button>
-                                           @endif
-                                       </div>
-                                   </form>
-                               </div>
-                           </div>
-                       @endif
-
-
-                       <hr>
-
-                       <!-- Status History Timeline -->
-                       <!-- Application Timeline -->
-                       <h3 class="timeline-heading">ðŸ“Œ Application Timeline</h3>
-
-                       <!-- Status History Timeline -->
-                       <div class="timeline">
-                           @foreach ($application->statusHistory->sortBy('created_at') as $index => $history)
-                               <div class="timeline-item">
-                                   <div class="timeline-line"></div> <!-- Main line -->
-
-                                   <!-- Branching line for alternative paths -->
-                                   @if ($history->status == 'Processing' || $history->status == 'Delayed')
-                                       <div class="timeline-branch"></div>
-                                   @endif
-
-                                   <!-- Timeline Icon -->
-                                   <div class="timeline-icon
-                @if ($loop->last) blinking @endif"
-                                       style="background-color:
-                    @if ($history->status === 'profile_rejected') red;
-                    @else {{ sprintf('#%06X', mt_rand(0, 0xffffff)) }}; @endif
-                ">
-                                       <i class="fas fa-circle"></i>
-                                   </div>
-
-                                   <!-- Timeline Content -->
-                                   <!-- Timeline Content -->
-                                   <div class="timeline-content">
-                                       <span class="label label-danger">{{ ucfirst($history->status) }}</span>
-                                       <p class="text-muted mb-1">{{ $history->created_at->format('M d, Y h:i A') }}</p>
-                                       @if ($history->comments)
-                                           <p class="mb-0"><strong>Comments:</strong> {{ $history->comments }}</p>
-                                       @endif
-                                       @if ($history->status == 'documents_to_desk' && !auth()->user()->hasRole('user'))
-                                           <div class="mt-2">
-                                               <a href="{{ route('backend.applications.reviewers-progress', $application->id) }}"
-                                                   class="btn btn-sm btn-outline-primary">
-                                                   <i class="fas fa-users"></i> View Reviewers Progress
-                                               </a>
-                                           </div>
-                                       @endif
-                                   </div>
-                               </div>
-                           @endforeach
-                       </div>
-
-
-
-
-                       <hr>
-
-                       <!-- Comments and Actions -->
-
-                       @php
-                           // Define allowed statuses and roles for this button
-
-                           $allowedStatuses = [ApplicationStatusEnum::PROFILE_SUB];
-                           $allowedRoles = ['deputy director'];
-                       @endphp
-                       @if (shouldShowButton($application, $allowedStatuses, $allowedRoles))
-                           <h5 class="card-title mb-4">
-                               <i class="fas fa-comment me-2"></i>Comments & Actions
-                           </h5>
-                           <form action="{{ route('backend.applications.profiledecision', $application->id) }}"
-                               method="POST">
-                               @csrf
-                               <div class="form-group mb-3">
-                                   <label for="comments" class="form-label">Add Comments</label>
-                                   <textarea name="comments" id="comments" class="form-control" rows="3"
-                                       placeholder="Enter your comments here..."></textarea>
-                               </div>
-
-                               <div class="d-flex gap-2">
-                                   <button type="submit" name="action" value="PROFILE_ACC"
-                                       class="btn btn-outline-success">
-                                       <i class="fas fa-check-circle me-2"></i>Approve Profile
-                                   </button>
-
-                                   <button type="submit" name="action" value="PROFILE_REV"
-                                       class="btn btn-outline-warning">
-                                       <i class="fas fa-comment"></i>Request Revision
-                                   </button>
-
-                                   <button type="submit" name="action" value="PROFILE_REJ"
-                                       class="btn btn-outline-danger">
-                                       <i class="fas fa-times-circle me-2"></i>Reject Profile
-                                   </button>
-                                   {{-- <button type="submit" name="action" value="forward" class="btn btn-primary">
-                        <i class="fas fa-share me-2"></i>Forward to CEO
-                    </button> --}}
-                               </div>
-                           </form>
-                       @endif
-
-                   </div>
-               </div>
-
-
-
-
-               <!-- Assign Application to Desk Modal by CEO or Deputy -->
-               <div class="modal fade" id="assignDeskModal" tabindex="-1" aria-labelledby="assignDeskModalLabel"
-                   aria-hidden="true">
-                   <div class="modal-dialog">
-                       <div class="modal-content">
-                           <div class="modal-header bg-secondary text-white">
-                               <h5 class="modal-title"><i class="fas fa-tasks"></i> Assign Handling Unit</h5>
-                               <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                   aria-label="Close"></button>
-                           </div>
-                           <form action="{{ route('backend.applications.updateDesk', $application->id) }}"
-                               method="POST">
-                               @csrf
-                               @method('PATCH')
-                               <div class="modal-body">
-                                   <div class="form-group">
-                                       <label for="desk_id" class="fw-bold">Select Handling Unit</label>
-                                       <select name="desk_id" id="desk_id" class="form-select" required>
-                                           <option value="">-- Select a Unit --</option>
-                                           @foreach ($desks as $desk)
-                                               <option value="{{ $desk->id }}">{{ $desk->name }}</option>
-                                           @endforeach
-                                       </select>
-                                   </div>
-                               </div>
-                               <div class="modal-footer">
-                                   <button type="submit" class="btn btn-success">Save</button>
-                                   <button type="button" class="btn btn-secondary"
-                                       data-bs-dismiss="modal">Cancel</button>
-                               </div>
-                           </form>
-                       </div>
-                   </div>
-               </div>
-
-               <!-- Modals for Attachments -->
-               @if ($delegation_letter)
-                   <div class="modal fade" id="delegationLetterModal" tabindex="-1"
-                       aria-labelledby="delegationLetterModalLabel" aria-hidden="true">
-                       <div class="modal-dialog modal-dialog-centered modal-xl">
-                           <div class="modal-content">
-                               <div class="modal-header bg-primary text-white">
-                                   <h5 class="modal-title" id="delegationLetterModalLabel">Delegation Letter</h5>
-                                   <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                       aria-label="Close"></button>
-                               </div>
-                               <div class="modal-body">
-                                   <iframe
-                                       src="{{ route('backend.applications.delegation_letter', ['id' => $$module_name_singular->id]) }}"
-                                       width="100%" height="500px" style="border: none;"></iframe>
-                               </div>
-                               <div class="modal-footer">
-                                   <button type="button" class="btn btn-secondary"
-                                       data-bs-dismiss="modal">Close</button>
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-               @endif
-
-               <!-- Application Form Modal -->
-               @if ($application_form)
-                   <div class="modal fade" id="applicationFormModal" tabindex="-1"
-                       aria-labelledby="applicationFormModalLabel" aria-hidden="true">
-                       <div class="modal-dialog modal-dialog-centered modal-xl">
-                           <div class="modal-content">
-                               <div class="modal-header bg-primary text-white">
-                                   <h5 class="modal-title" id="applicationFormModalLabel">Application Form</h5>
-                                   <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                       aria-label="Close"></button>
-                               </div>
-                               <div class="modal-body">
-                                   <iframe
-                                       src="{{ route('backend.applications.application_form', ['id' => $$module_name_singular->id]) }}"
-                                       width="100%" height="500px" style="border: none;"></iframe>
-                               </div>
-                               <div class="modal-footer">
-                                   <button type="button" class="btn btn-secondary"
-                                       data-bs-dismiss="modal">Close</button>
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-               @endif
-           @endsection
-
-
-           @push('after-styles')
-               <style>
-                   /* Overall timeline styling */
-                   .timeline {
-                       position: relative;
-                       max-width: 800px;
-                       margin: 50px auto;
-                       padding-left: 20px;
-                   }
-
-                   .timeline-heading {
-                       text-align: center;
-                       font-size: 22px;
-                       font-weight: bold;
-                       margin-bottom: 20px;
-                   }
-
-                   /* Timeline item */
-                   .timeline-item {
-                       display: flex;
-                       align-items: center;
-                       position: relative;
-                       width: 100%;
-                       margin-bottom: 40px;
-                       transition: transform 0.3s ease-in-out;
-                   }
-
-                   .timeline-item:hover {
-                       transform: scale(1.02);
-                   }
-
-                   /* Alternating left and right layout */
-                   .timeline-item:nth-child(even) {
-                       flex-direction: row-reverse;
-                       text-align: right;
-                   }
-
-                   /* Timeline icon */
-                   .timeline-icon {
-                       width: 50px;
-                       height: 50px;
-                       border-radius: 50%;
-                       color: white;
-                       font-size: 20px;
-                       display: flex;
-                       justify-content: center;
-                       align-items: center;
-                       margin: 0 15px;
-                       box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.2);
-                   }
-
-                   /* Different background colors for each status */
-                   .timeline-icon.submitted {
-                       background: #3498db;
-                   }
-
-                   /* Blue */
-                   .timeline-icon.under-review {
-                       background: #f39c12;
-                   }
-
-                   /* Orange */
-                   .timeline-icon.processing {
-                       background: #9b59b6;
-                   }
-
-                   /* Purple */
-                   .timeline-icon.approved {
-                       background: #2ecc71;
-                   }
-
-                   /* Green */
-                   .timeline-icon.rejected {
-                       background: #e74c3c;
-                   }
-
-                   /* Red */
-                   .timeline-icon.on-hold {
-                       background: #ffcc00;
-                   }
-
-                   /* Yellow */
-                   .timeline-icon.finalized {
-                       background: #34495e;
-                   }
-
-                   /* Dark Grey */
-
-                   /* Timeline content styling */
-                   .timeline-content {
-                       background: white;
-                       padding: 15px;
-                       border-radius: 10px;
-                       box-shadow: 0px 3px 10px rgba(0, 0, 0, 0.1);
-                       position: relative;
-                       width: 60%;
-                   }
-
-                   /* Gradient timeline line */
-                   .timeline::before {
-                       content: "";
-                       position: absolute;
-                       width: 5px;
-                       height: 100%;
-                       background: linear-gradient(to bottom, #3498db, #2ecc71);
-                       left: 50%;
-                       top: 0;
-                       transform: translateX(-50%);
-                   }
-
-                   /* Styling for the last/current status */
-                   .current-status .timeline-icon {
-                       background: #2ecc71 !important;
-                       /* Make the last one stand out */
-                       animation: pulse 1.5s infinite alternate;
-                   }
-
-                   .current-status .timeline-content {
-                       border: 2px solid #2ecc71;
-                   }
-
-                   /* Status text */
-                   .status-label {
-                       font-size: 16px;
-                       font-weight: bold;
-                       text-transform: uppercase;
-                   }
-
-                   /* Muted text */
-                   .text-muted {
-                       font-size: 14px;
-                       color: gray;
-                   }
-
-                   /* Glowing effect for current status */
-                   @keyframes pulse {
-                       0% {
-                           box-shadow: 0 0 10px rgba(46, 204, 113, 0.7);
-                       }
-
-                       100% {
-                           box-shadow: 0 0 20px rgba(46, 204, 113, 1);
-                       }
-                   }
-
-                   /* Blinking animation */
-                   @keyframes blink {
-                       0% {
-                           opacity: 1;
-                       }
-
-                       50% {
-                           opacity: 0;
-                       }
-
-                       100% {
-                           opacity: 1;
-                       }
-                   }
-
-                   .blinking {
-                       animation: blink 1s infinite;
-                       /* Adjust the duration as needed */
-                   }
-               </style>
-
-               <style>
-    .application-detail-section {
-        background: #f8f9fa;
-        border-radius: 8px;
-        padding: 15px;
-        box-shadow: 0 2px 4px rgba(136, 176, 236, 0.05);
+<?php
+
+namespace Modules\Desk\Http\Controllers\Backend;
+
+use Carbon\Carbon;
+use App\Models\User;
+use App\Authorizable;
+use App\Models\Answer;
+use App\Models\Question;
+use App\Models\Standard;
+use App\Models\Indicator;
+use App\Models\SerReview;
+use App\Models\SssReview;
+use App\Models\Substandard;
+use Illuminate\Support\Str;
+use Modules\DCT\Models\DCT;
+use Illuminate\Http\Request;
+use Modules\Desk\Models\Desk;
+use App\Models\IndicatorMedia;
+use Yajra\DataTables\DataTables;
+use App\Models\ApplicationSSSSER;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+use Modules\Program\Models\Program;
+use App\Enums\ApplicationStatusEnum;
+use App\Models\DeskReviewAssignment;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
+use App\Models\ApplicationStatusHistory;
+use RealRashid\SweetAlert\Facades\Alert;
+use Illuminate\Support\Facades\Validator;
+use Modules\DeskReview\Models\DeskReview;
+use App\Notifications\GenericNotification;
+use Modules\Application\Models\Application;
+use Modules\Attachement\Models\Attachement;
+use Modules\Mainsetting\Models\Mainsetting;
+
+use Modules\DeskReview\Models\DeskheadReview;
+use App\Notifications\NewAssessorNotification;
+use App\Http\Controllers\Backend\BackendBaseController;
+
+
+class DesksController extends BackendBaseController
+{
+    use Authorizable;
+
+    public function __construct()
+    {
+        // Page Title
+        $this->module_title = 'Desks';
+
+        // module name
+        $this->module_name = 'desks';
+
+        // directory path of the module
+        $this->module_path = 'desk::backend';
+
+        // module icon
+        $this->module_icon = 'fa-regular fa-sun';
+
+        // module model name, path
+        $this->module_model = "Modules\Desk\Models\Desk";
     }
-    .section-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        border-bottom: 1px solid #dee2e6;
-        padding-bottom: 8px;
+    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
+    {
+
+        $buttonModuleName = 'desks';
+        $additionalButtons = [
+            [
+                'route' => "backend.$buttonModuleName.deskmanage", // Matches the route name
+                'title' => 'Experts and Applications',
+                'class' => 'btn-outline-info',
+                'icon' => 'fas fa-arrow-circle-right',
+            ],
+        ];
+
+        // Fetch desks based on the role of the logged-in user
+        if (auth()->user()->hasRole('accreditation expert')) {
+            $desks = Desk::where('desk_head_id', auth()->id())->get();
+        } else {
+            // If the user does not have the role, fetch all desks (or apply other logic as needed)
+            $desks = Desk::all();
+        }
+
+        // Transform the desks data as needed for the DataTables
+        return DataTables::of($desks)
+            ->editColumn('updated_at', function ($data) {
+                if ($data->updated_at) {
+                    $diff = Carbon::now()->diffInHours($data->updated_at);
+
+                    if ($diff < 25) {
+                        return $data->updated_at->diffForHumans();
+                    }
+
+                    return $data->updated_at->isoFormat('llll');
+                }
+
+                return 'No Date Available';
+            })
+            ->addColumn('action', function ($desk) use ($additionalButtons) {
+                return view('backend.includes.action_column', [
+                    'module_name' => 'desks',
+                    'data' => $desk,
+                    'additionalButtons' => $additionalButtons,
+                ]);
+            })
+            ->make(true);
     }
-    .detail-item {
-        display: flex;
-        align-items: flex-start;
-        margin-bottom: 8px;
+    public function deskmanage($id)
+    {
+
+        // Step 1: Validate the ID
+        $validator = Validator::make(['desk_id' => $id], [
+            'desk_id' => 'required|integer|exists:desks,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid Desk ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $desk = Desk::findOrFail($id);
+
+        if (!Gate::allows('viewdeskspecificapplications', $desk)) {
+            Auth::logout(); // Logout the user
+            Alert::toast('Unauthorized access attempt. You have been logged out.', 'warning')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect('/login')->with('unauthorized', 'You are not authorized to perform this action. You have been logged out.');
+        }
+
+        // Get all users with role 'accreditation expert' using Spatie Permission
+        $accreditationExperts = User::role('accreditation expert')->where('status', 1)->get();
+
+        $desk_name = $desk->name; // Get desk name
+        $applications = $desk->applications()->paginate(10000); // Paginate applications
+
+        return view("$module_path.$module_name.deskmanage", compact('id', 'desk', 'applications', 'accreditationExperts'));
     }
-    .detail-label {
-        font-weight: 600;
-        min-width: 160px;
-        color: #6da3d9;
+
+
+
+    public function assignAccreditationExpertForDesk(Request $request)
+    {
+        DB::beginTransaction();
+        try {
+            $request->validate([
+                'desk_id' => 'required|exists:desks,id',
+                'application_id' => 'required|exists:applications,id',
+                'assessor_id' => 'required|exists:users,id',
+            ]);
+
+            // Count existing assignments for this application
+            $assessorCount = DeskReviewAssignment::where('application_id', $request->application_id)
+                ->where('review_type', 'desk_review')
+                ->where('assessor_type', 'internal') // Ensure assessor is internal
+                ->whereNull('deleted_at') // Ensure it's not soft deleted
+                ->count();
+
+            // Check if max limit is reached
+            $allowed_assessors = Mainsetting::get('number_of_desk_assessors');
+            if ($assessorCount > $allowed_assessors) {
+                Alert::toast('You cannot assign more than ' . $allowed_assessors . ' internal assessors for desk review.', 'error')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return redirect()->back();
+            }
+
+            // Prevent duplicate assignment
+            $exists = DeskReviewAssignment::where('desk_id', $request->desk_id)
+                ->where('application_id', $request->application_id)
+                ->where('assessor_id', $request->assessor_id)
+                ->where('review_type', 'desk_review')
+                ->exists();
+
+
+            if ($exists) {
+                Alert::toast('The selected expert is already assigned to this application.', 'error')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return redirect()->back();
+            }
+            // Store the assignment
+            $user = User::find($request->assessor_id);
+            $application = Application::find($request->application_id);
+
+            $assignment = DeskReviewAssignment::create([
+                'desk_id' => $request->desk_id,
+                'application_id' => $request->application_id,
+                'assessor_id' => $request->assessor_id,
+                'review_type' => 'desk_review',
+                'review_phase' => $application->review_phase,
+                'conflict_of_interest' => null, // Initially null
+            ]);
+
+
+
+            // Notify the assessor
+            $conflictOfInterest = null; // Default to null
+            $user->notify(new NewAssessorNotification($application, $conflictOfInterest));
+            $user->assignTask();
+
+            DB::commit();
+
+            Alert::toast('Accreditation Expert assigned successfully.', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Alert::toast('An error occurred while assigning the accreditation expert. Please try again.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
     }
-    .detail-value {
-        flex: 1;
-        color: #eff1f3;
+
+   public function assignAccreditationExpertForToa(Request $request)
+{
+    DB::beginTransaction();
+
+    try {
+        $request->validate([
+            'desk_id' => 'required|exists:desks,id',
+            'application_id' => 'required|exists:applications,id',
+            'assessor_id' => 'required|exists:users,id',
+        ]);
+
+        // Count internal and external assessors for this application and phase
+        $assessorCount_internal = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('review_phase', 'toa_first_round')
+            ->where('assessor_type', 'internal')
+            ->whereNull('deleted_at')
+            ->count();
+
+        $assessorCount_external = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('review_phase', 'toa_first_round')
+            ->where('assessor_type', 'external')
+            ->whereNull('deleted_at')
+            ->count();
+
+        $allowed_assessors_internal = Mainsetting::get('number_of_internal_toa');
+        $allowed_assessors_external = Mainsetting::get('number_of_external_toa');
+
+        if ($assessorCount_internal >= $allowed_assessors_internal) {
+            Alert::toast('You cannot assign more than ' . $allowed_assessors_internal . ' internal assessors.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        if ($assessorCount_external >= $allowed_assessors_external) {
+            Alert::toast('You cannot assign more than ' . $allowed_assessors_external . ' external assessors.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        // Prevent duplicate assignment for the same phase
+        $exists = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('assessor_id', $request->assessor_id)
+            ->where('review_phase', 'toa_first_round')
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($exists) {
+            Alert::toast('The selected expert is already assigned to this application for this phase.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        // Check if the assessor previously served as desk_review
+        $previousDeskReview = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('assessor_id', $request->assessor_id)
+            ->where('review_phase', 'desk_review')
+            ->whereNull('deleted_at')
+            ->latest()
+            ->first();
+
+        $conflictOfInterest = $previousDeskReview ? 'NO' : null;
+
+        // Determine assessor type
+        $user = User::findOrFail($request->assessor_id);
+        $assessorType = $user->hasRole('accreditation expert') ? 'internal' : 'external';
+
+        // Create the assignment
+        $assignment = DeskReviewAssignment::create([
+            'desk_id' => $request->desk_id,
+            'application_id' => $request->application_id,
+            'assessor_id' => $request->assessor_id,
+            'review_phase' => 'toa_first_round',
+            'review_type' => 'toa_first_round',
+            'assessor_type' => $assessorType,
+            'conflict_of_interest' => $conflictOfInterest,
+        ]);
+
+        $application = Application::findOrFail($request->application_id);
+
+        // Notify the assessor only if no previous desk_review
+        if (!$previousDeskReview) {
+            $user->notify(new NewAssessorNotification($application, $conflictOfInterest));
+        }
+
+        DB::commit();
+
+        Alert::toast('Accreditation Expert assigned successfully.', 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect()->back();
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Alert::toast('An error occurred while assigning the accreditation expert. Please try again.', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return redirect()->back();
     }
-    .badge {
-        font-size: 0.85em;
-        padding: 5px 10px;
+}
+
+    public function moveToSecondRound(Request $request, $id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid application ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        DB::beginTransaction();
+        try {
+            // Fetch all completed assignments for the first round for the given application
+            $firstRoundAssignments = DeskReviewAssignment::where('application_id', $id)
+                ->where('review_phase', 'toa_first_round')
+                ->where('status', 'Completed')
+                ->get();
+
+            if ($firstRoundAssignments->isEmpty()) {
+                Alert::toast('No completed first-round assignments found for this application.', 'info')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return redirect()->back();
+            }
+
+            // Fetch application details for notification
+            $application = Application::find($id);
+            $instituteName = $application->institute->name;
+            $programName = $application->program->name;
+
+            // Check assessor limits for the second round
+            $existingSecondRoundAssignments = DeskReviewAssignment::where('application_id', $id)
+                ->where('review_phase', 'toa_second_round')
+                ->whereNull('deleted_at')
+                ->get();
+
+            $assessorCount_internal = $existingSecondRoundAssignments->where('assessor_type', 'internal')->count();
+            $assessorCount_external = $existingSecondRoundAssignments->where('assessor_type', 'external')->count();
+
+            $allowed_assessors_internal = Mainsetting::get('number_of_internal_toa');
+            $allowed_assessors_external = Mainsetting::get('number_of_external_toa');
+
+            // Calculate remaining slots
+            $remaining_internal = $allowed_assessors_internal - $assessorCount_internal;
+            $remaining_external = $allowed_assessors_external - $assessorCount_external;
+
+            if ($remaining_internal <= 0 && $remaining_external <= 0) {
+                Alert::toast('No more assessors can be assigned (limits reached).', 'error')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return redirect()->back();
+            }
+
+            $successCount = 0;
+            $skippedCount = 0;
+            $limitReached = false;
+
+            foreach ($firstRoundAssignments as $assignment) {
+                // Skip if assessor is already assigned to second round
+                if ($existingSecondRoundAssignments->contains('assessor_id', $assignment->assessor_id)) {
+                    $skippedCount++;
+                    continue;
+                }
+
+                // Check if we've reached the limit for this assessor type
+                if (($assignment->assessor_type === 'internal' && $remaining_internal <= 0) ||
+                    ($assignment->assessor_type === 'external' && $remaining_external <= 0)
+                ) {
+                    $limitReached = true;
+                    continue;
+                }
+
+                // Recreate the assignment for the second round
+                DeskReviewAssignment::create([
+                    'desk_id' => $assignment->desk_id,
+                    'application_id' => $assignment->application_id,
+                    'assessor_id' => $assignment->assessor_id,
+                    'assessor_type' => $assignment->assessor_type,
+                    'created_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
+                    'status' => 'Pending',
+                    'conflict_of_interest' => $assignment->conflict_of_interest,
+                    'chair_id' => $assignment->chair_id,
+                    'review_phase' => 'toa_second_round',
+                    'review_type' => 'toa_second_round',
+                ]);
+
+                // Update remaining slots
+                if ($assignment->assessor_type === 'internal') {
+                    $remaining_internal--;
+                } else {
+                    $remaining_external--;
+                }
+
+                // Notify the assessor
+                $user = User::find($assignment->assessor_id);
+                $notificationTitle = 'Second Round Team of Assessors Review Initiated (' . $instituteName . ' - ' . $programName . ')';
+                $notificationMessage = 'The application has been forwarded to the Second Round Team of Assessors for further evaluation.';
+                $user->notify(new NewAssessorNotification($application, $notificationTitle, $notificationMessage));
+
+                $successCount++;
+            }
+
+            DB::commit();
+
+            if ($successCount > 0) {
+                $message = "Successfully reassigned $successCount assessor(s) to second round.";
+                if ($skippedCount > 0) {
+                    $message .= " $skippedCount were already assigned.";
+                }
+                if ($limitReached) {
+                    $message .= " Some assessors couldn't be assigned due to limits.";
+                }
+
+                Alert::toast($message, 'success')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+            } else {
+                Alert::toast('No assessors were reassigned (all were already assigned or limits reached).', 'info')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+            }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error moving to second round: ' . $e->getMessage());
+            Alert::toast('An error occurred while moving assignments to the second round. Please try again.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+        }
+
+        return redirect()->back();
     }
-</style>
-           @endpush
+  public function assignAccreditationExpertForToaSecondRound(Request $request)
+{
+    DB::beginTransaction();
+
+    try {
+        $request->validate([
+            'desk_id' => 'required|exists:desks,id',
+            'application_id' => 'required|exists:applications,id',
+            'assessor_id' => 'required|exists:users,id',
+        ]);
+
+        // Count internal and external assessors for this application and phase
+        $assessorCount_internal = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('review_phase', 'toa_second_round')
+            ->where('assessor_type', 'internal')
+            ->whereNull('deleted_at')
+            ->count();
+
+        $assessorCount_external = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('review_phase', 'toa_second_round')
+            ->where('assessor_type', 'external')
+            ->whereNull('deleted_at')
+            ->count();
+
+        $allowed_assessors_internal = Mainsetting::get('number_of_internal_toa');
+        $allowed_assessors_external = Mainsetting::get('number_of_external_toa');
+
+        if ($assessorCount_internal >= $allowed_assessors_internal) {
+            Alert::toast('You cannot assign more than ' . $allowed_assessors_internal . ' internal assessors.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        if ($assessorCount_external >= $allowed_assessors_external) {
+            Alert::toast('You cannot assign more than ' . $allowed_assessors_external . ' external assessors.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        // Prevent duplicate assignment for the same phase
+        $exists = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('assessor_id', $request->assessor_id)
+            ->where('review_phase', 'toa_second_round')
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($exists) {
+            Alert::toast('The selected expert is already assigned to this application for this phase.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        // Check if the assessor previously served in toa_first_round
+        $previousFirstRound = DeskReviewAssignment::where('application_id', $request->application_id)
+            ->where('assessor_id', $request->assessor_id)
+            ->where('review_phase', 'toa_first_round')
+            ->whereNull('deleted_at')
+            ->latest()
+            ->first();
+
+        $conflictOfInterest = $previousFirstRound ? 'NO' : null;
+
+        // Determine assessor type
+        $user = User::findOrFail($request->assessor_id);
+        $assessorType = $user->hasRole('accreditation expert') ? 'internal' : 'external';
+
+        // Create the assignment
+        $assignment = DeskReviewAssignment::create([
+            'desk_id' => $request->desk_id,
+            'application_id' => $request->application_id,
+            'assessor_id' => $request->assessor_id,
+            'review_phase' => 'toa_second_round',
+            'review_type' => 'toa_second_round',
+            'assessor_type' => $assessorType,
+            'conflict_of_interest' => $conflictOfInterest,
+        ]);
+
+        $application = Application::findOrFail($request->application_id);
+
+        // Notify the assessor only if they did NOT serve in first round
+        if (!$previousFirstRound) {
+            $user->notify(new NewAssessorNotification($application, $conflictOfInterest));
+        }
+
+        DB::commit();
+
+        Alert::toast('Accreditation Expert assigned successfully.', 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect()->back();
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Alert::toast('An error occurred while assigning the accreditation expert. Please try again.', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return redirect()->back();
+    }
+}
+
+
+    public function assignAssessor(Request $request)
+    {
+        DB::beginTransaction();
+        try {
+            $request->validate([
+                'desk_id' => 'required|exists:desks,id',
+                'application_id' => 'required|exists:applications,id',
+                'user_id' => 'required|exists:users,id',
+            ]);
+
+            // Count existing assignments for this application
+            $assessorCount = DeskReviewAssignment::where('application_id', $request->application_id)
+                ->where('review_type', 'toa')
+                ->where('assessor_type', 'external') // Ensure assessor is external
+                ->whereNull('deleted_at') // Ensure it's not soft deleted
+                ->count();
+
+            // Check if max limit is reached
+            if ($assessorCount >= 2) {
+                Alert::toast('You cannot assign more than 2 external assessors for TOA.', 'error')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return redirect()->back();
+            }
+
+            // Prevent duplicate assignment
+            $exists = DeskReviewAssignment::where('desk_id', $request->desk_id)
+                ->where('application_id', $request->application_id)
+                ->where('assessor_id', $request->user_id)
+                ->exists();
+
+            if ($exists) {
+                Alert::toast('User already assigned to this application.', 'error')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return redirect()->back();
+            }
+
+            // Store the assignment for the assessor
+            DeskReviewAssignment::create([
+                'desk_id' => $request->desk_id,
+                'application_id' => $request->application_id,
+                'review_type' => 'toa',
+                'assessor_type' => 'external', // No accreditation expert here
+                'assessor_id' => $request->user_id, // Store assessor in assessor_id field
+            ]);
+
+            $user = User::find($request->user_id);
+            $user->assignTask();
+
+            DB::commit();
+
+            Alert::toast('Assessor assigned successfully.', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Alert::toast('An error occurred while assigning the assessor. Please try again.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+    }
+
+    public function cancelReviewer($application_id, $assignment_id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $application_id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid application ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        DB::beginTransaction();
+        try {
+            // Validate inputs
+            if (!is_numeric($application_id) || !is_numeric($assignment_id)) {
+                Alert::toast('Invalid application or assignment ID.', 'error')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return back();
+            }
+
+            // Find the assignment to cancel
+            $assignment = DeskReviewAssignment::where('review_type', 'desk_review')
+                ->where('id', $assignment_id)
+                ->firstOrFail();
+
+            // Ensure only pending reviews can be canceled
+            if ($assignment->status === 'completed') {
+                Alert::warning('Cannot Cancel', 'This reviewer has already completed the review.')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return back();
+            }
+
+
+            $user = User::find($assignment->assessor_id);
+            if ($assignment->conflict_of_interest === 'YES') {
+                $user->cancelForConflict();
+            } else {
+                $user->cancelTask();
+            }
+
+            // Soft delete the assignment
+            $assignment->delete();
+            // Now, delete the corresponding record in deskreviews table
+            DeskReview::where('application_id', $application_id)
+                ->where('reviewer_id', $assignment->assessor_id)
+                ->whereIn('review_phase', ['desk_review', 'documents_to_desk'])
+                ->delete();
+
+            DB::commit();
+
+            Alert::toast('Reviewer has been successfully canceled and associated review deleted.', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return back();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            // Log the error for debugging
+            log::error('Error in cancelReviewer: ' . $e->getMessage());
+
+            Alert::toast('An error occurred while canceling the reviewer. Please try again.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return back();
+        }
+    }
+
+    public function cancelReviewerToa($application_id, $assignment_id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $application_id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid application ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        DB::beginTransaction();
+        try {
+            // Validate inputs
+            if (!is_numeric($application_id) || !is_numeric($assignment_id)) {
+                Alert::toast('Invalid application or assignment ID.', 'error')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return back();
+            }
+
+            // Find the assignment to cancel
+            $assignment = DeskReviewAssignment::whereIn('review_phase', ['toa_first_round', 'toa_second_round'])
+                ->where('id', $assignment_id)
+                ->firstOrFail();
+
+            // Ensure only pending reviews can be canceled
+            if ($assignment->status === 'completed') {
+                Alert::warning('Cannot Cancel', 'This reviewer has already completed the review.')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+                return back();
+            }
+
+
+
+            $user = User::find($assignment->assessor_id);
+            if ($assignment->conflict_of_interest === 'YES') {
+                $user->cancelForConflict();
+            } else {
+                $user->cancelTask();
+            }
+
+            // Soft delete the assignment
+            $assignment->delete();
+
+            // Now, delete the corresponding record in deskreviews table
+            DeskReview::where('application_id', $application_id)
+                ->where('reviewer_id', $assignment->assessor_id)
+                ->whereIn('review_phase', ['toa_first_round', 'toa_second_round'])
+                ->delete();
+
+            DB::commit();
+
+            Alert::toast('Reviewer has been successfully canceled and associated review deleted.', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return back();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            // Log the error for debugging
+            Log::error('Error in cancelReviewerToa: ' . $e->getMessage());
+
+            Alert::toast('An error occurred while canceling the reviewer. Please try again.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return back();
+        }
+    }
+
+
+
+    public function showEvaluators($deskId, $applicationId)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $applicationId], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid application ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+        try {
+
+            $module_title = $this->module_title;
+            $module_name = $this->module_name;
+            $module_path = $this->module_path;
+            $module_icon = $this->module_icon;
+            $module_model = $this->module_model;
+            $module_name_singular = Str::singular($module_name);
+
+            $desk = Desk::findOrFail($deskId);
+
+            if (!Gate::allows('viewdeskspecificapplications', $desk)) {
+                Auth::logout(); // Logout the user
+                Alert::toast('Unauthorized access attempt. You have been logged out.', 'warning')
+                    ->position('top-end')
+                    ->autoClose(5000)
+                    ->timerProgressBar();
+
+                return redirect('/login')->with('unauthorized', 'You are not authorized to perform this action. You have been logged out.');
+            }
+
+            $application = Application::findOrFail($applicationId);
+
+            //update the status from DOCS_TOA to DOCS_DESK (this is for when toa is assigned )
+            if ($application->status === 'toa_first_round' || $application->status === 'toa_first_round_approved_by_desk') {
+                $statusEnum = constant(ApplicationStatusEnum::class . '::DOCS_DESK');
+                ApplicationStatusHistory::recordStatusChange($application, $statusEnum, "Application forwarded to desk for First round Team of Assessor Assessment");
+            }
+
+
+            // Get assigned users with assessor_type 'internal' (Accreditation Experts)
+            $assignedExperts = DeskReviewAssignment::where('desk_id', $deskId)
+                ->where('application_id', $applicationId)
+                ->where('assessor_type', 'internal')
+                ->where('review_phase', 'desk_review')
+                ->with('assessor') // Eager load the assessor relationship
+                ->get();
+
+            // Get assigned users with assessor_type 'internal' (Accreditation Experts)
+            $assignedExpertsfortoa = DeskReviewAssignment::where('desk_id', $deskId)
+                ->where('application_id', $applicationId)
+                ->where('assessor_type', 'internal')
+                ->where('review_phase', 'toa_first_round')
+                ->with('assessor') // Eager load the assessor relationship
+                ->get();
+
+            $assignedExpertsfortoa_first_round = DeskReviewAssignment::where('desk_id', $deskId)
+                ->where('application_id', $applicationId)
+                ->where('review_phase', 'toa_first_round')
+                ->with('assessor') // Eager load the assessor relationship
+                ->get();
+
+            $assignedExpertsfortoa_second_round = DeskReviewAssignment::where('desk_id', $deskId)
+                ->where('application_id', $applicationId)
+                ->where('review_phase', 'toa_second_round')
+                ->with('assessor') // Eager load the assessor relationship
+                ->get();
+
+
+
+
+            // Get assigned users with assessor_type 'external' (Assessors)
+            $assignedAssessors = DeskReviewAssignment::where('desk_id', $deskId)
+                ->where('application_id', $applicationId)
+                ->where('assessor_type', 'external')
+                ->with('assessor') // Eager load the assessor relationship
+                ->get();
+
+            // Get available users for assignment
+
+
+            // $accreditationExperts = User::role('accreditation expert')->where('status', 1)->get();
+
+            if ($application->review_phase === 'desk_review') {
+                $accreditationExperts = User::role('accreditation expert')
+                    ->where('status', 1)
+                    ->get();
+            } elseif (in_array($application->review_phase, ['toa_first_round', 'toa_second_round'])) {
+                $accreditationExperts = User::role(['assessor', 'accreditation expert'])
+                    ->where('status', 1)
+                    ->get()
+                    ->sortBy(function ($user) {
+                        return $user->hasRole('accreditation expert') ? 0 : 1;
+                    });
+            } else {
+                $accreditationExperts = collect(); // Empty collection
+            }
+
+            // Get assessors who do not have the 'accreditation expert' role
+            $assessors = User::role('assessor')->where('status', 1)
+                ->whereDoesntHave('roles', function ($query) {
+                    $query->where('name', 'accreditation expert');
+                })
+                ->get();
+
+            $days_for_desk_review = Mainsetting::get('allowed_days_for_desk_review', 15);
+            $days_for_toa_first_round = Mainsetting::get('allowed_days_for_toa_first_round', 15);
+            $days_for_toa_second_round = Mainsetting::get('allowed_days_for_toa_second_round', 30);
+
+
+
+            return view("$module_path.$module_name.evaluators", compact(
+                'desk',
+                'application',
+                'assignedExperts',
+                'assignedExpertsfortoa',
+                'assignedExpertsfortoa_first_round',
+                'assignedExpertsfortoa_second_round',
+                'accreditationExperts',
+                'days_for_desk_review',
+                'days_for_toa_first_round',
+                'days_for_toa_second_round',
+                'assessors'
+            ));
+        } catch (\Exception $e) {
+            Alert::toast('An error occurred while fetching evaluators. Please try again.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+    }
+
+
+
+    public function setDeskFinalDecision(Request $request)
+    {
+        $request->validate([
+            'application_id' => 'required|exists:applications,id',
+            'desk_decision' => 'required|in:desk_review_revision_requested,desk_reject,desk_review_accepted',
+        ]);
+
+        $application = Application::findOrFail($request->application_id);
+        $application->update(['desk_decision' => $request->desk_decision]);
+
+        Alert::toast('Final decision updated successfully.', 'success');
+        return redirect()->back();
+    }
+
+
+    public function updateConflictOfInterest(Request $request, $application_id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $application_id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid application ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        $request->validate([
+            'status' => 'required|in:yes,no',
+        ]);
+
+        $assignment = DeskReviewAssignment::where('application_id', $application_id)
+            ->where('assessor_id', auth()->id())
+            ->firstOrFail();
+
+        $assignment->update([
+            'conflict_of_interest' => $request->status === 'yes' ? 'YES' : 'NO',
+        ]);
+
+        Alert::toast('Conflict of interest status updated successfully.', 'success');
+        return redirect()->back();
+    }
+
+
+    public function ceodeputystartdeskheadReview($id)
+    {
+
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid application ID.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $application = Application::findOrFail($id);
+        $instituteName = $application->institute->name; // Access the institute name
+        $programName = $application->program->name; // Access the program name
+
+
+        $desk_id = $application->desk_id;
+        $has_desk = !is_null($desk_id);
+        $desks = Desk::select('id', 'name')->get();
+
+        $sss_exists = ApplicationSSSSER::where('application_id', $id)
+            ->where('type', 'sss_document')
+            ->exists();
+
+        $ser_exists = ApplicationSSSSER::where('application_id', $id)
+            ->where('type', 'self_evaluation')
+            ->exists();
+
+
+        $sss_review_exists = SssReview::where('application_id', $id)
+            ->where('reviewer_or_head', 1)
+            ->exists();
+        $ser_review_exists = SerReview::where('application_id', $id)
+            ->where('reviewer_or_head', 1)
+            ->exists();
+
+        // If $review_phase is not 'desk_review', set $sss_review_exists to true
+        // no need to review SER and SSS
+
+        if ($application->review_phase !== 'desk_review') {
+            $sss_review_exists = true;
+            $ser_review_exists = true;
+        }
+
+        // Get review progress
+        $standard = Standard::first(); // Adjust as needed to fetch the correct standard
+        // Get the program ID from the application
+        $program_id = $application->program_id;
+
+        // Get the DCT linked to the program
+        $dcts = DCT::where('program_id', $program_id)->first();
+
+        // Get all standards for the DCT
+        $standards = $dcts ? Standard::where('dct_id', $dcts->id)->orderBy('id', 'asc')->get() : collect();
+
+        // Calculate total and reviewed indicators across all standards
+        $total_indicators = 0;
+        $reviewed_indicators = 0;
+
+        foreach ($standards as $standard) {
+            $total_indicators += $standard->totalIndicators();
+            $reviewed_indicators += $standard->reviewedIndicatorsByDeskhead($id);
+        }
+
+        if ($total_indicators == 0) {
+            $review_status = 'Not Started';
+            $status_class = 'bg-warning text-dark';
+        } elseif ($reviewed_indicators == 0) {
+            $review_status = 'Not Started';
+            $status_class = 'bg-warning text-dark';
+        } elseif ($reviewed_indicators < $total_indicators) {
+            $review_status = 'In Progress';
+            $status_class = 'bg-primary';
+        } else {
+            $review_status = 'Completed';
+            $status_class = 'bg-success';
+        }
+
+        // Fetch the desk review assignment status
+        $deskReviewAssignment = Application::where('id', $id)
+            ->first();
+
+        $deskReviewStatus = $deskReviewAssignment ? $deskReviewAssignment->status : null;
+
+        $role = auth()->user()->getRoleNames()->first();
+
+        // Check if the user has status = 1
+        $isActive = auth()->user()->status == 1;
+
+        // Define the view name based on the role and status
+        if ($role == 'ceo' && $isActive) {
+            $viewName = "$module_path.$module_name.beginceodeskheadreview";
+        } elseif ($role == 'deputy director' && $isActive) {
+            $viewName = "$module_path.$module_name.begindeputydirectordeskheadreview";
+        } else {
+            // Handle unauthorized or inactive users
+            Alert::toast('You are not authorized contact system admin.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+
+        $review_phase = $application->review_phase;
+        $doc_version = $application->doc_version ?? 1; // Default to 1 if not set
+        // Determine the heading based on the review phase
+        $heading = match ($review_phase) {
+            'desk_review' => $doc_version == 2 ? 'Desk Review (Revision)' : 'Desk Review',
+            'toa_first_round' => 'First Round TOA Review',
+            'toa_second_round' => 'Second Round Review (Site Visit Review)',
+            default => 'Review',
+        };
+
+
+        // Return the appropriate view with compacted data
+        return view($viewName, compact(
+            'id',
+            'sss_exists',
+            'ser_exists',
+            'sss_review_exists',
+            'ser_review_exists',
+            'has_desk',
+            'desks',
+            'application',
+            'instituteName',
+            'programName',
+            'review_status',
+            'status_class',
+            'deskReviewStatus',
+            'review_phase', // Pass the review phase to the view
+            'heading' // Pass the dynamic heading to the view
+        ));
+    }
+    public function startdeskheadReview($id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $application = Application::findOrFail($id);
+        $instituteName = $application->institute->name;
+        $programName = $application->program->name;
+        $review_phase = $application->review_phase;
+        $doc_version = $application->doc_version ?? 1;
+
+        $heading = match ($review_phase) {
+            'desk_review' => $doc_version == 2 ? 'Desk Review (Revision)' : 'Desk Review',
+            'toa_first_round' => 'First Round TOA Review',
+            'toa_second_round' => 'Second Round Review (Site Visit Review)',
+            default => 'Review',
+        };
+
+        $desk_id = $application->desk_id;
+        $has_desk = !is_null($desk_id);
+        $desks = Desk::select('id', 'name')->get();
+
+        $sss_exists = ApplicationSSSSER::where('application_id', $id)->where('type', 'sss_document')->exists();
+        $ser_exists = ApplicationSSSSER::where('application_id', $id)->where('type', 'self_evaluation')->exists();
+        $sss_review_exists = SssReview::where('application_id', $id)->where('reviewer_or_head', 1)->exists();
+        $ser_review_exists = SerReview::where('application_id', $id)->where('reviewer_or_head', 1)->exists();
+
+        if ($application->review_phase !== 'desk_review') {
+            $sss_review_exists = true;
+            $ser_review_exists = true;
+        }
+
+        // âœ… Bring in standards and their progress
+        $program_id = $application->program_id;
+        $program = Program::find($program_id);
+        $program_description = $program ? $program->description : 'Unknown Program';
+
+        $dcts = DCT::where('program_id', $program_id)->first();
+        $standards = $dcts ? Standard::where('dct_id', $dcts->id)->orderBy('id', 'asc')->get() : collect();
+
+        // âœ… Calculate progress across all standards
+        $total_indicators = $standards->sum(fn($standard) => $standard->totalIndicators());
+        $reviewed_indicators = $standards->sum(fn($standard) => $standard->reviewedIndicatorsByDeskhead($id));
+
+        if ($total_indicators == 0) {
+            $review_status = 'Not Started';
+            $status_class = 'bg-warning text-dark';
+        } elseif ($reviewed_indicators == 0) {
+            $review_status = 'Not Started';
+            $status_class = 'bg-warning text-dark';
+        } elseif ($reviewed_indicators < $total_indicators) {
+            $review_status = 'In Progress';
+            $status_class = 'bg-primary';
+        } else {
+            $review_status = 'Completed';
+            $status_class = 'bg-success';
+        }
+
+        $deskReviewStatus = $application->status;
+
+        return view("$module_path.$module_name.begindeskheadreview", compact(
+            'id',
+            'sss_exists',
+            'ser_exists',
+            'sss_review_exists',
+            'ser_review_exists',
+            'has_desk',
+            'instituteName',
+            'programName',
+            'desks',
+            'application',
+            'review_status',
+            'status_class',
+            'heading',
+            'deskReviewStatus',
+            'standards', // ðŸ‘ˆ Now passed to view
+            'program_description'
+        ));
+    }
+
+    public function assignChairperson(Request $request, $applicationId)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $applicationId], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+
+        $deskId = $request->input('desk_id');
+        $chairpersonId = $request->input('chairperson_id');
+
+        // Ensure only one chairperson at a time
+        DeskReviewAssignment::where('desk_id', $deskId)
+            ->where('application_id', $applicationId)
+            ->where('assessor_type', 'internal')
+            ->update(['chair_id' => null]);
+
+        // Assign the new chairperson
+        DeskReviewAssignment::where('desk_id', $deskId)
+            ->where('application_id', $applicationId)
+            ->where('assessor_id', $chairpersonId)
+            ->update(['chair_id' => $chairpersonId]);
+        Alert::toast('Chairperson assigned succesfully.', 'success');
+
+        return redirect()->back()->with('success', 'Chairperson assigned successfully.');
+    }
+    public function assignChairpersonToa(Request $request, $applicationId)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $applicationId], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        $deskId = $request->input('desk_id');
+        $chairpersonId = $request->input('chairperson_id');
+
+        // Ensure only one chairperson at a time
+        DeskReviewAssignment::where('desk_id', $deskId)
+            ->where('application_id', $applicationId)
+            ->where('assessor_type', 'internal')
+            ->where('review_type', 'toa')
+            ->update(['chair_id' => null]);
+
+        // Assign the new chairperson
+        DeskReviewAssignment::where('desk_id', $deskId)
+            ->where('application_id', $applicationId)
+            ->where('assessor_id', $chairpersonId)
+            ->update(['chair_id' => $chairpersonId]);
+        Alert::toast('Chairperson assigned succesfully.', 'success');
+
+        return redirect()->back()->with('success', 'Chairperson assigned successfully.');
+    }
+
+    public function showStandardsForDeskHeadReview($id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $application = Application::findOrFail($id);
+
+        // Step 1: Get `program_id` from the Application
+        $program_id = $application->program_id;
+
+
+        //Get Program Description
+        $program = Program::find($program_id);
+        $program_description = $program ? $program->description : 'Unknown Program';
+
+        // Step 2: Find `DCTS` using `program_id`
+        $dcts = DCT::where('program_id', $program_id)->first();
+
+        // Step 3: Get all standards linked to `dct_id`, ordered by id DESC
+        $standards = $dcts ? Standard::where('dct_id', $dcts->id)->orderBy('id', 'asc')->get() : collect();
+
+        // Pass data to the view
+        return view("$this->module_path.$this->module_name.standards_for_desk_head_review", compact('id', 'standards', 'program_description', 'application'));
+    }
+
+    public function fillDeskHeadReviews($application_id, $standard_id, $substandard_id = null, $indicator_id = null)
+    {
+	// Normalize optional params
+		$substandard_id = $substandard_id == 0 ? null : $substandard_id;
+		$indicator_id   = $indicator_id == 0 ? null : $indicator_id;
+        // Step 1: Validate the input parameters
+        $validator = Validator::make([
+            'application_id'   => $application_id,
+            'standard_id'      => $standard_id,
+            'substandard_id'   => $substandard_id,
+            'indicator_id'     => $indicator_id,
+        ], [
+            'application_id'   => 'required|integer|exists:applications,id',
+            'standard_id'      => 'required|integer|exists:standards,id',
+            'substandard_id'   => 'nullable|integer|exists:substandards,id',
+            'indicator_id'     => 'nullable|integer|exists:indicators,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+
+        $application = Application::findOrFail($application_id);
+        $review_phase = $application->review_phase; // Assuming 'review_phase' is a column in the applications table
+        // Determine the label and field name based on the review phase
+        $label = in_array($review_phase, ['desk_review', 'desk_revision']) ? 'Your Review' : 'Key Findings';
+        $field_name = 'review'; // Always use the same field name for simplicity
+
+        $standard = Standard::findOrFail($standard_id);
+        $substandards = Substandard::where('standard_id', $standard_id)->get();
+
+        if (!$substandard_id && $substandards->isNotEmpty()) {
+            $currentSubStandard = $substandards->first();
+        } else {
+            $currentSubStandard = $substandards->find($substandard_id);
+        }
+
+        if (!$currentSubStandard) {
+            Alert::warning('No Substandards Found', 'This standard does not have any substandards defined.')
+                ->position('center')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route("backend.$module_name.showStandardsForDeskHeadReview", ['id' => $application_id]);
+        }
+
+        $indicators = Indicator::where('substandard_id', $currentSubStandard->id)->get();
+
+        if (!$indicator_id && $indicators->isNotEmpty()) {
+            $currentIndicator = $indicators->first();
+        } else {
+            $currentIndicator = $indicators->find($indicator_id);
+        }
+
+        if (!$currentIndicator) {
+            return redirect()->route("backend.$module_name.showStandardsForDeskHeadReview", ['id' => $application_id])
+                ->with('error', 'No indicators found for this substandard.');
+        }
+
+        $questions = Question::where('indicator_id', $currentIndicator->id)->get();
+
+        // Fetch existing answers
+        $answers = Answer::where('application_id', $application_id)
+            ->whereIn('question_id', $questions->pluck('id'))
+            ->pluck('answer', 'question_id');
+
+        // Fetch required attachments
+        $attachments = Attachement::whereIn('id', function ($query) use ($currentIndicator) {
+            $query->select('attachment_id')
+                ->from('indicator_attachment')
+                ->where('indicator_id', $currentIndicator->id);
+        })->get();
+
+        // Add status and start_page for each attachment
+        foreach ($attachments as $attachment) {
+            $indicatorMedia = IndicatorMedia::where('application_id', $application_id)
+                ->where('attachment_id', $attachment->id)
+                ->first();
+
+            $attachment->status = $indicatorMedia ? 'Completed' : 'Not Uploaded';
+            $attachment->start_page = $indicatorMedia ? ($indicatorMedia->start_page ?? 1) : 1; // Default to 1 if not set
+        }
+
+        // Fetch the chairperson's review
+        // Fetch the chairperson's review
+        $chairpersonReview = DeskReview::where('application_id', $application_id)
+            ->where('indicator_id', $currentIndicator->id)
+            ->where('review_phase', $application->review_phase)
+            ->where('reviewer_or_head', 1) // Only fetch reviews where the reviewer is a chairperson
+            ->with('reviewer') // Load the reviewer relationship
+            ->first();
+
+        return view("$this->module_path.$this->module_name.fill_desk_head_reviews", compact(
+            'standard',
+            'substandards',
+            'indicators',
+            'questions',
+            'application_id',
+            'standard_id',
+            'currentSubStandard',
+            'currentIndicator',
+            'answers',
+            'attachments',
+            'application',
+            'label',
+            'field_name',
+            'review_phase',
+            'chairpersonReview' // Pass the chairperson's review to the view
+        ));
+    }
+
+    private function isEmptyAnswer($answer)
+    {
+        if (empty($answer)) {
+            return true;
+        }
+
+        // Remove all HTML tags
+        $cleanedAnswer = strip_tags($answer);
+
+        // Remove non-breaking spaces (&nbsp;) and regular spaces
+        $cleanedAnswer = str_replace('&nbsp;', '', $cleanedAnswer);
+        $cleanedAnswer = preg_replace('/\s+/', '', $cleanedAnswer);
+
+        // Check if the cleaned answer is empty
+        return empty($cleanedAnswer);
+    }
+    // public function submitDeskHeadReview(Request $request)
+    // {
+
+    //     // Validate the request
+    //     $request->validate([
+    //         'application_id' => 'required|exists:applications,id',
+    //         'standard_id' => 'required|exists:standards,id',
+    //         'substandard_id' => 'required|exists:substandards,id',
+    //         'indicator_id' => 'required|exists:indicators,id',
+    //         'rating_value' => 'nullable|integer|between:1,5', // Rating value for TOA reviews
+
+    //         'review' => 'required|string', // Review comment can be nullable
+    //     ]);
+
+    //     // Check if the review is empty
+    //     if ($this->isEmptyAnswer($request->review)) {
+    //         Alert::toast('Review cannot be empty.', 'error');
+    //         return back()->withInput();
+    //     }
+
+    //     // Get the current logged-in user ID (deskhead_id)
+    //     $deskhead_id = auth()->id();
+    //     $application = Application::find($request->application_id);
+    //     $currentReviewPhase = $application->review_phase;
+
+    //     // Find the chairperson's review for the current application and indicator
+    //     $chairpersonReview = DeskReview::where('application_id', $request->application_id)
+    //         ->where('indicator_id', $request->indicator_id)
+    //         ->where('review_phase', $currentReviewPhase)
+    //         ->where('reviewer_or_head', 1) // Only fetch chairperson's review
+    //         ->first();
+
+    //     // If the chairperson's review exists, update it
+    //     if ($chairpersonReview) {
+    //         $chairpersonReview->update([
+    //             'comment' => $request->review, // Update the comment
+    //             'updated_by' => $deskhead_id, // Update the updated_by column
+    //             'rating_value' => $request->rating_value, // Save the rating value
+
+
+    //         ]);
+    //     } else {
+    //         // If the chairperson's review does not exist, create a new one
+    //         DeskReview::create([
+    //             'indicator_id' => $request->indicator_id,
+    //             'standard_id' => $request->standard_id,
+    //             'application_id' => $request->application_id,
+    //             'reviewer_id' => $deskhead_id, // Set the deskhead as the reviewer
+    //             'reviewer_or_head' => 1, // Mark it as a chairperson's review
+    //             'comment' => $request->review,
+    //             'created_by' => $deskhead_id,
+    //             'updated_by' => $deskhead_id,
+    //             'review_phase' => $currentReviewPhase, // Include review phase in the unique key
+    //             'rating_value' => $request->rating_value, // Save the rating value
+
+    //         ]);
+    //     }
+
+    //     // Handle navigation logic
+    //     $application_id = $request->application_id;
+    //     $indicator_id = $request->indicator_id;
+    //     $substandard_id = $request->substandard_id;
+    //     $standard_id = $request->standard_id;
+    //     $direction = $request->input('direction', 'next');
+
+    //     // Get all indicators for the current substandard
+    //     $indicators = Indicator::where('substandard_id', $substandard_id)->orderBy('id')->get();
+
+    //     // Find the current indicator index
+    //     $currentIndicatorIndex = $indicators->search(fn($indicator) => $indicator->id == $indicator_id);
+
+    //     // Handle "Previous" navigation
+    //     if ($direction === 'previous' && $currentIndicatorIndex > 0) {
+    //         $previousIndicator = $indicators[$currentIndicatorIndex - 1];
+    //         return redirect()->route("backend.{$this->module_name}.fillDeskHeadReviews", [
+    //             'application_id' => $application_id,
+    //             'standard_id' => $standard_id,
+    //             'substandard_id' => $substandard_id,
+    //             'indicator_id' => $previousIndicator->id
+    //         ]);
+    //     }
+
+    //     // Handle "Next" navigation within the same substandard
+    //     if ($currentIndicatorIndex !== false && isset($indicators[$currentIndicatorIndex + 1])) {
+    //         $nextIndicator = $indicators[$currentIndicatorIndex + 1];
+    //         return redirect()->route("backend.{$this->module_name}.fillDeskHeadReviews", [
+    //             'application_id' => $application_id,
+    //             'standard_id' => $standard_id,
+    //             'substandard_id' => $substandard_id,
+    //             'indicator_id' => $nextIndicator->id
+    //         ]);
+    //     }
+
+    //     // Handle "Next" navigation to the next substandard
+    //     $nextSubStandard = Substandard::where('standard_id', $standard_id)
+    //         ->where('id', '>', $substandard_id)
+    //         ->first();
+
+    //     if ($nextSubStandard) {
+    //         $nextIndicator = $nextSubStandard->indicators()->first();
+
+    //         if ($nextIndicator) {
+    //             return redirect()->route("backend.{$this->module_name}.fillDeskHeadReviews", [
+    //                 'application_id' => $application_id,
+    //                 'standard_id' => $standard_id,
+    //                 'substandard_id' => $nextSubStandard->id,
+    //                 'indicator_id' => $nextIndicator->id
+    //             ]);
+    //         }
+    //     }
+
+    //     // If no more indicators or substandards, redirect to the standards page
+    //     return redirect()->route("backend.{$this->module_name}.showStandardsForDeskHeadReview", [
+    //         'id' => $application_id
+    //     ])->with('success', 'All reviews completed!');
+    // }
+
+    public function submitDeskHeadReview(Request $request)
+    {
+        $application = Application::find($request->application_id);
+
+        // Skip validation and saving if in profile_stage
+        if (
+            (auth()->user()->hasRole('deputy director') && $application->review_phase != 'profile_stage') ||
+            (auth()->user()->hasRole('ceo') &&
+                $application->desk_decision != 'Not Decided' &&
+                $application->review_phase != 'desk_review')
+        ) {
+            // Validate the request
+            $request->validate([
+                'application_id' => 'required|exists:applications,id',
+                'standard_id' => 'required|exists:standards,id',
+                'substandard_id' => 'required|exists:substandards,id',
+                'indicator_id' => 'required|exists:indicators,id',
+                'rating_value' => 'nullable|integer|between:1,5',
+                'review' => 'required|string',
+            ]);
+
+            // Check if the review is empty
+            if ($this->isEmptyAnswer($request->review)) {
+                Alert::toast('Review cannot be empty.', 'error');
+                return back()->withInput();
+            }
+
+            $deskhead_id = auth()->id();
+            $currentReviewPhase = $application->review_phase;
+
+            // Find or create the chairperson's review
+            $chairpersonReview = DeskReview::updateOrCreate(
+                [
+                    'application_id' => $request->application_id,
+                    'indicator_id' => $request->indicator_id,
+                    'review_phase' => $currentReviewPhase,
+                    'reviewer_or_head' => 1
+                ],
+                [
+                    'standard_id' => $request->standard_id,
+                    'reviewer_id' => $deskhead_id,
+                    'comment' => $request->review,
+                    'updated_by' => $deskhead_id,
+                    'rating_value' => $request->rating_value,
+                    'created_by' => $deskhead_id
+                ]
+            );
+        }
+
+        // Handle navigation logic (same for both cases)
+        $application_id = $request->application_id;
+        $indicator_id = $request->indicator_id;
+        $substandard_id = $request->substandard_id;
+        $standard_id = $request->standard_id;
+        $direction = $request->input('direction', 'next');
+
+        // Get all indicators for the current substandard
+        $indicators = Indicator::where('substandard_id', $substandard_id)->orderBy('id')->get();
+
+        // Find the current indicator index
+        $currentIndicatorIndex = $indicators->search(fn($indicator) => $indicator->id == $indicator_id);
+
+        // Handle "Previous" navigation
+        if ($direction === 'previous' && $currentIndicatorIndex > 0) {
+            $previousIndicator = $indicators[$currentIndicatorIndex - 1];
+            return redirect()->route("backend.{$this->module_name}.fillDeskHeadReviews", [
+                'application_id' => $application_id,
+                'standard_id' => $standard_id,
+                'substandard_id' => $substandard_id,
+                'indicator_id' => $previousIndicator->id
+            ]);
+        }
+
+        // Handle "Next" navigation within the same substandard
+        if ($currentIndicatorIndex !== false && isset($indicators[$currentIndicatorIndex + 1])) {
+            $nextIndicator = $indicators[$currentIndicatorIndex + 1];
+            return redirect()->route("backend.{$this->module_name}.fillDeskHeadReviews", [
+                'application_id' => $application_id,
+                'standard_id' => $standard_id,
+                'substandard_id' => $substandard_id,
+                'indicator_id' => $nextIndicator->id
+            ]);
+        }
+
+        // Handle "Next" navigation to the next substandard
+        $nextSubStandard = Substandard::where('standard_id', $standard_id)
+            ->where('id', '>', $substandard_id)
+            ->first();
+
+        if ($nextSubStandard) {
+            $nextIndicator = $nextSubStandard->indicators()->first();
+
+            if ($nextIndicator) {
+                return redirect()->route("backend.{$this->module_name}.fillDeskHeadReviews", [
+                    'application_id' => $application_id,
+                    'standard_id' => $standard_id,
+                    'substandard_id' => $nextSubStandard->id,
+                    'indicator_id' => $nextIndicator->id
+                ]);
+            }
+        }
+
+        // If no more indicators or substandards, redirect to the standards page
+        return redirect()->route("backend.{$this->module_name}.showStandardsForDeskHeadReview", [
+            'id' => $application_id
+        ])->with('success', 'All reviews completed!');
+    }
+    public function saveDeskHeadReview(Request $request)
+    {
+
+        $request->validate([
+            'application_id' => 'required|exists:applications,id',
+            'review_type' => 'required|in:sss,ser,dct',
+            'comment' => 'nullable|string',
+        ]);
+
+
+
+        // Save or update the review
+        DeskheadReview::updateOrCreate(
+            [
+                'indicator_id' => 1,
+                'standard_id' => 1,
+                'application_id' => $request->application_id,
+                'review_type' => $request->review_type,
+                'deskhead_id' => auth()->id(),
+            ],
+            [
+                'comment' => $request->comment,
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]
+        );
+
+        return response()->json(['success' => true, 'message' => 'Reviewers summary saved successfully.']);
+    }
+
+    public function managersSaveDeskHeadReview(Request $request)
+    {
+        $request->validate([
+            'application_id' => 'required|exists:applications,id',
+            'review_type' => 'required|in:sss,ser,dct',
+            'comment' => 'nullable|string',
+        ]);
+
+        // Get the logged-in user
+        $user = auth()->user();
+
+        // Check if the user has one of the specified roles
+        $isAdminOrCeoOrDeputy = $user->hasAnyRole(['ceo', 'super admin', 'deputy director']);
+
+        // Define the base data for updateOrCreate
+        $baseData = [
+            'indicator_id' => 1,
+            'standard_id' => 1,
+            'application_id' => $request->application_id,
+            'review_type' => $request->review_type,
+        ];
+
+        // Add deskhead_id only if the user is not an admin, CEO, or deputy director
+        if (!$isAdminOrCeoOrDeputy) {
+            $baseData['deskhead_id'] = auth()->id();
+        }
+
+        // Save or update the review
+        DeskheadReview::updateOrCreate(
+            $baseData,
+            [
+                'comment' => $request->comment,
+                'created_by' => $isAdminOrCeoOrDeputy ? null : auth()->id(), // Preserve created_by for admins
+                'updated_by' => $isAdminOrCeoOrDeputy ? null : auth()->id(), // Preserve updated_by for admins
+            ]
+        );
+
+        return response()->json(['success' => true, 'message' => 'Reviewers summary saved successfully.']);
+    }
+
+    public function getDeskHeadReview(Request $request)
+    {
+        $request->validate([
+            'application_id' => 'required|exists:applications,id',
+            'review_type' => 'required|in:sss,ser,dct',
+        ]);
+
+        // Fetch all reviewers' comments
+        $reviews = DeskReview::where('application_id', $request->application_id)
+            ->where('review_type', $request->review_type)
+            ->with('reviewer') // Load the reviewer relationship
+            ->get();
+
+        // Fetch the deskhead review
+        $deskheadReview = DeskheadReview::where('application_id', $request->application_id)
+            ->where('review_type', $request->review_type)
+            ->first();
+
+        return response()->json([
+            'reviewers_comments' => $reviews->map(function ($review) {
+                return [
+                    'reviewer_name' => $review->reviewer->name, // Reviewer's name
+                    'comment' => $review->comment, // Reviewer's comment
+                ];
+            }),
+            'deskhead_comment' => $deskheadReview->comment ?? '', // Deskhead's comment
+        ]);
+    }
+    public function completeDeskHeadReview($application_id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $application_id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+
+        $user = auth()->user();
+
+        // Find the application
+        $application = Application::find($application_id);
+        $instituteName = $application->institute->name; // Access the institute name
+        $programName = $application->program->name; // Access the program name
+        if (!$application) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Application not found.',
+            ], 404);
+        }
+
+        // Check if the application status is already FINALIZED_BY_DESK
+        if (strtolower($application->status) === strtolower("desk_review_completed")) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Review has already been submitted.',
+            ], 400);
+        }
+
+        // Start a database transaction to ensure data integrity
+        DB::beginTransaction();
+
+        try {
+            // Record the status change in ApplicationStatusHistory
+
+
+
+            $current_decision = $application->desk_decision;
+
+
+            if ($application->desk_decision === "desk_revision_requested") {
+                $current_decision = 'Desk requested Revision';
+            } elseif ($application->desk_decision === "desk_reject") {
+                $current_decision = 'Desk reject the application';
+            } elseif ($application->desk_decision === "desk_review_accepted") {
+                $current_decision = 'Desk Accept the application';
+            }
+
+
+            if ($application->status === 'documents_to_desk' && $application->review_phase === 'toa_first_round') {
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_CEO, "First Round Team of Assessor Review Completed by Desk and Forwarded to CEO");
+
+                // Custom notification for TOA_R1_ACC
+                $notificationData = [
+                    'title' => 'First Round TOA Review Forwared by Desk Head (' . $instituteName . ' - ' . $programName . ' program)',
+                    'message' => 'The first round of TOA review for ' . $instituteName . ' - ' . $programName . ' program has been completed by the desk. Please proceed with the next steps.',
+                    'module' => 'Applications',
+                    'type' => 'toa_first_round_approved',
+                    'icon' => 'fas fa-file-check',
+                    'urlBackend' => route('backend.applications.profileview', $application->id),
+                    'urlFrontend' => '',
+                    'application' => $application,
+                    'status' => ApplicationStatusEnum::TOA_R1_ACC,
+                ];
+            } elseif ($application->status === 'documents_to_desk' && $application->review_phase === 'toa_second_round') {
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_CEO, "Site Visit Review Completed by Desk and Forwarded to CEO");
+
+                // Custom notification for TOA_R2_ACC
+                $notificationData = [
+                    'title' => 'Second Round TOA Review Forwared by Desk Head (' . $instituteName . ' - ' . $programName . ' program)',
+                    'message' => 'The second round of TOA review for ' . $instituteName . ' - ' . $programName . ' program has been completed by the desk. The application is now ready for further action.',
+                    'module' => 'Applications',
+                    'type' => 'toa_second_round_approved',
+                    'icon' => 'fas fa-file-check',
+                    'urlBackend' => route('backend.applications.profileview', $application->id),
+                    'urlFrontend' => '',
+                    'application' => $application,
+                    'status' => ApplicationStatusEnum::TOA_R2_ACC,
+                ];
+            } elseif ($application->status === 'documents_to_desk' && $application->review_phase === 'desk_review' && $application->doc_version == 2) {
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_CEO);
+
+                // Custom notification for TOA_R2_ACC
+                $notificationData = [
+                    'title' => 'Second Time Desk Review Completed for ' . $instituteName . ', ' . $programName . ' program.  Current Decision: ' . $current_decision,
+                    'message' => 'The desk review for the revised application submitted by ' . $instituteName . ', ' . $programName . ' has been completed. Please review the application for further action.',
+                    'module' => 'Applications',
+                    'type' => 'desk_review_completed',
+                    'icon' => 'fas fa-file-check',
+                    'urlBackend' => route('backend.applications.profileview', $application->id),
+                    'urlFrontend' => '',
+                    'application' => $application,
+                    'status' => ApplicationStatusEnum::DESK_CEO,
+                ];
+            } else {
+                // Default notification for other status changes
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_CEO);
+
+                $notificationData = [
+                    'title' => 'Desk Review Completed for ' . $instituteName . ', ' . $programName . ' programCurrent Decision: ' . $current_decision,
+                    'message' => 'The desk review for the application submitted by ' . $instituteName . ', ' . $programName . ' program has been completed. Please review the application for further action.',
+                    'module' => 'Applications',
+                    'type' => 'desk_review_completed',
+                    'icon' => 'fas fa-file-check',
+                    'urlBackend' => route('backend.applications.profileview', $application->id),
+                    'urlFrontend' => '',
+                    'application' => $application,
+                    'status' => ApplicationStatusEnum::DESK_CEO,
+                ];
+            }
+
+            // Notify users with roles 'super admin', 'ceo', or 'deputy director'
+            $rolesToNotify = ['ceo'];
+            $usersToNotify = User::whereHas('roles', function ($query) use ($rolesToNotify) {
+                $query->whereIn('name', $rolesToNotify);
+            })->get();
+
+            foreach ($usersToNotify as $user) {
+                $user->notify(new GenericNotification(...$notificationData));
+            }
+
+            // Commit the transaction
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Assessment marked as completed by Desk Head.',
+            ]);
+        } catch (\Exception $e) {
+            // Rollback the transaction in case of an error
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while processing the request.',
+            ], 500);
+        }
+    }
+
+    public function completeDeskReviewByManagers($application_id)
+    {
+        // Step 1: Validate the ID
+        $validator = Validator::make(['application_id' => $application_id], [
+            'application_id' => 'required|integer|exists:applications,id',
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Unauthorized attempt.', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->route('backend.dashboard');
+        }
+        // Find the application
+        $application = Application::find($application_id);
+        $instituteName = $application->institute->name; // Access the institute name
+        $programName = $application->program->name; // Access the program name
+
+        $current_decision = $application->desk_decision;
+
+
+        if ($application->desk_decision === "desk_revision_requested") {
+            $current_decision = 'Desk requested Revision';
+        } elseif ($application->desk_decision === "desk_reject") {
+            $current_decision = 'Desk reject the application';
+        } elseif ($application->desk_decision === "desk_review_accepted") {
+            $current_decision = 'Desk Accept the application';
+        }
+
+
+
+
+        // Get the authenticated user
+        $user = auth()->user();
+
+        // Determine the new status based on the user's role
+        $newStatus = null;
+        $notificationTitle = '';
+        $notificationMessage = '';
+        $rolesToNotify = [];
+
+        if ($user->hasRole('ceo')) {
+            // CEO can only finalize the desk review
+            $newStatus = ApplicationStatusEnum::DESK_DEP;
+
+            if ($application->doc_version == 2 && $application->review_phase === 'desk_review') {
+                $notificationTitle = 'Revised Desk Review Finalized by CEO for ' . $instituteName . ' - ' . $programName . ' Program | Decision: ' . $current_decision;
+                $notificationMessage = 'The revised desk review for the application has been finalized by the CEO for ' . $instituteName . ' - ' . $programName . ' program.';
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_DEP, "Revised Desk Review was Finalized by CEO and Forwarded to Deputy Director");
+            } elseif ($application->doc_version == 1 && $application->review_phase === 'desk_review') {
+                $notificationTitle = 'Desk Review Finalized by CEO for ' . $instituteName . ' - ' . $programName . ' Program | Decision: ' . $current_decision;
+                $notificationMessage = 'The desk review for the application has been finalized by the CEO for ' . $instituteName . ' - ' . $programName . ' program.';
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_DEP, "Desk Review was Finalized by CEO and Forwarded to Deputy Director");
+            } elseif ($application->doc_version == 3 && $application->review_phase === 'toa_first_round') {
+                $notificationTitle = 'ToA First Round Review Approved by CEO for ' . $instituteName . ' - ' . $programName . ' Program';
+                $notificationMessage = 'The first round ToA review for the application has been approved by the CEO for ' . $instituteName . ' - ' . $programName . ' program.';
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_DEP, "ToA First Round Review Approved by CEO and Forwarded to Deputy Director");
+            } elseif ($application->doc_version == 4 && $application->review_phase === 'toa_second_round') {
+                $notificationTitle = 'ToA Site Visit Review Approved by CEO for ' . $instituteName . ' - ' . $programName . ' Program';
+                $notificationMessage = 'The site visit ToA review for the application has been approved by the CEO for ' . $instituteName . ' - ' . $programName . ' program.';
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_DEP, "ToA Site Visit Review was Approved by CEO and Forwarded to Deputy Director");
+            }
+
+            // Notify Deputy Director and the user who created the application
+            $rolesToNotify = ['deputy director'];
+        } elseif ($user->hasRole('deputy director')) {
+            // Deputy Director has three options: Accept, Request Revisions, or Reject
+            $currentDecision = $application->desk_decision;
+
+            if ($currentDecision === 'desk_review_accepted' && $application->review_phase === 'desk_review') {
+                // Desk Review Accepted: Forward to First Round Team of Assessors
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DOCS_DESK, "Desk Review Accepted. The document is now forwarded to the Desk Head for First Round Team of Assessors assessment.");
+
+                $application->review_phase = 'toa_first_round';
+                $application->doc_version = 3;
+                $application->save();
+
+                $notificationTitle = 'Application Accepted and waiting desk head to form Team of Assessors (' . $instituteName . ' - ' . $programName . ')';
+                $notificationMessage = 'The application has been accepted by the Accreditation Desk and is waiting desk head to form first round team of assessors.';
+            } elseif ($currentDecision === 'desk_reject' && $application->review_phase === 'desk_review') {
+                // Desk Review Rejected
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_REJECT);
+
+                $notificationTitle = 'Application Rejected by Accreditation Desk (' . $instituteName . ' - ' . $programName . ')';
+                $notificationMessage = 'The application has been rejected by the Accreditation Desk. The applicant may consider reapplying in the future as a new application.';
+            } elseif ($currentDecision === 'desk_review_revision_requested' && $application->review_phase === 'desk_review') {
+                // Desk Review Revision Requested
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DESK_REV_REQ);
+                $application->doc_version = 2;
+                $application->save();
+
+                $notificationTitle = 'Revision Requested for Application (' . $instituteName . ' - ' . $programName . ')';
+                $dueDate = now()->addWeekdays(15)->format('Y-m-d');
+                $notificationMessage = 'The Accreditation Desk has requested major revisions to the application. Please submit the revised application within 15 working days (by ' . $dueDate . ').';
+            } elseif ($application->status === 'desk_review_to_deputy_director' && $application->review_phase === 'toa_first_round') {
+                // Forward to Second Round Team of Assessors
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DOCS_DESK, "ToA First Round Completed. The document is now forwarded to the Desk Head for the Site Visit Review.");
+
+                $application->review_phase = 'toa_second_round';
+                $application->doc_version = 4;
+                $application->save();
+
+                $notificationTitle = 'Second Round Team of Assessors Review Initiated (' . $instituteName . ' - ' . $programName . ')';
+                $notificationMessage = 'The application has been forwarded to the Second Round Team of Assessors for further evaluation.';
+            } elseif ($application->status === 'desk_review_to_deputy_director' && $application->review_phase === 'toa_second_round') {
+                // Forward to Second Round Team of Assessors
+
+                ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::DOCS_COUNCIL);
+
+                $application->review_phase = 'documents_to_council';
+                $application->doc_version = 5;
+                $application->save();
+
+                $notificationTitle = 'Site Visit Review Completed Awaiting Council Decision (' . $instituteName . ' - ' . $programName . ')';
+                $notificationMessage = 'The site visit for ' . $instituteName . ' ' . $programName . ' has been successfully completed and is now awaiting final review and decision by the Council Members.';
+            } elseif ($application->review_phase === 'desk_reviewxxx') {
+                // Desk Review Revision Requested (Fallback)
+                $newStatus = ApplicationStatusEnum::DESK_REV_REQ;
+                $notificationTitle = 'Revision Requested for Application (' . $instituteName . ' - ' . $programName . ')';
+
+                // Calculate 15 working days from today
+                $dueDate = now()->addWeekdays(15)->format('Y-m-d');
+                $notificationMessage = 'The Accreditation Desk has requested major revisions to the application. Please submit the revised application within 15 working days (by ' . $dueDate . ').';
+            }
+
+            // Notify CEO and the user who created the application
+            if ($application->review_phase === 'documents_to_council') {
+                $rolesToNotify = ['ceo', 'deputy director'];
+            } else if ($application->review_phase === 'desk_review_to_deputy_director') {
+                $rolesToNotify = ['council member'];
+            } else {
+                $rolesToNotify = ['ceo'];
+            }
+
+            // Notify Desk Head
+            $desk = $application->desk;
+            $deskHead = $desk->deskHead;
+            if ($deskHead) {
+                $deskHead->notify(new GenericNotification(
+                    $notificationTitle,
+                    $notificationMessage,
+                    'Applications',
+                    'review_submitted',
+                    'fas fa-check-circle',
+                    route('backend.applications.profileview', $application_id)
+                ));
+            }
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to perform this action.',
+            ], 403);
+        }
+
+        // Record the status change in ApplicationStatusHistory
+        //ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::TOA_R2_DESK);
+
+        // Notify users with the specified roles and the user who created the application
+
+
+        $usersToNotify = User::whereHas('roles', function ($query) use ($rolesToNotify) {
+            $query->whereIn('name', $rolesToNotify);
+        })->get();
+
+        // Add the user who created the application to the notification list
+        if ($user->hasRole('deputy director')) {
+            //ApplicationStatusHistory::recordStatusChange($application, ApplicationStatusEnum::TOA_R2_DESK);
+
+            $createdByUser = User::find($application->created_by);
+            if ($createdByUser) {
+                $usersToNotify->push($createdByUser);
+            }
+        }
+
+        $notificationData = [
+            'title' => $notificationTitle,
+            'message' => $notificationMessage,
+            'module' => 'Applications',
+            'type' => 'desk_review_completed',
+            'icon' => 'fas fa-file-check',
+            'urlBackend' => route('backend.applications.profileview', $application->id),
+            'urlFrontend' => '',
+            'application' => $application,
+            'status' => $newStatus,
+        ];
+
+        foreach ($usersToNotify as $user) {
+            $user->notify(new GenericNotification(...$notificationData));
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Desk review marked as completed.',
+        ]);
+    }
+    public function allowResubmission($applicationId, $assignmentId)
+{
+    try {
+        // Validate IDs
+        $validator = Validator::make([
+            'application_id' => $applicationId,
+            'assignment_id' => $assignmentId
+        ], [
+            'application_id' => 'required|integer|exists:applications,id',
+            'assignment_id' => 'required|integer|exists:desk_review_assignment,id'
+        ]);
+
+        if ($validator->fails()) {
+            Alert::toast('Invalid request parameters', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        $application = Application::findOrFail($applicationId);
+        $assignment = DeskReviewAssignment::findOrFail($assignmentId);
+
+        // Verify application is in correct status
+        if ($application->status !='documents_to_desk') {
+            Alert::toast('Action only allowed when application status is "Documents to Desk"', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        // Verify assignment belongs to current review phase
+        if ($assignment->review_phase !== $application->review_phase) {
+            Alert::toast('This assignment does not belong to current review phase', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        // Verify assignment is completed
+        if ($assignment->status !== 'Completed') {
+            Alert::toast('Only completed assignments can be returned for resubmission', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return redirect()->back();
+        }
+
+        // Determine new status
+        $newStatus = $application->doc_version == 2 ? 'Revision' : 'Pending';
+
+        // Update assignment
+        $assignment->update(['status' => $newStatus]);
+
+        Alert::toast("Status changed to $newStatus. Assessor can now modify and resubmit.", 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect()->back();
+
+    } catch (\Exception $e) {
+        Alert::toast('Failed to update assignment status', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return redirect()->back();
+    }
+}
+    //end only by desk head
+}
