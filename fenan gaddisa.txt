@@ -641,7 +641,7 @@
 
                        <!-- Status History Timeline -->
                        <!-- Application Timeline -->
-                       <h3 class="timeline-heading">ðŸ“Œ Application Timeline</h3>
+                       <h3 class="timeline-heading">Application Timeline</h3>
 
                        <!-- Status History Timeline -->
                        <div class="timeline">
@@ -1025,3 +1025,4 @@
     }
 </style>
            @endpush
+
