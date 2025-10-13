@@ -1,101 +1,154 @@
-@extends('backend.layouts.app')
-
-@section('title')
-    {{ __($module_action) }} {{ __($module_title) }}
-@endsection
-
-@section('breadcrumbs')
-    <x-backend.breadcrumbs>
-        <x-backend.breadcrumb-item type="active" icon='{{ $module_icon }}'>{{ __($module_title) }}</x-backend.breadcrumb-item>
-    </x-backend.breadcrumbs>
-@endsection
-
-@section('content')
-    <div class="card">
-        <div class="card-body">
-            <x-backend.section-header>
-                <i class="{{ $module_icon }}"></i> {{ __($module_title) }} <small class="text-muted">{{ __($module_action) }}</small>
-
-                <x-slot name="subtitle">
-                    @lang(':module_name Management Dashboard', ['module_name' => Str::title($module_name)])
-                </x-slot>
-                <x-slot name="toolbar">
-                    @can('add_' . $module_name)
-                        <x-buttons.create route='{{ route("backend.$module_name.create") }}' title="{{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}" />
-                    @endcan
-
-                    @can('restore_' . $module_name)
-                        <div class="btn-group">
-                            <button class="btn btn-secondary dropdown-toggle" type="button" data-coreui-toggle="dropdown" aria-expanded="false">
-                                <i class="fas fa-cog"></i>
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li>
-                                    <a class="dropdown-item" href='{{ route("backend.$module_name.trashed") }}'>
-                                        <i class="fas fa-eye-slash"></i> @lang('View trash')
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    @endcan
-                </x-slot>
-            </x-backend.section-header>
-
-            <div class="row mt-4">
-                <div class="col">
-                    <table id="datatable" class="table table-bordered table-hover table-responsive-sm">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>@lang('program::text.program_name')</th>
-                                <th>@lang('program::text.program_level')</th>
-                                <th>@lang('program::text.institute_type')</th>
-                                <th>Accreditation Type</th>
-                                <th>@lang('program::text.status')</th>
-                                <th>@lang('program::text.updated_at')</th>
-                                <th class="text-end">@lang('program::text.action')</th>
-                            </tr>
-                        </thead>
-                    </table>
-                </div>
-            </div>
-        </div>
-        <div class="card-footer">
-            <div class="row">
-                <div class="col-7">
-                    <div class="float-left"></div>
-                </div>
-                <div class="col-5">
-                    <div class="float-end"></div>
-                </div>
+<div class="row g-4">
+    <!-- Department Name -->
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-body">
+                <?php
+                $field_name = 'name';
+                $field_label = 'Department Name';
+                $field_placeholder = 'Enter department name';
+                $required = 'required';
+                ?>
+                <label for="{{ $field_name }}" class="form-label fw-semibold">
+                    <i class="fas fa-building me-1 text-primary"></i> {{ $field_label }}
+                </label>
+                {!! field_required($required) !!}
+                {{ html()->text($field_name)
+                    ->placeholder($field_placeholder)
+                    ->class('form-control form-control-sm')
+                    ->attributes(["$required"]) }}
+                <small class="form-text text-muted">
+                    Specify the department responsible for entering DCTs (<em>Data Collection Tools</em>).
+                </small>
             </div>
         </div>
     </div>
-@endsection
 
-@push('after-styles')
-    <link rel="stylesheet" href="{{ asset('vendor/datatable/datatables.min.css') }}">
-@endpush
+    <!-- Program Level -->
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-body">
+                <?php
+                $field_name = 'program_level';
+                $field_label = 'Program Level';
+                $field_placeholder = '-- Select Program Level --';
+                $required = 'required';
+                $select_options = \App\Enums\ProgramProgramLevelEnum::asSelectArray();
+                ?>
+                <label for="{{ $field_name }}" class="form-label fw-semibold">
+                    <i class="fas fa-layer-group me-1 text-success"></i> {{ $field_label }}
+                </label>
+                {!! field_required($required) !!}
+                {{ html()->select($field_name, $select_options)
+                    ->placeholder($field_placeholder)
+                    ->class('form-control form-control-sm select2')
+                    ->attributes(["$required"]) }}
+                <small class="form-text text-muted">
+                    Choose the academic level — e.g., <strong>Level 1</strong>, <strong>Undergraduate</strong>, or <strong>PhD</strong>.
+                </small>
+            </div>
+        </div>
+    </div>
 
-@push('after-scripts')
-    <script type="module" src="{{ asset('vendor/datatable/datatables.min.js') }}"></script>
+    <!-- Institution Type -->
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-body">
+                <?php
+                $field_name = 'institute_type';
+                $field_label = 'Institution Type';
+                $field_placeholder = '-- Select Institution Type --';
+                $required = 'required';
+                $select_options = [
+                    'HEI' => 'HEI (Higher Education Institution)',
+                    'TVET' => 'TVET (Technical and Vocational Education and Training)'
+                ];
+                ?>
+                <label for="{{ $field_name }}" class="form-label fw-semibold">
+                    <i class="fas fa-university me-1 text-info"></i> {{ $field_label }}
+                </label>
+                {!! field_required($required) !!}
+                {{ html()->select($field_name, $select_options)
+                    ->placeholder($field_placeholder)
+                    ->class('form-control form-control-sm select2')
+                    ->attributes(["$required"]) }}
+                <small class="form-text text-muted">
+                    <strong>HEI</strong> – Universities & Colleges |
+                    <strong>TVET</strong> – Technical & Vocational Institutions
+                </small>
+            </div>
+        </div>
+    </div>
 
-    <script type="module">
-        $('#datatable').DataTable({
-            processing: true,
-            serverSide: true,
-            responsive: true,
-            ajax: '{{ route("backend.$module_name.index_data") }}',
-            columns: [
-                { data: 'id', name: 'id' },
-                { data: 'name', name: 'name' },
-                { data: 'program_level', name: 'program_level' },
-                { data: 'institute_type', name: 'institute_type' },
-                { data: 'accreditation_type', name: 'accreditation_type' },
-                { data: 'status', name: 'status' },
-                { data: 'updated_at', name: 'updated_at' },
-                { data: 'action', name: 'action', orderable: false, searchable: false }
-            ]
-        });
-    </script>
-@endpush
+    <!-- Accreditation Scope -->
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-body">
+                <?php
+                $field_name = 'accreditation_type';
+                $field_label = 'Accreditation Scope';
+                $field_placeholder = '-- Select Accreditation Scope --';
+                $required = 'required';
+                $select_options = [
+                    'Program Level' => 'Program Level Accreditation',
+                    'Institutional Accreditation' => 'Institutional Accreditation'
+                ];
+                ?>
+                <label for="{{ $field_name }}" class="form-label fw-semibold">
+                    <i class="fas fa-certificate me-1 text-warning"></i> {{ $field_label }}
+                </label>
+                {!! field_required($required) !!}
+                {{ html()->select($field_name, $select_options, 'Program Level')
+                    ->placeholder($field_placeholder)
+                    ->class('form-control form-control-sm select2')
+                    ->attributes(["$required"]) }}
+                <small class="form-text text-muted">
+                    <strong>Program Level:</strong> Focused on specific programs or departments.<br>
+                    <strong>Institutional:</strong> Covers the entire campus (institution-wide standards & governance).
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Program Status -->
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-body">
+                <?php
+                $field_name = 'status';
+                $field_label = 'Program Status';
+                $field_placeholder = '-- Select Program Status --';
+                $required = 'required';
+                $select_options = \App\Enums\ProgramStatusEnum::asSelectArray();
+                ?>
+                <label for="{{ $field_name }}" class="form-label fw-semibold">
+                    <i class="fas fa-toggle-on me-1 text-danger"></i> {{ $field_label }}
+                </label>
+                {!! field_required($required) !!}
+                {{ html()->select($field_name, $select_options)
+                    ->placeholder($field_placeholder)
+                    ->class('form-control form-control-sm select2')
+                    ->attributes(["$required"]) }}
+                <small class="form-text text-muted">
+                    Reflects the program’s operational state: <em>Active</em>, <em>Inactive</em>, or <em>Under Review</em>.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Accreditation Info -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="alert alert-info border-0 rounded-3 shadow-sm">
+            <h6 class="alert-heading mb-2">
+                <i class="fas fa-info-circle me-1"></i> Understanding Accreditation Scopes
+            </h6>
+            <hr class="my-2">
+            <p class="mb-1"><strong>Program Level Accreditation:</strong> Evaluates the quality and compliance of specific programs, ensuring alignment with professional standards and learning outcomes.</p>
+            <p class="mb-0"><strong>Institutional Accreditation:</strong> A comprehensive review of the entire campus — covering management, infrastructure, financial integrity, and governance policies.</p>
+        </div>
+    </div>
+</div>
+
+<x-library.select2 />
