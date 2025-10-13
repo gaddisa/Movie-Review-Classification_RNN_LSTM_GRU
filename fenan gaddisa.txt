@@ -1,362 +1,158 @@
 <?php
 
-namespace App\Http\Controllers\Backend;
+namespace App\Livewire\Attachement;
 
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Gate;
-use App\Authorizable;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use Yajra\DataTables\DataTables;
-use Modules\Program\Models\Program;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use RealRashid\SweetAlert\Facades\Alert;
+use LivewireUI\Modal\ModalComponent;
+use Modules\Attachement\Models\Attachement;
+use Modules\DCT\Models\DCT;
 use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Backend\BackendBaseController;
+use RealRashid\SweetAlert\Facades\Alert; // Add this
 
-class QuestionsController extends BackendBaseController
+class AttachementModal extends ModalComponent
 {
-    use Authorizable;
+    public $attachementId;
+    public $isEdit = false;
+    public $dctId; // Add this property
 
-    public $module_title;
-    public $module_name;
-    public $module_path;
-    public $module_icon;
-    public $module_model;
+    // Form fields
+    public $name;
+    public $attachement_type = 'table';
+    public $status = 'active';
+    public $table_html;
+    public $dct_id;
+    public $is_required = 'Optional';
 
-    public function __construct()
+    protected function rules()
     {
-        // Page Title
-        $this->module_title = 'Indicators Questions Management';
-        $this->module_title = 'Questions';
-        $this->module_name = 'questions';
-        $this->module_path = 'backend';
-        $this->module_icon = 'fa-solid fa-folder-tree';
-        $this->module_model = "App\\Models\\Question";
+        return [
+            'name' => 'required|string|max:1255',
+            'attachement_type' => 'required|string',
+            'status' => 'required|string',
+            'table_html' => 'nullable|string',
+            'is_required' => 'required|in:Mandatory,Optional',
+            'dct_id' => 'required|exists:dcts,id',
+        ];
+    }
+
+    public function mount($siteId = null, $attachementId = null)
+    {
+        // Set DCT ID from the passed parameter
+        $this->dct_id = $siteId ?? null;
+        $this->dctId = $siteId ?? null;
+
+        if ($attachementId) {
+            $this->isEdit = true;
+            $this->loadAttachement($attachementId);
+        }
+    }
+
+    public function loadAttachement($attachementId)
+    {
+        try {
+            $attachement = Attachement::findOrFail($attachementId);
+            $this->attachementId = $attachementId;
+            $this->name = $attachement->name;
+            $this->attachement_type = $attachement->attachement_type;
+            $this->status = $attachement->status;
+            $this->is_required = $attachement->is_required;
+            $this->table_html = $attachement->table_html;
+            $this->dct_id = $attachement->dct_id;
+        } catch (\Exception $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to load attachement data',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            $this->closeModal();
+        }
+    }
+
+    public function saveAttachment()
+    {
+        $this->validate();
+
+        // ADD OWNERSHIP CHECK HERE
+        if (!$this->canCreateAttachment($this->dct_id, auth()->id())) {
+            $this->closeModal();
+            return;
+        }
+
+        try {
+            $data = [
+                'name' => $this->name,
+                'attachement_type' => $this->attachement_type,
+                'status' => $this->status,
+                'is_required' => $this->is_required,
+                'table_html' => $this->table_html,
+                'dct_id' => $this->dct_id,
+            ];
+
+            if ($this->isEdit) {
+                $attachement = Attachement::findOrFail($this->attachementId);
+                $attachement->update($data);
+            } else {
+                Attachement::create($data);
+            }
+
+            $this->dispatch('refreshAttachements');
+            $this->closeModal();
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => 'Attachement saved successfully'
+            ]);
+        } catch (\Exception $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to save attachement',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+        }
     }
 
     /**
-     * Check if user can create question for the given indicator
+     * Check if user can create attachment for the given DCT
      */
-    protected function canCreateQuestion($indicatorId, $userId)
+    protected function canCreateAttachment($dctId, $userId)
     {
-        $indicator = \App\Models\Indicator::find($indicatorId);
+        $dct = DCT::find($dctId);
         
-        if (!$indicator) {
-            Alert::toast('Indicator not found!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
+        if (!$dct) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'DCT not found!',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
             return false;
         }
 
-        if ($indicator->created_by != $userId) {
-            Alert::toast('You can only add questions to indicators that you created!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
+        if ($dct->created_by != $userId) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You can only add attachments to DCTs that you created!',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
             return false;
         }
 
         return true;
     }
 
-    public function index(Request $request)
+    public function getDctsProperty()
     {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'List';
-
-        $$module_name = $module_model::paginate(15);
-        $id = $request->query('id');
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.index_datatable",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
-        );
+        return DCT::orderBy('name')->get(['id', 'name']);
     }
 
-    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
+    public function render()
     {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'List';
-        $page_heading = label_case($module_title);
-        $title = $page_heading . ' ' . label_case($module_action);
-
-        // Use provided columns or default to a basic set
-        $columns = $columns ?? ['id', 'question_text', 'updated_at'];
-
-        // Base query
-        $data = $module_model::select($columns)->orderBy('id', 'asc');
-
-        // Retrieve `id` from request if not passed in $additionalData
-        $id = $additionalData['id'] ?? request()->query('id');
-
-        // Filter by indicator_id if an ID is provided
-        if ($id) {
-            $data = $data->where('indicator_id', $id);
-        }
-
-        return Datatables::of($data)
-            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
-                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
-            })
-            ->editColumn('question_text', function ($data) {
-                return '<strong>' . $data->question_text . '</strong>';
-            })
-            ->editColumn('updated_at', function ($data) {
-                if ($data->updated_at) {
-                    $diff = Carbon::now()->diffInHours($data->updated_at);
-
-                    if ($diff < 25) {
-                        return $data->updated_at->diffForHumans();
-                    }
-
-                    return $data->updated_at->isoFormat('llll');
-                }
-
-                return 'No Date Available';
-            })
-            ->rawColumns(['question_text', 'action'])
-            ->orderColumns(['id'], '-:column $1')
-            ->make(true);
+        return view('livewire.attachement.attachement-modal');
     }
 
-    public function create(array $additionalData = [])
+    public static function modalMaxWidth(): string
     {
-        $indicator_id = request()->get('id');
-
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Create';
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'indicator_id')
-        );
-    }
-
-    public function store(Request $request)
-    {
-        // Get the indicator_id from the request
-        $indicator_id = $request->get('indicator_id');
-
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Store';
-
-        // CHECK OWNERSHIP FIRST
-        if (!$this->canCreateQuestion($indicator_id, auth()->id())) {
-            return redirect()->route('backend.dcts.index');
-        }
-
-        // Custom validation for questions
-        $validator = Validator::make($request->all(), [
-            'question_text' => [
-                'required',
-                'string',
-                'max:1000',
-                Rule::unique('questions')->where(function ($query) use ($indicator_id) {
-                    return $query->where('indicator_id', $indicator_id);
-                })
-            ],
-        ], [
-            'question_text.unique' => 'A question with this text already exists for the selected indicator.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        try {
-            // Add the indicator_id to the validated data before creating the record
-            $data = $validator->validated();
-            $data['indicator_id'] = $indicator_id;
-
-            // Create the new record
-            $$module_name_singular = $module_model::create($data);
-
-            Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect to index_datatable with the indicator_id to filter the records
-            return redirect()->route("backend.{$module_name}.index", ['id' => $indicator_id]);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error("Error in store: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to create record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create record.']);
-        }
-    }
-
-    public function edit($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Edit';
-
-        $$module_name_singular = $module_model::findOrFail($id);
-
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-        return view(
-            "{$module_path}.{$module_name}.edit",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
-        );
-    }
-
-    public function update(Request $request, $id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Update';
-
-        // First, find the record to get the existing indicator_id
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get indicator_id from the existing record
-        $indicator_id = $$module_name_singular->indicator_id;
-
-        // CHECK OWNERSHIP BEFORE UPDATE
-        if (!$this->canCreateQuestion($indicator_id, auth()->id())) {
-            return redirect()->route('backend.dcts.index');
-        }
-
-        // Custom validation for questions
-        $validator = Validator::make($request->all(), [
-            'question_text' => [
-                'required',
-                'string',
-                'max:1000',
-                Rule::unique('questions')->where(function ($query) use ($indicator_id) {
-                    return $query->where('indicator_id', $indicator_id);
-                })->ignore($id)
-            ],
-        ], [
-            'question_text.unique' => 'A question with this text already exists for the selected indicator.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        try {
-            // Update the record with validated data
-            $$module_name_singular->update($validator->validated());
-
-            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error("Error in update: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to update record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
-        }
-    }
-
-    public function destroy($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'destroy';
-
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get the indicator_id BEFORE deleting so we can redirect properly
-        $indicator_id = $$module_name_singular->indicator_id;
-
-        // CHECK OWNERSHIP BEFORE DELETE
-        if (!$this->canCreateQuestion($indicator_id, auth()->id())) {
-            return redirect()->route('backend.dcts.index');
-        }
-
-        try {
-            $$module_name_singular->delete();
-
-            Alert::toast(Str::singular($module_title) . ' Deleted Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect to index_datatable with the indicator_id to filter the records
-            return redirect()->route("backend.{$module_name}.index", ['id' => $indicator_id]);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error("Error in destroy: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to delete record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withErrors(['error' => 'Failed to delete record.']);
-        }
+        return '2xl';
     }
 }
