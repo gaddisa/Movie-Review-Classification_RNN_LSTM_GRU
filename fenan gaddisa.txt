@@ -2,111 +2,88 @@
 
 namespace App\Livewire\Attachement;
 
-use LivewireUI\Modal\ModalComponent;
+use Livewire\Component;
+use Livewire\WithPagination;
 use Modules\Attachement\Models\Attachement;
 use Modules\DCT\Models\DCT;
-use Illuminate\Validation\Rule;
-use RealRashid\SweetAlert\Facades\Alert; // Add this
+use RealRashid\SweetAlert\Facades\Alert;
 
-class AttachementModal extends ModalComponent
+class Attachements extends Component
 {
-    public $attachementId;
-    public $isEdit = false;
-    public $dctId; // Add this property
+    use WithPagination;
 
-    // Form fields
-    public $name;
-    public $attachement_type = 'table';
-    public $status = 'active';
-    public $table_html;
-    public $dct_id;
-    public $is_required = 'Optional';
+    public $searchTerm = '';
+    public $statusFilter = '';
+    public $typeFilter = '';
+    public $dctFilter = '';
+    public $sortField = 'name';
+    public $sortDirection = 'asc';
+    public $perPage = 50;
 
-    protected function rules()
+    protected $listeners = ['refreshAttachements' => '$refresh'];
+
+    public function sortBy($field)
     {
-        return [
-            'name' => 'required|string|max:1255',
-            'attachement_type' => 'required|string',
-            'status' => 'required|string',
-            'table_html' => 'nullable|string',
-            'is_required' => 'required|in:Mandatory,Optional',
-            'dct_id' => 'required|exists:dcts,id',
-        ];
-    }
-
-    public function mount($siteId = null, $attachementId = null)
-    {
-        // Set DCT ID from the passed parameter
-        $this->dct_id = $siteId ?? null;
-        $this->dctId = $siteId ?? null;
-
-        if ($attachementId) {
-            $this->isEdit = true;
-            $this->loadAttachement($attachementId);
+        if ($this->sortField === $field) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortDirection = 'asc';
         }
+        $this->sortField = $field;
     }
 
-    public function loadAttachement($attachementId)
+    public function resetFilters()
     {
-        try {
-            $attachement = Attachement::findOrFail($attachementId);
-            $this->attachementId = $attachementId;
-            $this->name = $attachement->name;
-            $this->attachement_type = $attachement->attachement_type;
-            $this->status = $attachement->status;
-            $this->is_required = $attachement->is_required;
-            $this->table_html = $attachement->table_html;
-            $this->dct_id = $attachement->dct_id;
-        } catch (\Exception $e) {
+        $this->reset(['statusFilter', 'typeFilter', 'dctFilter', 'searchTerm']);
+        $this->resetPage();
+    }
+
+    public function openAddModal()
+    {
+        $this->dispatch('openModal', 'attachement.attachement-modal');
+    }
+
+    public function openEditModal($attachementId)
+    {
+        $attachement = Attachement::find($attachementId);
+        
+        // CHECK OWNERSHIP BEFORE EDITING
+        if ($attachement && !$this->canCreateAttachment($attachement->dct_id, auth()->id())) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Failed to load attachement data',
+                'message' => 'You can only edit attachments for DCTs that you created!',
                 'position' => 'top-end',
                 'duration' => 5000
             ]);
-            $this->closeModal();
-        }
-    }
-
-    public function saveAttachment()
-    {
-        $this->validate();
-
-        // ADD OWNERSHIP CHECK HERE
-        if (!$this->canCreateAttachment($this->dct_id, auth()->id())) {
-            $this->closeModal();
             return;
         }
 
-        try {
-            $data = [
-                'name' => $this->name,
-                'attachement_type' => $this->attachement_type,
-                'status' => $this->status,
-                'is_required' => $this->is_required,
-                'table_html' => $this->table_html,
-                'dct_id' => $this->dct_id,
-            ];
+        $this->dispatch('openModal', 'attachement.attachement-modal', [
+            'attachementId' => $attachementId
+        ]);
+    }
 
-            if ($this->isEdit) {
-                $attachement = Attachement::findOrFail($this->attachementId);
-                $attachement->update($data);
-            } else {
-                Attachement::create($data);
+    public function deleteAttachement($attachementId)
+    {
+        $attachement = Attachement::find($attachementId);
+        
+        if ($attachement) {
+            // CHECK OWNERSHIP BEFORE DELETING
+            if (!$this->canCreateAttachment($attachement->dct_id, auth()->id())) {
+                $this->dispatch('showToast', [
+                    'type' => 'error',
+                    'message' => 'You can only delete attachments for DCTs that you created!',
+                    'position' => 'top-end',
+                    'duration' => 5000
+                ]);
+                return;
             }
 
+            $attachement->delete();
             $this->dispatch('refreshAttachements');
-            $this->closeModal();
             $this->dispatch('showToast', [
                 'type' => 'success',
-                'message' => 'Attachement saved successfully'
-            ]);
-        } catch (\Exception $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to save attachement',
-                'position' => 'top-end',
-                'duration' => 5000
+                'message' => 'Attachement deleted successfully'
             ]);
         }
     }
@@ -119,26 +96,10 @@ class AttachementModal extends ModalComponent
         $dct = DCT::find($dctId);
         
         if (!$dct) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'DCT not found!',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
             return false;
         }
 
-        if ($dct->created_by != $userId) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You can only add attachments to DCTs that you created!',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            return false;
-        }
-
-        return true;
+        return $dct->created_by == $userId;
     }
 
     public function getDctsProperty()
@@ -148,11 +109,40 @@ class AttachementModal extends ModalComponent
 
     public function render()
     {
-        return view('livewire.attachement.attachement-modal');
-    }
+        // Add ownership filter to only show attachments for DCTs created by current user
+        $attachements = Attachement::query()
+            ->with(['dct'])
+            ->when($this->searchTerm, function ($query) {
+                return $query->where('name', 'like', '%' . $this->searchTerm . '%');
+            })
+            ->when($this->statusFilter, function ($query) {
+                return $query->where('status', $this->statusFilter);
+            })
+            ->when($this->typeFilter, function ($query) {
+                return $query->where('attachement_type', $this->typeFilter);
+            })
+            ->when($this->dctFilter, function ($query) {
+                return $query->where('dct_id', $this->dctFilter);
+            })
+            // Add ownership filter - only show attachments for DCTs created by current user
+            ->whereHas('dct', function ($query) {
+                $query->where('created_by', auth()->id());
+            })
+            // Exclude attachments starting with "Others"
+            ->where('name', 'NOT LIKE', 'Others%')
+            ->orderBy($this->sortField, $this->sortDirection)
+            ->paginate($this->perPage);
 
-    public static function modalMaxWidth(): string
-    {
-        return '2xl';
+        return view('livewire.attachement.attachements', [
+            'attachements' => $attachements,
+            'statusOptions' => ['active' => 'Active', 'inactive' => 'Inactive'],
+            'typeOptions' => [
+                'table' => 'Table',
+                'document' => 'Document',
+                'image' => 'Image',
+                'other' => 'Other'
+            ],
+            'dcts' => $this->dcts
+        ]);
     }
 }
