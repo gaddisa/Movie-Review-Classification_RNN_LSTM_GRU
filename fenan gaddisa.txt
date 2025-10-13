@@ -28,9 +28,8 @@
 
             <div class="row mt-4">
                 <div class="col">
-                    <form method="POST" action="{{ route('backend.dcts.update', $dct->id) }}">
+                    <form method="POST" action="{{ route('backend.dcts.store') }}">
                         @csrf
-                        @method('PUT')
 
                         <div class="row">
                             <div class="col-12 mb-3">
@@ -39,13 +38,14 @@
                                     <select name="program_id" id="program_id" class="form-control" required>
                                         <option value="">-- Select a Program --</option>
                                         @foreach($programs as $program)
-                                            <option value="{{ $program->id }}" {{ $dct->program_id == $program->id ? 'selected' : '' }}>
+                                            <option value="{{ $program->id }}" {{ old('program_id') == $program->id ? 'selected' : '' }}>
                                                 {{ $program->name }} - {{ $program->description }}
                                             </option>
                                         @endforeach
                                     </select>
                                     <small class="form-text text-muted">
-                                        Change the program association. The DCT name will be updated automatically.
+                                        Select the program for which you want to create a DCT (Data Collection Tool). 
+                                        The DCT name will be automatically generated based on the program description.
                                     </small>
                                     @error('program_id')
                                         <div class="text-danger">{{ $message }}</div>
@@ -55,13 +55,12 @@
                         </div>
 
                         <div class="row">
-                            <div class="col-12 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label">Current DCT Name</label>
-                                    <input type="text" class="form-control" value="{{ $dct->name }}" readonly>
-                                    <small class="form-text text-muted">
-                                        This is automatically generated and cannot be edited directly.
-                                    </small>
+                            <div class="col-12">
+                                <div class="alert alert-info">
+                                    <h6 class="alert-heading"><i class="fas fa-info-circle"></i> How DCTs Work</h6>
+                                    <hr>
+                                    <p class="mb-1"><strong>DCT (Data Collection Tool)</strong> will be automatically created with the format: <code>DCT-{program-description}</code></p>
+                                    <p class="mb-0">Once created, you can add standards, substandards, indicators, and questions to organize your accreditation documentation.</p>
                                 </div>
                             </div>
                         </div>
@@ -69,8 +68,8 @@
                         <div class="row">
                             <div class="col-12">
                                 <div class="form-group">
-                                    <x-buttons.create title="Update DCT" class="float-end">
-                                        {{ __('Update') }} {{ ucwords(Str::singular($module_name)) }}
+                                    <x-buttons.create title="Create DCT" class="float-end">
+                                        {{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}
                                     </x-buttons.create>
                                     <x-buttons.cancel />
                                 </div>
