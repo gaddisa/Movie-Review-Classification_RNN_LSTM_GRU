@@ -1,89 +1,101 @@
-<?php
+@extends('backend.layouts.app')
 
-namespace Modules\Program\Http\Controllers\Backend;
+@section('title')
+    {{ __($module_action) }} {{ __($module_title) }}
+@endsection
 
-use App\Authorizable;
-use Illuminate\Support\Str;
-use RealRashid\SweetAlert\Facades\Alert;
-use App\Http\Controllers\Backend\BackendBaseController;
-use Illuminate\Http\Request;
+@section('breadcrumbs')
+    <x-backend.breadcrumbs>
+        <x-backend.breadcrumb-item type="active" icon='{{ $module_icon }}'>{{ __($module_title) }}</x-backend.breadcrumb-item>
+    </x-backend.breadcrumbs>
+@endsection
 
-class ProgramsController extends BackendBaseController
-{
-    use Authorizable;
+@section('content')
+    <div class="card">
+        <div class="card-body">
+            <x-backend.section-header>
+                <i class="{{ $module_icon }}"></i> {{ __($module_title) }} <small class="text-muted">{{ __($module_action) }}</small>
 
-    public function __construct()
-    {
-        // Page Title
-        $this->module_title = 'Programs';
+                <x-slot name="subtitle">
+                    @lang(':module_name Management Dashboard', ['module_name' => Str::title($module_name)])
+                </x-slot>
+                <x-slot name="toolbar">
+                    @can('add_' . $module_name)
+                        <x-buttons.create route='{{ route("backend.$module_name.create") }}' title="{{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}" />
+                    @endcan
 
-        // module name
-        $this->module_name = 'programs';
+                    @can('restore_' . $module_name)
+                        <div class="btn-group">
+                            <button class="btn btn-secondary dropdown-toggle" type="button" data-coreui-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-cog"></i>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item" href='{{ route("backend.$module_name.trashed") }}'>
+                                        <i class="fas fa-eye-slash"></i> @lang('View trash')
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    @endcan
+                </x-slot>
+            </x-backend.section-header>
 
-        // directory path of the module
-        $this->module_path = 'program::backend';
+            <div class="row mt-4">
+                <div class="col">
+                    <table id="datatable" class="table table-bordered table-hover table-responsive-sm">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>@lang('program::text.program_name')</th>
+                                <th>@lang('program::text.program_level')</th>
+                                <th>@lang('program::text.institute_type')</th>
+                                <th>Accreditation Type</th>
+                                <th>@lang('program::text.status')</th>
+                                <th>@lang('program::text.updated_at')</th>
+                                <th class="text-end">@lang('program::text.action')</th>
+                            </tr>
+                        </thead>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <div class="row">
+                <div class="col-7">
+                    <div class="float-left"></div>
+                </div>
+                <div class="col-5">
+                    <div class="float-end"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+@endsection
 
-        // module icon
-        $this->module_icon = 'fa-regular fa-sun';
+@push('after-styles')
+    <link rel="stylesheet" href="{{ asset('vendor/datatable/datatables.min.css') }}">
+@endpush
 
-        // module model name, path
-        $this->module_model = "Modules\Program\Models\Program";
-    }
+@push('after-scripts')
+    <script type="module" src="{{ asset('vendor/datatable/datatables.min.js') }}"></script>
 
-    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
-    {
-        // Specify custom columns for the Programs module
-        $columns = $columns ?? ['id', 'name', 'program_level', 'institute_type', 'accreditation_type', 'status', 'updated_at'];
-
-        // Call the parent method with the specified columns and additional buttons
-        return parent::index_data($columns, $additionalButtons);
-    }
-
-    public function store(Request $request)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Store';
-
-        // Validate the request
-        $validatedData = $request->validate([
-            'name' => 'required|string|max:255',
-            'program_level' => 'required|string|max:255',
-            'institute_type' => 'required|string|max:255',
-            'accreditation_type' => 'required|string|in:Program Level,Institutional Accreditation',
-            'status' => 'required|string',
-        ]);
-
-        // Create the description column value
-        $description = sprintf(
-            '%s %s Program (%s) - %s',
-            $validatedData['name'],
-            $validatedData['program_level'],
-            $validatedData['institute_type'],
-            $validatedData['accreditation_type']
-        );
-
-        // Merge the description into the validated data
-        $validatedData['description'] = $description;
-
-        // Save the program
-        $$module_name_singular = $module_model::create($validatedData);
-
-        // Notify the user
-        Alert::toast(Str::singular($module_title) . "' Added Successfully", 'success')
-            ->position('top-end')
-            ->autoClose(5000)
-            ->timerProgressBar();
-
-        // Log the user action
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-        // Redirect back to the program list
-        return redirect("admin/{$module_name}");
-    }
-}
+    <script type="module">
+        $('#datatable').DataTable({
+            processing: true,
+            serverSide: true,
+            responsive: true,
+            ajax: '{{ route("backend.$module_name.index_data") }}',
+            columns: [
+                { data: 'id', name: 'id' },
+                { data: 'name', name: 'name' },
+                { data: 'program_level', name: 'program_level' },
+                { data: 'institute_type', name: 'institute_type' },
+                { data: 'accreditation_type', name: 'accreditation_type' },
+                { data: 'status', name: 'status' },
+                { data: 'updated_at', name: 'updated_at' },
+                { data: 'action', name: 'action', orderable: false, searchable: false }
+            ]
+        });
+    </script>
+@endpush
