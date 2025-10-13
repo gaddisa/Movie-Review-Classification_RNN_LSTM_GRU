@@ -3,20 +3,20 @@
 namespace App\Http\Controllers\Backend;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Gate;
 use App\Authorizable;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Yajra\DataTables\DataTables;
 use Modules\Program\Models\Program;
-use Illuminate\Support\Facades\DB; // Add this line
-use Illuminate\Support\Facades\Log; // Add this line
-use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RealRashid\SweetAlert\Facades\Alert;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Backend\BackendBaseController;
 
-class StandardsController extends BackendBaseController
+class SubstandardsController extends BackendBaseController
 {
     use Authorizable;
 
@@ -29,12 +29,12 @@ class StandardsController extends BackendBaseController
     public function __construct()
     {
         // Page Title
-        $this->module_title = 'Standards Management';
-        $this->module_title = 'Standards';
-        $this->module_name = 'standards';
+        $this->module_title = 'Sub Standards Management';
+        $this->module_title = 'Substandards';
+        $this->module_name = 'substandards';
         $this->module_path = 'backend';
-        $this->module_icon = 'fa-solid fa-sitemap';
-        $this->module_model = "App\\Models\\Standard";
+        $this->module_icon = 'fa-solid fa-folder-tree';
+        $this->module_model = "App\\Models\\Substandard";
     }
 
     public function standards()
@@ -60,7 +60,8 @@ class StandardsController extends BackendBaseController
 
     public function create(array $additionalData = [])
     {
-        $dct_id = request()->get('id'); // Get 'id' from the request if passed
+        $standards_id = request()->get('id'); // Get 'id' from the request if passed
+
         // Other code for setting up the module
         $module_title = $this->module_title;
         $module_name = $this->module_name;
@@ -74,45 +75,54 @@ class StandardsController extends BackendBaseController
         // Pass the 'id' to the view if needed
         return view(
             "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'dct_id')
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'standards_id')
         );
     }
-    
     /**
- * Check if user can create standard for the given DCT
+ * Check if user can create substandard for the given standard
  */
-    protected function canCreateStandard($dctId, $userId)
-    {
-        $dct = \Modules\DCT\Models\DCT::find($dctId);
-        
-        if (!$dct) {
-            Alert::toast('DCT not found!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return false;
-        }
+ 
+/**
+ * Check if user can create substandard for the given standard
+ */
+/**
+ * Check if user can create substandard for the given standard
+ */
+protected function canCreateSubstandard($standardId, $userId)
+{
+    $standard = \App\Models\Standard::find($standardId);
     
-        \Log::info("Standard Ownership Check - DCT ID: {$dct->id}, DCT Created By: {$dct->created_by}, Current User: {$userId}");
-    
-        if ($dct->created_by != $userId) {
-            Alert::toast('You can only add standards to DCTs that you created!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return false;
-        }
-    
-        return true;
+    if (!$standard) {
+        Alert::toast('Standard not found!', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return false;
     }
+
+    // Debug logging - check what we're comparing
+    \Log::info("Substandard Ownership Check - Standard ID: {$standard->id}, Standard Created By: {$standard->created_by}, Current User: {$userId}");
+
+    // Check if the STANDARD was created by the current user
+    if ($standard->created_by != $userId) {
+        Alert::toast('You can only add substandards to standards that you created!', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+        return false;
+    }
+
+    return true;
+}
 
    public function store(Request $request)
 {
-    // Get the dct_id from the request
-    $dct_id = $request->get('dct_id');
-    if (!$this->canCreateStandard($dct_id, auth()->id())) {
+    // Get the standard_id from the request
+    $standard_id = $request->get('standards_id');
+ // CHECK OWNERSHIP BEFORE CREATION
+    if (!$this->canCreateSubstandard($standard_id, auth()->id())) {
         return redirect()->route('backend.dcts.index');
-    }   
+    }
     $module_title = $this->module_title;
     $module_name = $this->module_name;
     $module_path = $this->module_path;
@@ -120,55 +130,37 @@ class StandardsController extends BackendBaseController
     $module_model = $this->module_model;
     $module_name_singular = Str::singular($module_name);
 
-    // Authorization: check via 'manage' method which is inside AdminContentPolicy
-    
     $module_action = 'Store';
 
-    // Custom validation for standards
+    // Custom validation for substandards
     $validator = Validator::make($request->all(), [
         'name' => [
             'required',
             'string',
             'max:255',
-            Rule::unique('standards')->where(function ($query) use ($dct_id) {
-                return $query->where('dct_id', $dct_id);
+            Rule::unique('substandards')->where(function ($query) use ($standard_id) {
+                return $query->where('standard_id', $standard_id);
             })
         ],
-        'weights' => 'required|numeric|min:1|max:30', // Changed to numeric for float type
     ], [
-        'name.unique' => 'A standard with this name already exists for the selected DCT.',
-        'weights.min' => 'Weight must be at least 1.',
-        'weights.max' => 'Weight cannot exceed 30.',
-        'weights.numeric' => 'Weight must be a number.',
+        'name.unique' => 'A substandard with this name already exists for the selected standard.',
     ]);
 
     if ($validator->fails()) {
         return redirect()->back()
             ->withErrors($validator)
-            ->with('toast', [
-                'type' => 'error',
-                'message' => $validator->errors()->first(),
-                'position' => 'top-end'
-            ])
             ->withInput();
     }
-    
-    // CHECK OWNERSHIP FIRST
 
-
-    // Start a database transaction
-    DB::beginTransaction();
+   
 
     try {
-        // Add the dct_id to the validated data before creating the record
+        // Add the standard_id to the validated data before creating the record
         $data = $validator->validated();
-        $data['dct_id'] = $dct_id;
+        $data['standard_id'] = $standard_id;
 
         // Create the new record
         $$module_name_singular = $module_model::create($data);
-
-        // Commit the transaction
-        DB::commit();
 
         Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
             ->position('top-end')
@@ -177,12 +169,9 @@ class StandardsController extends BackendBaseController
 
         logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
 
-        // Redirect to index_datatable with the dct_id to filter the records
-        return redirect()->route("backend.{$module_name}.index", ['id' => $dct_id]);
+        // Redirect to index_datatable with the standard_id to filter the records
+        return redirect()->route("backend.{$module_name}.index", ['id' => $standard_id]);
     } catch (\Exception $e) {
-        // Rollback the transaction on error
-        DB::rollBack();
-
         // Log the error
         Log::error("Error in store: " . $e->getMessage());
 
@@ -196,7 +185,7 @@ class StandardsController extends BackendBaseController
     }
 }
 
-public function update(Request $request, $id)
+   public function update(Request $request, $id)
 {
     $module_title = $this->module_title;
     $module_name = $this->module_name;
@@ -205,58 +194,42 @@ public function update(Request $request, $id)
     $module_model = $this->module_model;
     $module_name_singular = Str::singular($module_name);
 
-    // Authorization: check via 'manage' method which is inside AdminContentPolicy
-    
     $module_action = 'Update';
 
-    // First, find the record to get the existing dct_id
+    // First, find the record to get the existing standard_id
     $$module_name_singular = $module_model::findOrFail($id);
     
-    // Get dct_id from the existing record since it's not in the form
-    $dct_id = $$module_name_singular->dct_id;
-    
-    if (!$this->canCreateStandard($dct_id, auth()->id())) {
-        return redirect()->route('backend.dcts.index');
-    }   
+    // Get standard_id from the existing record
+    $standard_id = $$module_name_singular->standard_id;
 
-    // Custom validation for standards
+    // CHECK OWNERSHIP BEFORE UPDATE
+    if (!$this->canCreateSubstandard($standard_id, auth()->id())) {
+        return redirect()->route('backend.dcts.index');
+    }
+
+    // Custom validation for substandards
     $validator = Validator::make($request->all(), [
         'name' => [
             'required',
             'string',
             'max:255',
-            Rule::unique('standards')->where(function ($query) use ($dct_id) {
-                return $query->where('dct_id', $dct_id);
+            Rule::unique('substandards')->where(function ($query) use ($standard_id) {
+                return $query->where('standard_id', $standard_id);
             })->ignore($id)
         ],
-        'weights' => 'required|numeric|min:1|max:30', // Changed to numeric for float type
     ], [
-        'name.unique' => 'A standard with this name already exists for the selected DCT.',
-        'weights.min' => 'Weight must be at least 1.',
-        'weights.max' => 'Weight cannot exceed 30.',
-        'weights.numeric' => 'Weight must be a number.',
+        'name.unique' => 'A substandard with this name already exists for the selected standard.',
     ]);
 
     if ($validator->fails()) {
         return redirect()->back()
             ->withErrors($validator)
-            ->with('toast', [
-                'type' => 'error',
-                'message' => $validator->errors()->first(),
-                'position' => 'top-end'
-            ])
             ->withInput();
     }
 
-    // Start a database transaction
-    DB::beginTransaction();
-
     try {
-        // Update the record with validated data (don't include dct_id since it shouldn't change)
+        // Update the record with validated data
         $$module_name_singular->update($validator->validated());
-
-        // Commit the transaction
-        DB::commit();
 
         Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
             ->position('top-end')
@@ -267,9 +240,6 @@ public function update(Request $request, $id)
 
         return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
     } catch (\Exception $e) {
-        // Rollback the transaction on error
-        DB::rollBack();
-
         // Log the error
         Log::error("Error in update: " . $e->getMessage());
 
@@ -295,13 +265,15 @@ public function update(Request $request, $id)
         $module_action = 'destroy';
 
         $$module_name_singular = $module_model::findOrFail($id);
-        // CHECK OWNERSHIP BEFORE DELETE
-        if (!$this->canCreateStandard($$module_name_singular->dct_id, auth()->id())) {
+        
+        // Authorization: check via 'manage' method which is inside AdminContentPolicy
+         
+           // CHECK OWNERSHIP BEFORE UPDATE
+   
+        if (!$this->canCreateSubstandard($$module_name_singular->$standard_id, auth()->id())) {
             return redirect()->route('backend.dcts.index');
         }
-        // Authorization: check via 'manage' method whichis inside AdminContentPolicy
         
-
         $$module_name_singular->delete();
 
         Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
@@ -330,6 +302,7 @@ public function update(Request $request, $id)
 
         // Get the `id` from the request
         $id = $request->query('id');
+        
 
         logUserAccess($module_title . ' ' . $module_action);
 
@@ -353,29 +326,29 @@ public function update(Request $request, $id)
         $page_heading = label_case($module_title);
         $title = $page_heading . ' ' . label_case($module_action);
 
-        $buttonModuleName = 'substandards';
+        $buttonModuleName = 'indicators';
 
         $additionalButtons = [
             [
-                'route' => "backend.$buttonModuleName.index",
-                'title' => 'Substandards',
+                'route' => "backend.$buttonModuleName.index", // Matches the route name
+                'title' => 'Indicators',
                 'class' => 'btn-outline-info',
-                'icon' => 'fa-solid fa-folder-tree',
+                'icon' => 'fa-solid fa-diagram-project',
             ],
         ];
 
         // Use provided columns or default to a basic set
-        $columns = $columns ?? ['id', 'name','weights', 'updated_at'];
+        $columns = $columns ?? ['id', 'name', 'updated_at'];
 
-        // Base query with sorting applied
+        // Base query
         $data = $module_model::select($columns)->orderBy('id', 'asc');
 
         // Retrieve `id` from request if not passed in $additionalData
         $id = $additionalData['id'] ?? request()->query('id');
 
-        // Filter by dct_id if an ID is provided
+        // Filter by standard_id if an ID is provided
         if ($id) {
-            $data = $data->where('dct_id', $id);
+            $data = $data->where('standard_id', $id);
         }
 
         return Datatables::of($data)
@@ -397,6 +370,7 @@ public function update(Request $request, $id)
                 return 'No Date Available';
             })
             ->rawColumns(['name', 'action'])
+            ->orderColumns(['id'], '-:column $1')
             ->make(true);
     }
 
@@ -412,8 +386,8 @@ public function update(Request $request, $id)
 
         $$module_name_singular = $module_model::findOrFail($id);
 
-        // Authorization: check via 'manage' method whichis inside AdminContentPolicy
-         
+        // Authorization: check via 'manage' method which is inside AdminContentPolicy
+      
 
         logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
 
