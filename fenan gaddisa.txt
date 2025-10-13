@@ -1,154 +1,84 @@
-<div class="row g-4">
-    <!-- Department Name -->
-    <div class="col-12 col-md-4">
-        <div class="card shadow-sm border-0 rounded-3">
-            <div class="card-body">
-                <?php
-                $field_name = 'name';
-                $field_label = 'Department Name';
-                $field_placeholder = 'Enter department name';
-                $required = 'required';
-                ?>
-                <label for="{{ $field_name }}" class="form-label fw-semibold">
-                    <i class="fas fa-building me-1 text-primary"></i> {{ $field_label }}
-                </label>
-                {!! field_required($required) !!}
-                {{ html()->text($field_name)
-                    ->placeholder($field_placeholder)
-                    ->class('form-control form-control-sm')
-                    ->attributes(["$required"]) }}
-                <small class="form-text text-muted">
-                    Specify the department responsible for entering DCTs (<em>Data Collection Tools</em>).
-                </small>
+@extends('backend.layouts.app')
+
+@section('title') 
+    {{ __($module_action) }} {{ __($module_title) }}
+@endsection
+
+@section('breadcrumbs')
+    <x-backend.breadcrumbs>
+        <x-backend.breadcrumb-item type="active" icon='{{ $module_icon }}'>{{ __($module_title) }}</x-backend.breadcrumb-item>
+    </x-backend.breadcrumbs>
+@endsection
+
+@section('content')
+    <div class="card">
+        <div class="card-body">
+            <x-backend.section-header>
+                <i class="{{ $module_icon }}"></i> {{ __($module_title) }} <small class="text-muted">{{ __($module_action) }}</small>
+
+                <x-slot name="subtitle">
+                    @lang(':module_name Management Dashboard', ['module_name' => Str::title($module_name)])
+                </x-slot>
+                <x-slot name="toolbar">
+                    <x-buttons.cancel />
+                </x-slot>
+            </x-backend.section-header>
+
+            <hr>
+
+            <div class="row mt-4">
+                <div class="col">
+                    <form method="POST" action="{{ route('backend.dcts.update', $dct->id) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="row">
+                            <div class="col-12 mb-3">
+                                <div class="form-group">
+                                    <label for="program_id" class="form-label">Select Program <span class="text-danger">*</span></label>
+                                    <select name="program_id" id="program_id" class="form-control" required>
+                                        <option value="">-- Select a Program --</option>
+                                        @foreach($programs as $program)
+                                            <option value="{{ $program->id }}" {{ $dct->program_id == $program->id ? 'selected' : '' }}>
+                                                {{ $program->name }} - {{ $program->description }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <small class="form-text text-muted">
+                                        Change the program association. The DCT name will be updated automatically.
+                                    </small>
+                                    @error('program_id')
+                                        <div class="text-danger">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-12 mb-3">
+                                <div class="form-group">
+                                    <label class="form-label">Current DCT Name</label>
+                                    <input type="text" class="form-control" value="{{ $dct->name }}" readonly>
+                                    <small class="form-text text-muted">
+                                        This is automatically generated and cannot be edited directly.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="form-group">
+                                    <x-buttons.create title="Update DCT" class="float-end">
+                                        {{ __('Update') }} {{ ucwords(Str::singular($module_name)) }}
+                                    </x-buttons.create>
+                                    <x-buttons.cancel />
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
-
-    <!-- Program Level -->
-    <div class="col-12 col-md-4">
-        <div class="card shadow-sm border-0 rounded-3">
-            <div class="card-body">
-                <?php
-                $field_name = 'program_level';
-                $field_label = 'Program Level';
-                $field_placeholder = '-- Select Program Level --';
-                $required = 'required';
-                $select_options = \App\Enums\ProgramProgramLevelEnum::asSelectArray();
-                ?>
-                <label for="{{ $field_name }}" class="form-label fw-semibold">
-                    <i class="fas fa-layer-group me-1 text-success"></i> {{ $field_label }}
-                </label>
-                {!! field_required($required) !!}
-                {{ html()->select($field_name, $select_options)
-                    ->placeholder($field_placeholder)
-                    ->class('form-control form-control-sm select2')
-                    ->attributes(["$required"]) }}
-                <small class="form-text text-muted">
-                    Choose the academic level — e.g., <strong>Level 1</strong>, <strong>Undergraduate</strong>, or <strong>PhD</strong>.
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <!-- Institution Type -->
-    <div class="col-12 col-md-4">
-        <div class="card shadow-sm border-0 rounded-3">
-            <div class="card-body">
-                <?php
-                $field_name = 'institute_type';
-                $field_label = 'Institution Type';
-                $field_placeholder = '-- Select Institution Type --';
-                $required = 'required';
-                $select_options = [
-                    'HEI' => 'HEI (Higher Education Institution)',
-                    'TVET' => 'TVET (Technical and Vocational Education and Training)'
-                ];
-                ?>
-                <label for="{{ $field_name }}" class="form-label fw-semibold">
-                    <i class="fas fa-university me-1 text-info"></i> {{ $field_label }}
-                </label>
-                {!! field_required($required) !!}
-                {{ html()->select($field_name, $select_options)
-                    ->placeholder($field_placeholder)
-                    ->class('form-control form-control-sm select2')
-                    ->attributes(["$required"]) }}
-                <small class="form-text text-muted">
-                    <strong>HEI</strong> – Universities & Colleges |
-                    <strong>TVET</strong> – Technical & Vocational Institutions
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <!-- Accreditation Scope -->
-    <div class="col-12 col-md-4">
-        <div class="card shadow-sm border-0 rounded-3">
-            <div class="card-body">
-                <?php
-                $field_name = 'accreditation_type';
-                $field_label = 'Accreditation Scope';
-                $field_placeholder = '-- Select Accreditation Scope --';
-                $required = 'required';
-                $select_options = [
-                    'Program Level' => 'Program Level Accreditation',
-                    'Institutional Accreditation' => 'Institutional Accreditation'
-                ];
-                ?>
-                <label for="{{ $field_name }}" class="form-label fw-semibold">
-                    <i class="fas fa-certificate me-1 text-warning"></i> {{ $field_label }}
-                </label>
-                {!! field_required($required) !!}
-                {{ html()->select($field_name, $select_options, 'Program Level')
-                    ->placeholder($field_placeholder)
-                    ->class('form-control form-control-sm select2')
-                    ->attributes(["$required"]) }}
-                <small class="form-text text-muted">
-                    <strong>Program Level:</strong> Focused on specific programs or departments.<br>
-                    <strong>Institutional:</strong> Covers the entire campus (institution-wide standards & governance).
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <!-- Program Status -->
-    <div class="col-12 col-md-4">
-        <div class="card shadow-sm border-0 rounded-3">
-            <div class="card-body">
-                <?php
-                $field_name = 'status';
-                $field_label = 'Program Status';
-                $field_placeholder = '-- Select Program Status --';
-                $required = 'required';
-                $select_options = \App\Enums\ProgramStatusEnum::asSelectArray();
-                ?>
-                <label for="{{ $field_name }}" class="form-label fw-semibold">
-                    <i class="fas fa-toggle-on me-1 text-danger"></i> {{ $field_label }}
-                </label>
-                {!! field_required($required) !!}
-                {{ html()->select($field_name, $select_options)
-                    ->placeholder($field_placeholder)
-                    ->class('form-control form-control-sm select2')
-                    ->attributes(["$required"]) }}
-                <small class="form-text text-muted">
-                    Reflects the program’s operational state: <em>Active</em>, <em>Inactive</em>, or <em>Under Review</em>.
-                </small>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Accreditation Info -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="alert alert-info border-0 rounded-3 shadow-sm">
-            <h6 class="alert-heading mb-2">
-                <i class="fas fa-info-circle me-1"></i> Understanding Accreditation Scopes
-            </h6>
-            <hr class="my-2">
-            <p class="mb-1"><strong>Program Level Accreditation:</strong> Evaluates the quality and compliance of specific programs, ensuring alignment with professional standards and learning outcomes.</p>
-            <p class="mb-0"><strong>Institutional Accreditation:</strong> A comprehensive review of the entire campus — covering management, infrastructure, financial integrity, and governance policies.</p>
-        </div>
-    </div>
-</div>
-
-<x-library.select2 />
+@endsection
