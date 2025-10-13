@@ -1,329 +1,425 @@
 <?php
-$notifications = optional(auth()->user())->unreadNotifications;
-$notifications_count = optional($notifications)->count();
-$notifications_latest = optional($notifications)->take(5);
-?>
 
-<div class="sidebar sidebar-dark sidebar-fixed border-end" id="sidebar"
-    style="background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%); border-right: 1px solid #2a3a5a !important;">
-    <!-- Sidebar Header -->
-    <div class="sidebar-header border-bottom" style="padding: 1rem 0.5rem; border-bottom: 2px solid #ed6923 !important;">
-        <div class="sidebar-brand d-flex align-items-center justify-content-center" style="width: 100%; gap: 10px;">
-            <a href="/" style="display: flex; align-items: center; text-decoration: none; color: white;">
+namespace App\Http\Controllers\Backend;
 
-                <div style="margin-left: 10px;">
-                    <div style="font-size: 18px; font-weight: bold; letter-spacing: 1px; line-height: 1.2;">
-                        <span style="color: #36bac0;">Accreditation</span> <span style="color: #ed6923;">Portal</span>
-                    </div>
-                    <div style="font-size: 11px; color: #a8dadc; letter-spacing: 0.5px;">
-                        Education & Training Authority
-                    </div>
-                </div>
-            </a>
-        </div>
-        <button class="btn-close d-lg-none" data-coreui-dismiss="offcanvas" data-coreui-theme="dark" type="button"
-            aria-label="Close"
-            onclick='coreui.Sidebar.getInstance(document.querySelector("#sidebar")).toggle()'></button>
-    </div>
+use Carbon\Carbon;
+use App\Authorizable;
+use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use Yajra\DataTables\DataTables;
+use Modules\Program\Models\Program;
+use Illuminate\Support\Facades\DB; // Add this line
+use Illuminate\Support\Facades\Log; // Add this line
+use Illuminate\Support\Facades\Gate;
+use RealRashid\SweetAlert\Facades\Alert;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Validator;
+use App\Http\Controllers\Backend\BackendBaseController;
 
+class StandardsController extends BackendBaseController
+{
+    use Authorizable;
 
-    <!-- Sidebar Navigation -->
-    <ul class="sidebar-nav" data-coreui="navigation" data-simplebar style="padding-top: 1rem;">
-        <!-- Dashboard -->
-        <li class="nav-item">
-            <a class="nav-link" href="{{ route('backend.dashboard') }}"
-                style="border-left: 3px solid transparent; transition: all 0.3s;">
-                <i class="nav-icon fa-solid fa-chart-line" style="color: #a8dadc;"></i>
-                &nbsp; <span style="font-weight: 500;">@lang('Dashboard')</span>
-                <span class="police-underline"
-                    style="position: absolute; bottom: 0; left: 0; width: 0; height: 2px; background: #e63946; transition: width 0.3s;"></span>
-            </a>
-        </li>
+    public $module_title;
+    public $module_name;
+    public $module_path;
+    public $module_icon;
+    public $module_model;
 
-        <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="notificationsDropdown" role="button"
-                data-bs-toggle="dropdown" aria-expanded="false"
-                style="border-left: 3px solid transparent; transition: all 0.3s;">
-                <i class="nav-icon fa-solid fa-bullhorn" style="color: #ffba08;"></i>
-                &nbsp; <span style="font-weight: 500;">@lang('Notifications')</span>
-                @if ($notifications_count)
-                    <span class="badge rounded-pill bg-danger ms-auto"
-                        style="font-size: 10px; padding: 3px 6px; animation: pulse 1.5s infinite;">{{ $notifications_count }}</span>
-                @endif
-            </a>
-            <ul class="dropdown-menu dropdown-menu-dark police-dropdown" aria-labelledby="notificationsDropdown"
-                style="background: #1a1a2e; border: 1px solid #2a3a5a; box-shadow: 0 5px 15px rgba(0,0,0,0.5);">
-                @forelse($notifications_latest as $notification)
-                    <li>
-                        <a class="dropdown-item police-dropdown-item"
-                            href="{{ route('backend.notifications.show', $notification->id) }}"
-                            style="border-left: 3px solid transparent; transition: all 0.3s; padding: 0.75rem 1.5rem;">
-                            <div class="d-flex align-items-center">
-                                <i class="fa-solid fa-circle text-warning me-2"
-                                    style="font-size: 8px; animation: blink 2s infinite;"></i>
-                                <div class="text-truncate" style="max-width: 250px;">
-                                    <small class="d-block"
-                                        style="font-weight: 500;">{{ Str::limit($notification->data['message'] ?? 'New Notification', 40) }}</small>
-                                    <small class="text-muted">{{ $notification->created_at->diffForHumans() }}</small>
-                                </div>
-                            </div>
-                        </a>
-                    </li>
-                @empty
-                    <li><a class="dropdown-item police-dropdown-item" href="#" style="padding: 0.75rem 1.5rem;">No
-                            new notifications</a></li>
-                @endforelse
-                <li>
-                    <hr class="dropdown-divider" style="border-color: #2a3a5a;">
-                </li>
-                <li><a class="dropdown-item police-dropdown-item text-center text-warning"
-                        href="{{ route('backend.notifications.index') }}"
-                        style="font-weight: 500; padding: 0.75rem 1.5rem;">View All</a>
-                </li>
-            </ul>
-        </li>
+    public function __construct()
+    {
+        // Page Title
+        $this->module_title = 'Standards Management';
+        $this->module_title = 'Standards';
+        $this->module_name = 'standards';
+        $this->module_path = 'backend';
+        $this->module_icon = 'fa-solid fa-sitemap';
+        $this->module_model = "App\\Models\\Standard";
+    }
 
-        <!-- Assessor Pool - User Tie Icon -->
-        @php
-            $module_name = 'users';
-            $text = __('Assessor Pool');
-            $icon = 'fa-solid fa-user-tie';
-            $permission = 'view_assesors';
-            $url = route('backend.' . $module_name . '.assessors.pool');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
-        <!-- Programs -->
-        @php
-            $module_name = 'programs';
-            $text = __('Programs');
-            $icon = 'fa-solid fa-tags';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
+    public function standards()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
 
-        <!-- DCTS -->
-        @php
-            $module_name = 'dcts';
-            $text = __('DCTS');
-            $icon = 'fa-solid fa-tags';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
+        $module_action = 'List';
 
-        <!-- Attachments -->
-        @php
-            $module_name = 'attachements';
-            $text = __('Attachments');
-            $icon = 'fas fa-paperclip';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
+        $$module_name = $module_model::paginate(15);
 
-        <!-- Applications -->
-        @php
-            $module_name = 'applications';
-            $text = __('Applications');
-            $icon = 'fas fa-window-restore';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
+        logUserAccess($module_title . ' ' . $module_action);
 
-        <!-- Desks -->
-        @php
-            $module_name = 'desks';
-            $text = __('Desks');
-            $icon = 'fas fa-table';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
+        );
+    }
 
-        <!-- Desk Reviews -->
-        @php
-            $module_name = 'deskreviews';
-            $text = __('Reviews');
-            $icon = 'fas fa-comment-dots';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
+    public function create(array $additionalData = [])
+    {
+        $dct_id = request()->get('id'); // Get 'id' from the request if passed
+        // Other code for setting up the module
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Create';
 
-        <!-- Resources -->
-        @php
-            $module_name = 'resources';
-            $text = __('Resources');
-            $icon = 'fas fa-folder';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" />
+        logUserAccess($module_title . ' ' . $module_action);
 
-        <!-- Settings -->
-        @php
-            $settingsActive =
-                Route::is('backend.settings.index') ||
-                Route::is('backend.users.index') ||
-                Route::is('backend.roles.index') ||
-                Route::is('backend.permissions.index') ||
-                Route::is('backend.mainsettings.index');
-        @endphp
+        // Pass the 'id' to the view if needed
+        return view(
+            "{$module_path}.{$module_name}.create",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'dct_id')
+        );
+    }
+    
+    /**
+ * Check if user can create standard for the given DCT
+ */
+    protected function canCreateStandard($dctId, $userId)
+    {
+        $dct = \Modules\DCT\Models\DCT::find($dctId);
+        
+        if (!$dct) {
+            Alert::toast('DCT not found!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return false;
+        }
+    
+        \Log::info("Standard Ownership Check - DCT ID: {$dct->id}, DCT Created By: {$dct->created_by}, Current User: {$userId}");
+    
+        if ($dct->created_by != $userId) {
+            Alert::toast('You can only add standards to DCTs that you created!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+            return false;
+        }
+    
+        return true;
+    }
 
-        @canany(['view_settings', 'view_users', 'view_roles', 'view_permissions'])
-            <li class="nav-item dropdown {{ $settingsActive ? 'active' : '' }}">
-                <a class="nav-link dropdown-toggle {{ $settingsActive ? 'active' : '' }}" href="#"
-                    id="settingsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false"
-                    style="border-left: 3px solid transparent; transition: all 0.3s;">
-                    <i class="nav-icon fa-solid fa-id-card"></i>
-                    &nbsp; <span style="font-weight: 500;">@lang('Settings')</span>
-                </a>
-                <ul class="dropdown-menu dropdown-menu-dark police-dropdown" aria-labelledby="settingsDropdown"
-                    style="background: #1a1a2e; border: 1px solid #2a3a5a; box-shadow: 0 5px 15px rgba(0,0,0,0.5);">
-                    <!-- Page Settings -->
-                    <li>
-                        <a class="dropdown-item police-dropdown-item {{ Route::is('backend.settings.index') ? 'active' : '' }}"
-                            href="{{ route('backend.settings.index') }}" style="padding: 0.75rem 1.5rem;">
-                            <i class="fa-solid fa-file-lines me-2" style="color: #a8dadc;"></i> @lang('Page Settings')
-                        </a>
-                    </li>
-                    <!-- Users -->
-                    <li>
-                        <a class="dropdown-item police-dropdown-item {{ Route::is('backend.users.index') ? 'active' : '' }}"
-                            href="{{ route('backend.users.index') }}" style="padding: 0.75rem 1.5rem;">
-                            <i class="fa-solid fa-user-group me-2" style="color: #a8dadc;"></i> @lang('Users')
-                        </a>
-                    </li>
-                    <!-- Roles -->
-                    <li>
-                        <a class="dropdown-item police-dropdown-item {{ Route::is('backend.roles.index') ? 'active' : '' }}"
-                            href="{{ route('backend.roles.index') }}" style="padding: 0.75rem 1.5rem;">
-                            <i class="fa-solid fa-user-shield me-2" style="color: #a8dadc;"></i> @lang('Roles')
-                        </a>
-                    </li>
-                    <!-- Permissions -->
-                    <li>
-                        <a class="dropdown-item police-dropdown-item {{ Route::is('backend.permissions.index') ? 'active' : '' }}"
-                            href="{{ route('backend.permissions.index') }}" style="padding: 0.75rem 1.5rem;">
-                            <i class="fa-solid fa-key me-2" style="color: #a8dadc;"></i> @lang('Permissions')
-                        </a>
-                    </li>
-                    <!-- Main Settings -->
+   public function store(Request $request)
+{
+    // Get the dct_id from the request
+    $dct_id = $request->get('dct_id');
+    if (!$this->canCreateStandard($dct_id, auth()->id())) {
+        return redirect()->route('backend.dcts.index');
+    }   
+    $module_title = $this->module_title;
+    $module_name = $this->module_name;
+    $module_path = $this->module_path;
+    $module_icon = $this->module_icon;
+    $module_model = $this->module_model;
+    $module_name_singular = Str::singular($module_name);
 
-                    <li>
-                        <a class="dropdown-item police-dropdown-item {{ Route::is('backend.mainsettings.index') ? 'active' : '' }}"
-                            href="{{ route('backend.mainsettings.index') }}" style="padding: 0.75rem 1.5rem;">
-                            <i class="fas fa-cog me-2" style="color: #a8dadc;"></i> @lang('Main Settings')
-                        </a>
-                    </li>
-                </ul>
-            </li>
-        @endcanany
+    // Authorization: check via 'manage' method which is inside AdminContentPolicy
+    
+    $module_action = 'Store';
 
-        <!-- Logs -->
-        @php
-            $logsActive = Route::is('log-viewer::dashboard') || Route::is('log-viewer::logs.list');
-        @endphp
+    // Custom validation for standards
+    $validator = Validator::make($request->all(), [
+        'name' => [
+            'required',
+            'string',
+            'max:255',
+            Rule::unique('standards')->where(function ($query) use ($dct_id) {
+                return $query->where('dct_id', $dct_id);
+            })
+        ],
+        'weights' => 'required|numeric|min:1|max:30', // Changed to numeric for float type
+    ], [
+        'name.unique' => 'A standard with this name already exists for the selected DCT.',
+        'weights.min' => 'Weight must be at least 1.',
+        'weights.max' => 'Weight cannot exceed 30.',
+        'weights.numeric' => 'Weight must be a number.',
+    ]);
 
-        @can('view_logs')
-            <li class="nav-item dropdown {{ $logsActive ? 'active' : '' }}">
-                <a class="nav-link dropdown-toggle" href="#" id="logsDropdown" role="button"
-                    data-bs-toggle="dropdown" aria-expanded="false"
-                    style="border-left: 3px solid transparent; transition: all 0.3s;">
-                    <i class="nav-icon fa-solid fa-list-ul"></i>
-                    &nbsp; <span style="font-weight: 500;">@lang('Logs')</span>
-                </a>
-                <ul class="dropdown-menu dropdown-menu-dark police-dropdown" aria-labelledby="logsDropdown"
-                    style="background: #1a1a2e; border: 1px solid #2a3a5a; box-shadow: 0 5px 15px rgba(0,0,0,0.5);">
-                    <!-- Log Dashboard -->
-                    <li>
-                        <a class="dropdown-item police-dropdown-item {{ Route::is('log-viewer::dashboard') ? 'active' : '' }}"
-                            href="{{ route('log-viewer::dashboard') }}" style="padding: 0.75rem 1.5rem;">
-                            <i class="fa-solid fa-chart-line me-2" style="color: #a8dadc;"></i> Log Dashboard
-                        </a>
-                    </li>
-                    <!-- Daily Log -->
-                    <li>
-                        <a class="dropdown-item police-dropdown-item {{ Route::is('log-viewer::logs.list') ? 'active' : '' }}"
-                            href="{{ route('log-viewer::logs.list') }}" style="padding: 0.75rem 1.5rem;">
-                            <i class="fa-solid fa-calendar-alt me-2" style="color: #a8dadc;"></i> Daily Log
-                        </a>
-                    </li>
-                </ul>
-            </li>
-        @endcan
-
-        <!-- Assessor Pool - User Tie Icon -->
-       <!-- Certificates - Golden Certificate Icon -->
-        @php
-            $module_name = 'certificates';
-            $text = __('Certificates');
-            $icon = 'fa-solid fa-certificate';
-            $permission = 'view_' . $module_name;
-            $url = route('backend.' . $module_name . '.index');
-        @endphp
-        <x-backend.sidebar-nav-item :permission="$permission" :url="$url" :icon="$icon" :text="$text" style="color: #FFD700; text-shadow: 0 0 3px rgba(255,215,0,0.5);" />
-        <!-- Notifications with Dropdown -->
-    </ul>
+    if ($validator->fails()) {
+        return redirect()->back()
+            ->withErrors($validator)
+            ->with('toast', [
+                'type' => 'error',
+                'message' => $validator->errors()->first(),
+                'position' => 'top-end'
+            ])
+            ->withInput();
+    }
+    
+    // CHECK OWNERSHIP FIRST
 
 
-</div>
+    // Start a database transaction
+    DB::beginTransaction();
 
-<style>
-    /* Police-themed animations and styles */
-    @keyframes pulse {
-        0% {
-            transform: scale(1);
+    try {
+        // Add the dct_id to the validated data before creating the record
+        $data = $validator->validated();
+        $data['dct_id'] = $dct_id;
+
+        // Create the new record
+        $$module_name_singular = $module_model::create($data);
+
+        // Commit the transaction
+        DB::commit();
+
+        Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        // Redirect to index_datatable with the dct_id to filter the records
+        return redirect()->route("backend.{$module_name}.index", ['id' => $dct_id]);
+    } catch (\Exception $e) {
+        // Rollback the transaction on error
+        DB::rollBack();
+
+        // Log the error
+        Log::error("Error in store: " . $e->getMessage());
+
+        // Flash error message
+        Alert::toast('Failed to create record!', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create record.']);
+    }
+}
+
+public function update(Request $request, $id)
+{
+    $module_title = $this->module_title;
+    $module_name = $this->module_name;
+    $module_path = $this->module_path;
+    $module_icon = $this->module_icon;
+    $module_model = $this->module_model;
+    $module_name_singular = Str::singular($module_name);
+
+    // Authorization: check via 'manage' method which is inside AdminContentPolicy
+    
+    $module_action = 'Update';
+
+    // First, find the record to get the existing dct_id
+    $$module_name_singular = $module_model::findOrFail($id);
+    
+    // Get dct_id from the existing record since it's not in the form
+    $dct_id = $$module_name_singular->dct_id;
+    
+    if (!$this->canCreateStandard($dct_id, auth()->id())) {
+        return redirect()->route('backend.dcts.index');
+    }   
+
+    // Custom validation for standards
+    $validator = Validator::make($request->all(), [
+        'name' => [
+            'required',
+            'string',
+            'max:255',
+            Rule::unique('standards')->where(function ($query) use ($dct_id) {
+                return $query->where('dct_id', $dct_id);
+            })->ignore($id)
+        ],
+        'weights' => 'required|numeric|min:1|max:30', // Changed to numeric for float type
+    ], [
+        'name.unique' => 'A standard with this name already exists for the selected DCT.',
+        'weights.min' => 'Weight must be at least 1.',
+        'weights.max' => 'Weight cannot exceed 30.',
+        'weights.numeric' => 'Weight must be a number.',
+    ]);
+
+    if ($validator->fails()) {
+        return redirect()->back()
+            ->withErrors($validator)
+            ->with('toast', [
+                'type' => 'error',
+                'message' => $validator->errors()->first(),
+                'position' => 'top-end'
+            ])
+            ->withInput();
+    }
+
+    // Start a database transaction
+    DB::beginTransaction();
+
+    try {
+        // Update the record with validated data (don't include dct_id since it shouldn't change)
+        $$module_name_singular->update($validator->validated());
+
+        // Commit the transaction
+        DB::commit();
+
+        Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
+    } catch (\Exception $e) {
+        // Rollback the transaction on error
+        DB::rollBack();
+
+        // Log the error
+        Log::error("Error in update: " . $e->getMessage());
+
+        // Flash error message
+        Alert::toast('Failed to update record!', 'error')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
+    }
+}
+
+    public function destroy($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'destroy';
+
+        $$module_name_singular = $module_model::findOrFail($id);
+        // CHECK OWNERSHIP BEFORE DELETE
+        if (!$this->canCreateStandard($$module_name_singular->dct_id, auth()->id())) {
+            return redirect()->route('backend.dcts.index');
+        }
+        // Authorization: check via 'manage' method whichis inside AdminContentPolicy
+        
+
+        $$module_name_singular->delete();
+
+        Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        // Redirect to the specific URL with the id as a query parameter
+        return redirect("/admin/{$module_name}/{$module_name}?id={$id}");
+    }
+
+    public function index(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'List';
+
+        // Fetch the data using pagination for the standard table
+        $$module_name = $module_model::paginate(15);
+
+        // Get the `id` from the request
+        $id = $request->query('id');
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        // Return the view with the necessary data, including the `id`
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
+        );
+    }
+
+    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
+
+        $buttonModuleName = 'substandards';
+
+        $additionalButtons = [
+            [
+                'route' => "backend.$buttonModuleName.index",
+                'title' => 'Substandards',
+                'class' => 'btn-outline-info',
+                'icon' => 'fa-solid fa-folder-tree',
+            ],
+        ];
+
+        // Use provided columns or default to a basic set
+        $columns = $columns ?? ['id', 'name','weights', 'updated_at'];
+
+        // Base query with sorting applied
+        $data = $module_model::select($columns)->orderBy('id', 'asc');
+
+        // Retrieve `id` from request if not passed in $additionalData
+        $id = $additionalData['id'] ?? request()->query('id');
+
+        // Filter by dct_id if an ID is provided
+        if ($id) {
+            $data = $data->where('dct_id', $id);
         }
 
-        50% {
-            transform: scale(1.1);
-        }
+        return Datatables::of($data)
+            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
+                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
+            })
+            ->editColumn('name', '<strong>{{$name}}</strong>')
+            ->editColumn('updated_at', function ($data) {
+                if ($data->updated_at) {
+                    $diff = Carbon::now()->diffInHours($data->updated_at);
 
-        100% {
-            transform: scale(1);
-        }
+                    if ($diff < 25) {
+                        return $data->updated_at->diffForHumans();
+                    }
+
+                    return $data->updated_at->isoFormat('llll');
+                }
+
+                return 'No Date Available';
+            })
+            ->rawColumns(['name', 'action'])
+            ->make(true);
     }
 
-    @keyframes blink {
-        0% {
-            opacity: 1;
-        }
+    public function edit($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name; // e.g., "dcts"
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+        $module_action = 'Edit';
 
-        50% {
-            opacity: 0.3;
-        }
+        $$module_name_singular = $module_model::findOrFail($id);
 
-        100% {
-            opacity: 1;
-        }
+        // Authorization: check via 'manage' method whichis inside AdminContentPolicy
+         
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return view(
+            "{$module_path}.{$module_name}.edit",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
     }
-
-    .nav-link:hover,
-    .nav-link:focus {
-        background-color: rgba(230, 57, 70, 0.1) !important;
-        border-left: 3px solid #e63946 !important;
-    }
-
-    .nav-link:hover .police-underline {
-        width: 100%;
-    }
-
-    .nav-link.active {
-        background-color: rgba(230, 57, 70, 0.2) !important;
-        border-left: 3px solid #e63946 !important;
-    }
-
-    .police-dropdown-item:hover,
-    .police-dropdown-item:focus {
-        background-color: rgba(230, 57, 70, 0.2) !important;
-        border-left: 3px solid #e63946 !important;
-    }
-
-    .police-toggler:hover {
-        background-color: rgba(230, 57, 70, 0.2) !important;
-        border-color: #e63946 !important;
-    }
-</style>
+}
