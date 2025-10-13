@@ -1,158 +1,587 @@
 <?php
 
-namespace App\Livewire\Attachement;
+namespace App\Http\Controllers\Backend;
 
-use LivewireUI\Modal\ModalComponent;
-use Modules\Attachement\Models\Attachement;
-use Modules\DCT\Models\DCT;
-use Illuminate\Validation\Rule;
-use RealRashid\SweetAlert\Facades\Alert; // Add this
+use Carbon\Carbon;
+use App\Authorizable;
+use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Yajra\DataTables\DataTables;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Gate;
+use RealRashid\SweetAlert\Facades\Alert;
+use Illuminate\Support\Facades\Auth;
 
-class AttachementModal extends ModalComponent
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class BackendBaseController extends Controller
 {
-    public $attachementId;
-    public $isEdit = false;
-    public $dctId; // Add this property
+    use Authorizable;
+    protected $foreignKeyMapping = [];
 
-    // Form fields
-    public $name;
-    public $attachement_type = 'table';
-    public $status = 'active';
-    public $table_html;
-    public $dct_id;
-    public $is_required = 'Optional';
+    public $module_title;
 
-    protected function rules()
+    public $module_name;
+
+    public $module_path;
+
+    public $module_icon;
+
+    public $module_model;
+
+    public function __construct()
     {
-        return [
-            'name' => 'required|string|max:1255',
-            'attachement_type' => 'required|string',
-            'status' => 'required|string',
-            'table_html' => 'nullable|string',
-            'is_required' => 'required|in:Mandatory,Optional',
-            'dct_id' => 'required|exists:dcts,id',
-        ];
+        // Page Title
+        $this->module_title = 'Modules';
+
+        // module name
+        $this->module_name = 'modules';
+
+        // directory path of the module
+        $this->module_path = 'backend';
+
+        // module icon
+        $this->module_icon = 'fas fa-tags';
+
+        // module model name, path
+        $this->module_model = "App\Models\BaseModel";
     }
 
-    public function mount($siteId = null, $attachementId = null)
+    /**
+     * Display a listing of the resource.
+     *
+     * @return \Illuminate\Contracts\View\View
+     */
+    public function index(Request $request)
     {
-        // Set DCT ID from the passed parameter
-        $this->dct_id = $siteId ?? null;
-        $this->dctId = $siteId ?? null;
 
-        if ($attachementId) {
-            $this->isEdit = true;
-            $this->loadAttachement($attachementId);
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+
+        $$module_name = $module_model::paginate(50);
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.index_datatable",
+            compact('module_title', 'module_name', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
+        );
+    }
+
+    /**
+     * Retrieves a list of items based on the search term.
+     *
+     * @param  Request  $request  The HTTP request object.
+     * @return JsonResponse The JSON response containing the list of items.
+     */
+
+
+
+    public function index_list(Request $request)
+    {
+        // Validate input
+        // $request->validate([
+        //     'filterColumn' => 'nullable|string|in:name,email,id', // Add valid columns
+        //     'displayColumn' => 'nullable|string|in:name,email,id', // Add valid columns
+        //     'q' => 'required|string|max:191',
+        // ]);
+
+        $filterColumn = $request->input('filterColumn', 'name'); // Default to 'name'
+        $displayColumn = $request->input('displayColumn', 'name'); // Default to 'name'
+
+        $module_model = $this->module_model;
+        $term = trim($request->q);
+
+        if (empty($term)) {
+            return response()->json([]);
         }
-    }
 
-    public function loadAttachement($attachementId)
-    {
         try {
-            $attachement = Attachement::findOrFail($attachementId);
-            $this->attachementId = $attachementId;
-            $this->name = $attachement->name;
-            $this->attachement_type = $attachement->attachement_type;
-            $this->status = $attachement->status;
-            $this->is_required = $attachement->is_required;
-            $this->table_html = $attachement->table_html;
-            $this->dct_id = $attachement->dct_id;
-        } catch (\Exception $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to load attachement data',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            $this->closeModal();
-        }
-    }
+            // Query data
+            $query_data = $module_model::whereRaw("LOWER({$filterColumn}) LIKE ?", ['%' . strtolower($term) . '%'])
+                ->active() // Assuming 'active' is a query scope
+                ->limit(7)
+                ->get(['id', $displayColumn]);
 
-    public function saveAttachment()
-    {
-        $this->validate();
-
-        // ADD OWNERSHIP CHECK HERE
-        if (!$this->canCreateAttachment($this->dct_id, auth()->id())) {
-            $this->closeModal();
-            return;
-        }
-
-        try {
-            $data = [
-                'name' => $this->name,
-                'attachement_type' => $this->attachement_type,
-                'status' => $this->status,
-                'is_required' => $this->is_required,
-                'table_html' => $this->table_html,
-                'dct_id' => $this->dct_id,
-            ];
-
-            if ($this->isEdit) {
-                $attachement = Attachement::findOrFail($this->attachementId);
-                $attachement->update($data);
-            } else {
-                Attachement::create($data);
+            $results = [];
+            foreach ($query_data as $row) {
+                $results[] = [
+                    'id' => $row->id,
+                    'text' => $row->$displayColumn,
+                ];
             }
 
-            $this->dispatch('refreshAttachements');
-            $this->closeModal();
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => 'Attachement saved successfully'
-            ]);
+            return response()->json($results);
         } catch (\Exception $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to save attachement',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
+            // Log the error
+            Log::error("Error in index_list: " . $e->getMessage());
+
+            return response()->json([], 500);
+        }
+    }
+
+
+
+    /**
+     * Retrieves the data for the index page of the module.
+     *
+     * @return Illuminate\Http\JsonResponse
+     */
+
+
+    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'List';
+        $page_heading = label_case($module_title);
+        $title = $page_heading . ' ' . label_case($module_action);
+
+        // Use provided columns or default to a basic set
+        $columns = $columns ?? ['id', 'name', 'updated_at'];
+
+        try {
+            // Base query
+            $data = $module_model::select($columns)->orderBy('id', 'asc');
+
+            return Datatables::of($data)
+                ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
+                    return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
+                })
+                ->editColumn('name', '<strong>{{$name}}</strong>')
+                ->editColumn('updated_at', function ($data) {
+                    if ($data->updated_at) {
+                        $diff = Carbon::now()->diffInHours($data->updated_at);
+
+                        if ($diff < 25) {
+                            return $data->updated_at->diffForHumans();
+                        }
+
+                        return $data->updated_at->isoFormat('llll');
+                    }
+
+                    return 'No Date Available';
+                })
+                ->rawColumns(['name', 'action'])
+                ->orderColumns(['id'], '-:column $1')
+                ->make(true);
+        } catch (\Exception $e) {
+            // Log the error
+            Log::error("Error in index_data: " . $e->getMessage());
+
+            return response()->json(['error' => 'Failed to fetch data.'], 500);
+        }
+    }
+
+
+    /**
+     * Show the form for creating a new resource.
+     *
+     * @return \Illuminate\Contracts\View\View
+     */
+
+
+    public function create()
+    {
+
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Create';
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.create",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action')
+        );
+    }
+
+    /**
+     * Store a new resource in the database.
+     *
+     * @param  Request  $request  The request object containing the data to be stored.
+     * @return RedirectResponse The response object that redirects to the index page of the module.
+     *
+     * @throws Exception If there is an error during the creation of the resource.
+     */
+
+
+    public function store(Request $request)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Store';
+
+        // // Validate input
+        // $validated_data = $request->validate([
+        //     // Add validation rules for your fields
+        //     'name' => 'required|string|max:191',
+        //     'email' => 'required|email|unique:users,email',
+        //     // Add more fields as needed
+        // ]);
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Create the record
+            // $$module_name_singular = $module_model::create($validated_data);
+            $$module_name_singular = $module_model::create($request->all());
+
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast(Str::singular($module_title) . "' Added Successfully", 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} | Id: " . $$module_name_singular->id);
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error in store: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to add record!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to add record.']);
+        }
+    }
+    /**
+     * Display the specified resource.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Contracts\View\View
+     */
+
+
+
+    public function show($id)
+    {
+        // Mark the notification as read
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Show';
+
+        $$module_name_singular = $module_model::findOrFail($id);
+
+        // Apply the policy check for user-specific access
+        // if (Gate::denies('showUserSpecific', $$module_name_singular)) {
+        //     // Log the unauthorized access and log the user out
+        //     Auth::logout(); // Logout the user
+        //     session()->forget('url.intended'); // Clears the intended URL stored by Laravel's redirect system
+
+        //     Alert::toast('Unauthorized access attempt. You have been logged out.', 'warning')
+        //         ->position('top-end')
+        //         ->autoClose(5000)
+        //         ->timerProgressBar();
+
+        //     return redirect()->route('login');
+        // }
+
+
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return view(
+            "{$module_path}.{$module_name}.show",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', "{$module_name_singular}")
+        );
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     *
+     * @param  int  $id
+     * @return Response
+     * @return \Illuminate\Contracts\View\View
+     */
+    public function edit($id)
+    {
+
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Edit';
+
+        $$module_name_singular = $module_model::findOrFail($id);
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return view(
+            "{$module_path}.{$module_name}.edit",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
+        );
+    }
+
+    /**
+     * Updates a resource.
+     *
+     * @param  int  $id
+     * @param  Request  $request  The request object.
+     * @param  mixed  $id  The ID of the resource to update.
+     * @return Response
+     * @return RedirectResponse The redirect response.
+     *
+     * @throws ModelNotFoundException If the resource is not found.
+     */
+
+
+    public function update(Request $request, $id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Update';
+
+        // Validate input
+        //$validated_data = $request->validate([
+            // Add validation rules for your fields
+           // 'name' => 'required|string|max:191',
+           // 'email' => 'required|email|unique:users,email,' . $id,
+            // Add more fields as needed
+       // ]);
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Find the record
+            $$module_name_singular = $module_model::findOrFail($id);
+
+            // Update the record
+            $$module_name_singular->update($request->all());
+                      
+
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast(Str::singular($module_title) . "' Updated Successfully", 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} | Id: " . $$module_name_singular->id);
+
+            return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error in update: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to update record!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
         }
     }
 
     /**
-     * Check if user can create attachment for the given DCT
+     * Destroys a record from the database.
+     *
+     * @param  int  $id
+     * @param  int  $id  The ID of the record to be destroyed.
+     * @return Response
+     * @return \Illuminate\Http\RedirectResponse Redirects the user to the specified URL.
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the record is not found.
      */
-    protected function canCreateAttachment($dctId, $userId)
+
+
+    public function destroy($id)
     {
-        $dct = DCT::find($dctId);
-        
-        if (!$dct) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'DCT not found!',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            return false;
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Destroy';
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Find the record
+            $$module_name_singular = $module_model::findOrFail($id);
+
+            // Delete the record
+            $$module_name_singular->delete();
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast(Str::singular($module_title) . "' Deleted Successfully", 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} | Id: " . $$module_name_singular->id);
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error in destroy: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to delete record!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect()->back()->withErrors(['error' => 'Failed to delete record.']);
         }
+    }
 
-        if ($dct->created_by != $userId) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You can only add attachments to DCTs that you created!',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            return false;
+    /**
+     * List of trashed ertries
+     * works if the softdelete is enabled.
+     *
+     * @return \Illuminate\Contracts\View\View
+     */
+    public function trashed()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Trash List';
+
+        $$module_name = $module_model::onlyTrashed()->orderBy('deleted_at', 'desc')->paginate();
+
+
+        return view(
+            "{$module_path}.{$module_name}.trash",
+            compact('module_title', 'module_name', 'module_path', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
+        );
+    }
+
+    /**
+     * Restores a data entry in the database.
+     *
+     * @param  Request  $request
+     * @param  int  $id
+     * @param  int  $id  The ID of the data entry to be restored.
+     * @return Response
+     * @return \Illuminate\Http\RedirectResponse The response redirecting to the admin page of the module.
+     *
+     * @throws \Exception If the data entry cannot be found or restored.
+     */
+
+    public function restore($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Restore';
+
+        // Start a database transaction
+        DB::beginTransaction();
+
+        try {
+            // Find the record (including soft-deleted)
+            $$module_name_singular = $module_model::withTrashed()->findOrFail($id);
+
+            // Restore the record
+            $$module_name_singular->restore();
+
+            // Commit the transaction
+            DB::commit();
+
+            // Flash success message
+            Alert::toast(label_case($module_name_singular) . ' Data Restored Successfully!', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            // Log the action
+            Log::info("{$module_title} {$module_action} | Id: " . $$module_name_singular->id);
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            // Rollback the transaction on error
+            DB::rollBack();
+
+            // Log the error
+            Log::error("Error in restore: " . $e->getMessage());
+
+            // Flash error message
+            Alert::toast('Failed to restore record!', 'error')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect()->back()->withErrors(['error' => 'Failed to restore record.']);
         }
-
-        return true;
-    }
-
-    public function getDctsProperty()
-    {
-        return DCT::orderBy('name')->get(['id', 'name']);
-    }
-
-    public function render()
-    {
-        return view('livewire.attachement.attachement-modal');
-    }
-
-    public static function modalMaxWidth(): string
-    {
-        return '2xl';
     }
 }
