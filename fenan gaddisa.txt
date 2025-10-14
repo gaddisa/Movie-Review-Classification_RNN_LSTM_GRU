@@ -1,101 +1,208 @@
-@extends('backend.layouts.app')
+<?php
 
-@section('title')
-    {{ __($module_action) }} {{ __($module_title) }}
-@endsection
+namespace Modules\DCT\Http\Controllers\Backend;
 
-@section('breadcrumbs')
-    <x-backend.breadcrumbs>
-        <x-backend.breadcrumb-item type="active" icon='{{ $module_icon }}'>{{ __($module_title) }}</x-backend.breadcrumb-item>
-    </x-backend.breadcrumbs>
-@endsection
+use App\Authorizable;
+use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use Modules\Program\Models\Program;
+use RealRashid\SweetAlert\Facades\Alert;
+use App\Http\Controllers\Backend\BackendBaseController;
+use Illuminate\Support\Facades\DB;
 
-@section('content')
-    <div class="card">
-        <div class="card-body">
-            <x-backend.section-header>
-                <i class="{{ $module_icon }}"></i> {{ __($module_title) }} <small class="text-muted">{{ __($module_action) }}</small>
+class DCTSController extends BackendBaseController
+{
+    use Authorizable;
 
-                <x-slot name="subtitle">
-                    @lang(':module_name Management Dashboard', ['module_name' => Str::title($module_name)])
-                </x-slot>
-                <x-slot name="toolbar">
-                    @can('add_' . $module_name)
-                        <x-buttons.create route='{{ route("backend.$module_name.create") }}' title="{{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}" />
-                    @endcan
+    public function __construct()
+    {
+        // Page Title
+        $this->module_title = 'DCTS';
 
-                    @can('restore_' . $module_name)
-                        <div class="btn-group">
-                            <button class="btn btn-secondary dropdown-toggle" type="button" data-coreui-toggle="dropdown" aria-expanded="false">
-                                <i class="fas fa-cog"></i>
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li>
-                                    <a class="dropdown-item" href='{{ route("backend.$module_name.trashed") }}'>
-                                        <i class="fas fa-eye-slash"></i> @lang('View trash')
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    @endcan
-                </x-slot>
-            </x-backend.section-header>
+        // module name
+        $this->module_name = 'dcts';
 
-            <div class="row mt-4">
-                <div class="col">
-                    <table id="datatable" class="table table-bordered table-hover table-responsive-sm">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>@lang('program::text.program_name')</th>
-                                <th>@lang('program::text.program_level')</th>
-                                <th>@lang('program::text.institute_type')</th>
-                                <th>Accreditation Type</th>
-                                <th>@lang('program::text.status')</th>
-                                <th>@lang('program::text.updated_at')</th>
-                                <th class="text-end">@lang('program::text.action')</th>
-                            </tr>
-                        </thead>
-                    </table>
-                </div>
-            </div>
-        </div>
-        <div class="card-footer">
-            <div class="row">
-                <div class="col-7">
-                    <div class="float-left"></div>
-                </div>
-                <div class="col-5">
-                    <div class="float-end"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-@endsection
+        // directory path of the module
+        $this->module_path = 'dct::backend';
 
-@push('after-styles')
-    <link rel="stylesheet" href="{{ asset('vendor/datatable/datatables.min.css') }}">
-@endpush
+        // module icon
+        $this->module_icon = 'fa-regular fa-sun';
 
-@push('after-scripts')
-    <script type="module" src="{{ asset('vendor/datatable/datatables.min.js') }}"></script>
+        // module model name, path
+        $this->module_model = "Modules\DCT\Models\DCT";
+    }
 
-    <script type="module">
-        $('#datatable').DataTable({
-            processing: true,
-            serverSide: true,
-            responsive: true,
-            ajax: '{{ route("backend.$module_name.index_data") }}',
-            columns: [
-                { data: 'id', name: 'id' },
-                { data: 'name', name: 'name' },
-                { data: 'program_level', name: 'program_level' },
-                { data: 'institute_type', name: 'institute_type' },
-                { data: 'accreditation_type', name: 'accreditation_type' },
-                { data: 'status', name: 'status' },
-                { data: 'updated_at', name: 'updated_at' },
-                { data: 'action', name: 'action', orderable: false, searchable: false }
-            ]
-        });
-    </script>
-@endpush
+    /**
+     * Override the create method to show programs in a regular select
+     */
+    public function create()
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Create';
+
+        // Get all programs for the select dropdown
+        $programs = Program::orderBy('name')->get(['id', 'name', 'description']);
+
+        logUserAccess($module_title . ' ' . $module_action);
+
+        return view(
+            "{$module_path}.{$module_name}.create",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'programs')
+        );
+    }
+
+    /**
+     * Override the edit method to show programs in a regular select
+     */
+    public function edit($id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
+
+        $module_action = 'Edit';
+
+        $$module_name_singular = $module_model::findOrFail($id);
+        
+        // Get all programs for the select dropdown
+        $programs = Program::orderBy('name')->get(['id', 'name', 'description']);
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        return view(
+            "{$module_path}.{$module_name}.edit",
+            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}", 'programs')
+        );
+    }
+
+    // ... rest of your existing methods (index_data, store, update) remain the same
+    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
+    {
+        $buttonModuleName = 'standards';
+        $additionalButtons = [
+            [
+                'route' => "backend.$buttonModuleName.standards",
+                'title' => 'Standards',
+                'class' => 'btn-outline-info',
+                'icon' => 'fa-solid fa-sitemap',
+            ],
+            [
+                'route' => "backend.applications.downloadDctStructure",
+                'title' => 'Download Structure',
+                'class' => 'btn-outline-primary',
+                'icon' => 'fa-solid fa-download',
+            ],
+        ];
+
+        return parent::index_data($columns, $additionalButtons);
+    }
+
+    public function store(Request $request)
+{
+    $module_title = $this->module_title;
+    $module_name = $this->module_name;
+    $module_model = $this->module_model;
+    $module_action = 'Store';
+
+    // Validate request input
+    $validatedData = $request->validate([
+        'program_id' => 'required|exists:programs,id'
+    ]);
+
+    // Fetch the program
+    $program = Program::findOrFail($validatedData['program_id']);
+    $name = 'DCT-' . Str::slug($program->description);
+
+    DB::beginTransaction();
+    try {
+        $record = $module_model::create([
+            'name' => $name,
+            'program_id' => $program->id
+        ]);
+
+        DB::commit();
+
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $record->id);
+
+        Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
+            ->position('top-end')
+            ->autoClose(5000)
+            ->timerProgressBar();
+
+        return redirect("admin/{$module_name}");
+        
+    } catch (\Illuminate\Database\QueryException $e) {
+        DB::rollBack();
+        
+        // Check if it's a duplicate entry error (MySQL error code 1062)
+        if ($e->getCode() == 23000 && str_contains($e->getMessage(), '1062')) {
+            return back()->withErrors(['program_id' => 'A DCT with this name already exists. Please try again.'])->withInput();
+        }
+        
+        report($e);
+        return back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        
+    } catch (\Exception $e) {
+        DB::rollBack();
+        report($e);
+        return back()->withErrors(['error' => 'An error occurred while processing your request.']);
+    }
+}
+
+    public function update(Request $request, $id)
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_model = $this->module_model;
+        $module_action = 'Update';
+
+        // Validate request input
+        $validatedData = $request->validate([
+            'program_id' => 'required|exists:programs,id'
+        ]);
+
+        // Find the existing record
+        $record = $module_model::findOrFail($id);
+
+        // Fetch the new program details
+        $program = Program::findOrFail($validatedData['program_id']);
+        $newName = 'DCT-' . Str::slug($program->description);
+
+        // Ensure unique name (skip if it's the same as current)
+        if ($record->name !== $newName && $module_model::where('name', $newName)->exists()) {
+            return back()->withErrors(['name' => 'The generated name already exists.'])->withInput();
+        }
+
+        DB::beginTransaction();
+        try {
+            $record->update([
+                'name' => $newName,
+                'program_id' => $program->id
+            ]);
+
+            DB::commit();
+
+            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $record->id);
+
+            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
+                ->position('top-end')
+                ->autoClose(5000)
+                ->timerProgressBar();
+
+            return redirect("admin/{$module_name}");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            report($e);
+            return back()->withErrors(['error' => 'An error occurred while updating the record.']);
+        }
+    }
+}
