@@ -1,208 +1,83 @@
-<?php
+@extends('backend.layouts.app')
 
-namespace Modules\DCT\Http\Controllers\Backend;
+@section('title') 
+    {{ __($module_action) }} {{ __($module_title) }}
+@endsection
 
-use App\Authorizable;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use Modules\Program\Models\Program;
-use RealRashid\SweetAlert\Facades\Alert;
-use App\Http\Controllers\Backend\BackendBaseController;
-use Illuminate\Support\Facades\DB;
+@section('breadcrumbs')
+    <x-backend.breadcrumbs>
+        <x-backend.breadcrumb-item type="active" icon='{{ $module_icon }}'>{{ __($module_title) }}</x-backend.breadcrumb-item>
+    </x-backend.breadcrumbs>
+@endsection
 
-class DCTSController extends BackendBaseController
-{
-    use Authorizable;
+@section('content')
+    <div class="card">
+        <div class="card-body">
+            <x-backend.section-header>
+                <i class="{{ $module_icon }}"></i> {{ __($module_title) }} <small class="text-muted">{{ __($module_action) }}</small>
 
-    public function __construct()
-    {
-        // Page Title
-        $this->module_title = 'DCTS';
+                <x-slot name="subtitle">
+                    @lang(':module_name Management Dashboard', ['module_name' => Str::title($module_name)])
+                </x-slot>
+                <x-slot name="toolbar">
+                    <x-buttons.cancel />
+                </x-slot>
+            </x-backend.section-header>
 
-        // module name
-        $this->module_name = 'dcts';
+            <hr>
 
-        // directory path of the module
-        $this->module_path = 'dct::backend';
+            <div class="row mt-4">
+                <div class="col">
+                    <form method="POST" action="{{ route('backend.dcts.store') }}">
+                        @csrf
 
-        // module icon
-        $this->module_icon = 'fa-regular fa-sun';
+                        <div class="row">
+                            <div class="col-12 mb-3">
+                                <div class="form-group">
+                                    <label for="program_id" class="form-label">Select Program <span class="text-danger">*</span></label>
+                                    <select name="program_id" id="program_id" class="form-control" required>
+                                        <option value="">-- Select a Program --</option>
+                                        @foreach($programs as $program)
+                                            <option value="{{ $program->id }}" {{ old('program_id') == $program->id ? 'selected' : '' }}>
+                                                {{ $program->name }} - {{ $program->description }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <small class="form-text text-muted">
+                                        Select the program for which you want to create a DCT (Data Collection Tool). 
+                                        The DCT name will be automatically generated based on the program description.
+                                    </small>
+                                    @error('program_id')
+                                        <div class="text-danger">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
 
-        // module model name, path
-        $this->module_model = "Modules\DCT\Models\DCT";
-    }
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="alert alert-info">
+                                    <h6 class="alert-heading"><i class="fas fa-info-circle"></i> How DCTs Work</h6>
+                                    <hr>
+                                    <p class="mb-1"><strong>DCT (Data Collection Tool)</strong> will be automatically created with the format: <code>DCT-{program-description}</code></p>
+                                    <p class="mb-0">Once created, you can add standards, substandards, indicators, and questions to organize your accreditation documentation.</p>
+                                </div>
+                            </div>
+                        </div>
 
-    /**
-     * Override the create method to show programs in a regular select
-     */
-    public function create()
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Create';
-
-        // Get all programs for the select dropdown
-        $programs = Program::orderBy('name')->get(['id', 'name', 'description']);
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'programs')
-        );
-    }
-
-    /**
-     * Override the edit method to show programs in a regular select
-     */
-    public function edit($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Edit';
-
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get all programs for the select dropdown
-        $programs = Program::orderBy('name')->get(['id', 'name', 'description']);
-
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-        return view(
-            "{$module_path}.{$module_name}.edit",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}", 'programs')
-        );
-    }
-
-    // ... rest of your existing methods (index_data, store, update) remain the same
-    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
-    {
-        $buttonModuleName = 'standards';
-        $additionalButtons = [
-            [
-                'route' => "backend.$buttonModuleName.standards",
-                'title' => 'Standards',
-                'class' => 'btn-outline-info',
-                'icon' => 'fa-solid fa-sitemap',
-            ],
-            [
-                'route' => "backend.applications.downloadDctStructure",
-                'title' => 'Download Structure',
-                'class' => 'btn-outline-primary',
-                'icon' => 'fa-solid fa-download',
-            ],
-        ];
-
-        return parent::index_data($columns, $additionalButtons);
-    }
-
-    public function store(Request $request)
-{
-    $module_title = $this->module_title;
-    $module_name = $this->module_name;
-    $module_model = $this->module_model;
-    $module_action = 'Store';
-
-    // Validate request input
-    $validatedData = $request->validate([
-        'program_id' => 'required|exists:programs,id'
-    ]);
-
-    // Fetch the program
-    $program = Program::findOrFail($validatedData['program_id']);
-    $name = 'DCT-' . Str::slug($program->description);
-
-    DB::beginTransaction();
-    try {
-        $record = $module_model::create([
-            'name' => $name,
-            'program_id' => $program->id
-        ]);
-
-        DB::commit();
-
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $record->id);
-
-        Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
-            ->position('top-end')
-            ->autoClose(5000)
-            ->timerProgressBar();
-
-        return redirect("admin/{$module_name}");
-        
-    } catch (\Illuminate\Database\QueryException $e) {
-        DB::rollBack();
-        
-        // Check if it's a duplicate entry error (MySQL error code 1062)
-        if ($e->getCode() == 23000 && str_contains($e->getMessage(), '1062')) {
-            return back()->withErrors(['program_id' => 'A DCT with this name already exists. Please try again.'])->withInput();
-        }
-        
-        report($e);
-        return back()->withErrors(['error' => 'An error occurred while processing your request.']);
-        
-    } catch (\Exception $e) {
-        DB::rollBack();
-        report($e);
-        return back()->withErrors(['error' => 'An error occurred while processing your request.']);
-    }
-}
-
-    public function update(Request $request, $id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_model = $this->module_model;
-        $module_action = 'Update';
-
-        // Validate request input
-        $validatedData = $request->validate([
-            'program_id' => 'required|exists:programs,id'
-        ]);
-
-        // Find the existing record
-        $record = $module_model::findOrFail($id);
-
-        // Fetch the new program details
-        $program = Program::findOrFail($validatedData['program_id']);
-        $newName = 'DCT-' . Str::slug($program->description);
-
-        // Ensure unique name (skip if it's the same as current)
-        if ($record->name !== $newName && $module_model::where('name', $newName)->exists()) {
-            return back()->withErrors(['name' => 'The generated name already exists.'])->withInput();
-        }
-
-        DB::beginTransaction();
-        try {
-            $record->update([
-                'name' => $newName,
-                'program_id' => $program->id
-            ]);
-
-            DB::commit();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $record->id);
-
-            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect("admin/{$module_name}");
-        } catch (\Exception $e) {
-            DB::rollBack();
-            report($e);
-            return back()->withErrors(['error' => 'An error occurred while updating the record.']);
-        }
-    }
-}
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="form-group">
+                                    <x-buttons.create title="Create DCT" class="float-end">
+                                        {{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}
+                                    </x-buttons.create>
+                                    <x-buttons.cancel />
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+@endsection
