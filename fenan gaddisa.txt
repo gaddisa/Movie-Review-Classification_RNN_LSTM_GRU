@@ -1,61 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>FDRE ETA Accreditation Portal - Registration Temporarily Closed</title>
-
-    <!-- SEO Meta -->
-    <meta name="description"
-        content="{{ setting('meta_description', 'Accreditation management platform for Ethiopian higher education and TVET institutions, operated by the Federal Democratic Republic of Ethiopia Education and Training Authority (FDRE ETA). Apply, track, and manage accreditation online.') }}" />
-    <meta name="keywords"
-        content="{{ setting('meta_keyword', 'Ethiopia university accreditation, TVET accreditation Ethiopia, FDRE Education and Training Authority, higher education quality assurance, accreditation Ethiopia, education standards Ethiopia, quality audit Ethiopia') }}" />
-    <meta name="author" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
-    <meta name="copyright" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
-    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-
-    <!-- Favicons -->
-    <link href="{{ asset('img/favicon.png') }}" rel="apple-touch-icon" sizes="180x180" />
-    <link type="image/png" href="{{ asset('img/favicon.png') }}" rel="icon" sizes="32x32" />
-    <link type="image/png" href="{{ asset('img/favicon.png') }}" rel="icon" sizes="16x16" />
-    <link rel="shortcut icon" href="{{ asset('img/favicon.png') }}" />
-    <meta name="theme-color" content="#0d6efd" />
-
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:title"
-        content="@yield('title') | {{ config('app.name', 'Ethiopia Higher Education Accreditation Platform - FDRE ETA') }}" />
-    <meta property="og:description"
-        content="{{ setting('meta_description', 'Official accreditation management platform for Ethiopian higher education and TVET institutions.') }}" />
-    <meta property="og:url" content="{{ url()->current() }}" />
-    <meta property="og:site_name" content="FDRE Education and Training Authority" />
-    <meta property="og:image" content="{{ asset('img/logo-square.png') }}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:locale" content="{{ str_replace('_', '-', app()->getLocale()) }}" />
-
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@FDRETraining" />
-    <meta name="twitter:creator" content="@FDRETraining" />
-    <meta name="twitter:title" content="@yield('title') | {{ config('app.name') }}" />
-    <meta name="twitter:description" content="{{ setting('meta_description') }}" />
-    <meta name="twitter:image" content="{{ asset('img/logo-square.png') }}" />
-
-    <!-- Dublin Core -->
-    <meta name="DC.title" content="@yield('title') | {{ config('app.name') }}" />
-    <meta name="DC.description" content="{{ setting('meta_description') }}" />
-    <meta name="DC.creator" content="Federal Democratic Republic of Ethiopia Education and Training Authority" />
-    <meta name="DC.language" content="{{ str_replace('_', '-', app()->getLocale()) }}" />
-
-    <!-- CSRF Token -->
-    <meta name="csrf-token" content="{{ csrf_token() }}" />
-
-    <!-- Canonical URL -->
-    <link rel="canonical" href="{{ url()->current() }}" />
-
-
+    <title>FDRE ETA - Registration Temporarily Closed</title>
+    
     <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
@@ -82,7 +31,7 @@
             overflow: hidden;
         }
 
-        /* decorative floating shapes */
+        /* Decorative elements */
         body::before,
         body::after {
             content: "";
@@ -108,76 +57,40 @@
         }
 
         @keyframes float {
-
-            0%,
-            100% {
-                transform: translateY(0) rotate(0)
-            }
-
-            50% {
-                transform: translateY(20px) rotate(10deg)
-            }
+            0%, 100% { transform: translateY(0) rotate(0); }
+            50% { transform: translateY(20px) rotate(10deg); }
         }
 
-        .login-card {
+        .status-card {
             z-index: 1;
             width: 100%;
-            max-width: 480px;
-            padding: 2rem;
+            max-width: 420px;
+            padding: 2.5rem 2rem;
             border-radius: 14px;
             background: rgba(255, 255, 255, 0.12);
             backdrop-filter: blur(16px);
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
             color: #fff;
+            text-align: center;
             animation: fadeIn .6s ease;
         }
 
-        .login-header {
-            text-align: center;
-            margin-bottom: 1.5rem
-        }
-
-        .login-header img {
-            width: 85px;
-            display: block;
-            margin: 0 auto 8px
-        }
-
-        .login-header h2 {
-            font-weight: 700;
-            color: #fff;
-            margin: 0;
-            font-size: 1.5rem
-        }
-
-        .login-header p {
-            margin: 0.5rem 0 0;
-            opacity: 0.9;
-        }
-
-        .status-card {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 10px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            text-align: center;
-        }
-
         .status-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
+            font-size: 3.5rem;
+            margin-bottom: 1.5rem;
             color: var(--accent);
         }
 
         .status-title {
             font-weight: 700;
-            font-size: 1.25rem;
-            margin-bottom: 0.75rem;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
         }
 
         .status-description {
             opacity: 0.9;
-            line-height: 1.5;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
         }
 
         .progress-container {
@@ -185,103 +98,102 @@
         }
 
         .progress {
-            height: 8px;
+            height: 6px;
             background: rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
+            border-radius: 3px;
             overflow: hidden;
         }
 
         .progress-bar {
             background: var(--accent);
-            border-radius: 4px;
+            border-radius: 3px;
             animation: progressAnimation 2s ease-in-out infinite;
         }
 
         @keyframes progressAnimation {
-            0% {
-                width: 30%;
-            }
-            50% {
-                width: 70%;
-            }
-            100% {
-                width: 30%;
-            }
+            0% { width: 30%; }
+            50% { width: 70%; }
+            100% { width: 30%; }
         }
 
-        .btn-login {
-            background: linear-gradient(135deg, var(--primary), var(--accent));
-            border: none;
+        .btn-group {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn {
+            flex: 1;
             border-radius: 8px;
             font-weight: 600;
             height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
         }
 
-        .btn-cancel {
+        .btn-primary {
+            background: var(--primary);
+            border: none;
+            color: white;
+        }
+
+        .btn-secondary {
             background: rgba(255, 255, 255, 0.18);
             border: none;
-            border-radius: 8px;
-            color: #fff;
-            height: 44px;
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(12px)
-            }
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: none; }
+        }
 
-            to {
-                opacity: 1;
-                transform: none
-            }
+        .logo {
+            width: 70px;
+            margin-bottom: 1rem;
         }
     </style>
 </head>
 
 <body>
-
-    <div class="login-card">
-        <div class="login-header">
-            <img src="{{ asset('img/favicon.png') }}" alt="FDRE ETA logo">
-            <h2>Registration Temporarily Closed</h2>
-            <p>We're currently enhancing our system</p>
+    <div class="status-card">
+        <img src="{{ asset('img/favicon.png') }}" alt="FDRE ETA logo" class="logo">
+        
+        <div class="status-icon">
+            <i class="fas fa-tools"></i>
         </div>
-
-        <div class="status-card">
-            <div class="status-icon">
-                <i class="fas fa-tools"></i>
-            </div>
-            <div class="status-title">System Maintenance in Progress</div>
-            <div class="status-description">
-                We're currently encoding data and performing system upgrades to serve you better. 
-                The registration portal will be available again soon with improved functionality.
-            </div>
-            
-            <div class="progress-container">
-                <div class="progress">
-                    <div class="progress-bar"></div>
-                </div>
-                <small class="text-white-50">Data encoding in progress</small>
-            </div>
-            
-            <div class="status-description mt-3">
-                <strong>Expected Completion:</strong> Coming Soon<br>
-                Please check back later or contact our support team for more information.
-            </div>
+        
+        <div class="status-title">Registration Temporarily Closed</div>
+        
+        <div class="status-description">
+            We're currently encoding data and performing system upgrades to serve you better. 
+            The registration portal will be available again soon.
         </div>
-
-        <div class="d-grid gap-2">
-            <a href="{{ route('login') }}" class="btn btn-login text-white">
-                <i class="fas fa-sign-in-alt me-2"></i>Return to Login
+        
+        <div class="progress-container">
+            <div class="progress">
+                <div class="progress-bar"></div>
+            </div>
+            <small class="text-white-50">Data encoding in progress</small>
+        </div>
+        
+        <div class="btn-group">
+            <a href="/" class="btn btn-secondary">
+                <i class="fas fa-home me-2"></i>Home
             </a>
-            <a href="/" class="btn btn-cancel">
-                <i class="fas fa-home me-2"></i>Back to Homepage
+            <a href="{{ route('login') }}" class="btn btn-primary">
+                <i class="fas fa-arrow-left me-2"></i>Back to Login
             </a>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-
 </html>
