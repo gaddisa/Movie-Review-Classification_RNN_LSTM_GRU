@@ -1,362 +1,120 @@
-<?php
-
-namespace App\Http\Controllers\Backend;
-
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Gate;
-use App\Authorizable;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use Yajra\DataTables\DataTables;
-use Modules\Program\Models\Program;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use RealRashid\SweetAlert\Facades\Alert;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Backend\BackendBaseController;
-
-class QuestionsController extends BackendBaseController
-{
-    use Authorizable;
-
-    public $module_title;
-    public $module_name;
-    public $module_path;
-    public $module_icon;
-    public $module_model;
-
-    public function __construct()
-    {
-        // Page Title
-        $this->module_title = 'Indicators Questions Management';
-        $this->module_title = 'Questions';
-        $this->module_name = 'questions';
-        $this->module_path = 'backend';
-        $this->module_icon = 'fa-solid fa-folder-tree';
-        $this->module_model = "App\\Models\\Question";
-    }
-
-    /**
-     * Check if user can create question for the given indicator
-     */
-    protected function canCreateQuestion($indicatorId, $userId)
-    {
-        $indicator = \App\Models\Indicator::find($indicatorId);
-        
-        if (!$indicator) {
-            Alert::toast('Indicator not found!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return false;
-        }
-
-        if ($indicator->created_by != $userId) {
-            Alert::toast('You can only add questions to indicators that you created!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return false;
-        }
-
-        return true;
-    }
-
-    public function index(Request $request)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'List';
-
-        $$module_name = $module_model::paginate(15);
-        $id = $request->query('id');
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.index_datatable",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
-        );
-    }
-
-    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'List';
-        $page_heading = label_case($module_title);
-        $title = $page_heading . ' ' . label_case($module_action);
-
-        // Use provided columns or default to a basic set
-        $columns = $columns ?? ['id', 'question_text', 'updated_at'];
-
-        // Base query
-        $data = $module_model::select($columns)->orderBy('id', 'asc');
-
-        // Retrieve `id` from request if not passed in $additionalData
-        $id = $additionalData['id'] ?? request()->query('id');
-
-        // Filter by indicator_id if an ID is provided
-        if ($id) {
-            $data = $data->where('indicator_id', $id);
-        }
-
-        return Datatables::of($data)
-            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
-                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
-            })
-            ->editColumn('question_text', function ($data) {
-                return '<strong>' . $data->question_text . '</strong>';
-            })
-            ->editColumn('updated_at', function ($data) {
-                if ($data->updated_at) {
-                    $diff = Carbon::now()->diffInHours($data->updated_at);
-
-                    if ($diff < 25) {
-                        return $data->updated_at->diffForHumans();
-                    }
-
-                    return $data->updated_at->isoFormat('llll');
-                }
-
-                return 'No Date Available';
-            })
-            ->rawColumns(['question_text', 'action'])
-            ->orderColumns(['id'], '-:column $1')
-            ->make(true);
-    }
-
-    public function create(array $additionalData = [])
-    {
-        $indicator_id = request()->get('id');
-
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Create';
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'indicator_id')
-        );
-    }
-
-    public function store(Request $request)
-    {
-        // Get the indicator_id from the request
-        $indicator_id = $request->get('indicator_id');
-
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Store';
-
-        // CHECK OWNERSHIP FIRST
-        if (!$this->canCreateQuestion($indicator_id, auth()->id())) {
-            return redirect()->route('backend.dcts.index');
-        }
-
-        // Custom validation for questions
-        $validator = Validator::make($request->all(), [
-            'question_text' => [
-                'required',
-                'string',
-                'max:1000',
-                Rule::unique('questions')->where(function ($query) use ($indicator_id) {
-                    return $query->where('indicator_id', $indicator_id);
-                })
-            ],
-        ], [
-            'question_text.unique' => 'A question with this text already exists for the selected indicator.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        try {
-            // Add the indicator_id to the validated data before creating the record
-            $data = $validator->validated();
-            $data['indicator_id'] = $indicator_id;
-
-            // Create the new record
-            $$module_name_singular = $module_model::create($data);
-
-            Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect to index_datatable with the indicator_id to filter the records
-            return redirect()->route("backend.{$module_name}.index", ['id' => $indicator_id]);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error("Error in store: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to create record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create record.']);
-        }
-    }
-
-    public function edit($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Edit';
-
-        $$module_name_singular = $module_model::findOrFail($id);
-
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-        return view(
-            "{$module_path}.{$module_name}.edit",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
-        );
-    }
-
-    public function update(Request $request, $id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Update';
-
-        // First, find the record to get the existing indicator_id
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get indicator_id from the existing record
-        $indicator_id = $$module_name_singular->indicator_id;
-
-        // CHECK OWNERSHIP BEFORE UPDATE
-        if (!$this->canCreateQuestion($indicator_id, auth()->id())) {
-            return redirect()->route('backend.dcts.index');
-        }
-
-        // Custom validation for questions
-        $validator = Validator::make($request->all(), [
-            'question_text' => [
-                'required',
-                'string',
-                'max:1000',
-                Rule::unique('questions')->where(function ($query) use ($indicator_id) {
-                    return $query->where('indicator_id', $indicator_id);
-                })->ignore($id)
-            ],
-        ], [
-            'question_text.unique' => 'A question with this text already exists for the selected indicator.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        try {
-            // Update the record with validated data
-            $$module_name_singular->update($validator->validated());
-
-            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error("Error in update: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to update record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
-        }
-    }
-
-    public function destroy($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'destroy';
-
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get the indicator_id BEFORE deleting so we can redirect properly
-        $indicator_id = $$module_name_singular->indicator_id;
-
-        // CHECK OWNERSHIP BEFORE DELETE
-        if (!$this->canCreateQuestion($indicator_id, auth()->id())) {
-            return redirect()->route('backend.dcts.index');
-        }
-
-        try {
-            $$module_name_singular->delete();
-
-            Alert::toast(Str::singular($module_title) . ' Deleted Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect to index_datatable with the indicator_id to filter the records
-            return redirect()->route("backend.{$module_name}.index", ['id' => $indicator_id]);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error("Error in destroy: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to delete record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withErrors(['error' => 'Failed to delete record.']);
-        }
-    }
-}
+<div class="p-4 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg shadow-lg border border-gray-200">
+  <div class="flex justify-between items-center pb-2 border-b border-gray-200 mb-3">
+    <h2 class="text-xl font-bold text-gray-800 flex items-center">
+      <i class="fas fa-paperclip mr-2 text-blue-600"></i>
+      {{ $isEdit ? __('Edit Attachment') : __('Add New Attachment') }}
+    </h2>
+    <button wire:click="$dispatch('closeModal')"
+            class="text-gray-500 hover:text-red-600 transition duration-200 transform hover:scale-110 p-1">
+      <i class="fas fa-times-circle text-xl"></i>
+    </button>
+  </div>
+
+  <form wire:submit.prevent="saveAttachment" class="space-y-4">
+    <!-- DCT Selection -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        <i class="fas fa-project-diagram mr-1 text-gray-500"></i> @lang('DCT') *
+      </label>
+      <select wire:model="dct_id" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition text-sm">
+        <option value="">-- Select DCT --</option>
+        @foreach ($this->dcts as $dct)
+          <option value="{{ $dct->id }}">{{ $dct->name }}</option>
+        @endforeach
+      </select>
+      @error('dct_id')
+        <span class="text-xs text-red-500 flex items-center mt-1">
+          <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+        </span>
+      @enderror
+    </div>
+
+    <!-- Name (full width) -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        <i class="fas fa-signature mr-1 text-gray-500"></i> @lang('Name') *
+      </label>
+      <textarea wire:model="name" rows="3" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition resize-y text-sm"></textarea>
+      @error('name')
+        <span class="text-xs text-red-500 flex items-center mt-1">
+          <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+        </span>
+      @enderror
+    </div>
+
+    <!-- Combined row: Type, Status, Required -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+      <!-- Type -->
+      <div>
+        <label class="font-medium text-gray-700 mb-1 flex items-center">
+          <i class="fas fa-tag mr-1 text-gray-500"></i> @lang('Type') *
+        </label>
+        <select wire:model="attachement_type" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+          <option value="DOCUMENT">DOCUMENT</option>
+          <option value="TABLE">TABLE</option>
+          <option value="IMAGE">IMAGE</option>
+          <option value="VIDEO">VIDEO</option>
+        </select>
+        @error('attachement_type')
+          <span class="text-xs text-red-500 flex items-center mt-1">
+            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+          </span>
+        @enderror
+      </div>
+
+      <!-- Status -->
+      <div>
+        <label class="font-medium text-gray-700 mb-1 flex items-center">
+          <i class="fas fa-toggle-on mr-1 text-gray-500"></i> @lang('Status') *
+        </label>
+        <select wire:model="status" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        @error('status')
+          <span class="text-xs text-red-500 flex items-center mt-1">
+            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+          </span>
+        @enderror
+      </div>
+
+      <!-- Is Required -->
+      <div>
+        <label class="font-medium text-gray-700 mb-1 flex items-center">
+          <i class="fas fa-asterisk mr-1 text-gray-500"></i> @lang('Required') *
+        </label>
+        <select wire:model="is_required" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+          <option value="Optional">Optional</option>
+          <option value="Mandatory">Mandatory</option>
+        </select>
+        @error('is_required')
+          <span class="text-xs text-red-500 flex items-center mt-1">
+            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+          </span>
+        @enderror
+      </div>
+    </div>
+
+    <!-- Note about images and videos -->
+    <!-- Note about images and videos -->
+<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
+    <p class="text-yellow-700">
+        <strong>Note:</strong> For picture and video attachments, institutions/TVETs can submit a PDF file containing links to their videos and photos.
+    </p>
+</div>
+
+    <div class="flex justify-end space-x-3 pt-2">
+      <button wire:click="$dispatch('closeModal')" type="button" class="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center text-sm">
+        <i class="fas fa-times mr-2"></i> @lang('Cancel')
+      </button>
+      <button type="submit" class="px-4 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center text-sm" wire:loading.attr="disabled">
+        <span wire:loading.remove wire:target="saveAttachment">
+          <i class="fas fa-save mr-2"></i> {{ $isEdit ? __('Update') : __('Save') }}
+        </span>
+        <span wire:loading wire:target="saveAttachment">
+          <i class="fas fa-spinner fa-spin mr-2"></i> @lang('Saving...')
+        </span>
+      </button>
+    </div>
+  </form>
+</div>
