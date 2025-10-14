@@ -1,199 +1,369 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>FDRE ETA - Registration Temporarily Closed</title>
-    
-    <!-- Bootstrap -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+@extends('backend.layouts.app')
 
-    <style>
-        :root {
-            --primary: #36bac0;
-            --accent: #ed6923;
-            --dark: #37517e;
-        }
+@section('title', 'Review and Assessment')
 
-        body {
-            font-family: 'Nunito', sans-serif;
-            min-height: 100vh;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, var(--dark) 0%, var(--primary) 60%);
-            position: relative;
-            overflow: hidden;
-        }
+@section('breadcrumbs')
+    <x-backend.breadcrumbs>
+        <x-backend.breadcrumb-item route="{{ route('backend.applications.index') }}" icon="fa-solid fa-folder">
+            {{ __('Applications') }}
+        </x-backend.breadcrumb-item>
+        <x-backend.breadcrumb-item
+            route="{{ route('backend.applications.showStandardsForDeskReview', ['id' => $application_id]) }}"
+            icon="fa-solid fa-list">
+            {{ __('Standards') }}
+        </x-backend.breadcrumb-item>
+        <x-backend.breadcrumb-item type="active">{{ __('Desk Review') }}</x-backend.breadcrumb-item>
+    </x-backend.breadcrumbs>
+@endsection
 
-        /* Decorative elements */
-        body::before,
-        body::after {
-            content: "";
-            position: absolute;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.05);
-            z-index: 0;
-            animation: float 10s infinite ease-in-out;
-        }
-
-        body::before {
-            width: 350px;
-            height: 350px;
-            top: -120px;
-            left: -120px;
-        }
-
-        body::after {
-            width: 250px;
-            height: 250px;
-            bottom: -80px;
-            right: -80px;
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translateY(0) rotate(0); }
-            50% { transform: translateY(20px) rotate(10deg); }
-        }
-
-        .status-card {
-            z-index: 1;
-            width: 100%;
-            max-width: 420px;
-            padding: 2.5rem 2rem;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.12);
-            backdrop-filter: blur(16px);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-            color: #fff;
-            text-align: center;
-            animation: fadeIn .6s ease;
-        }
-
-        .status-icon {
-            font-size: 3.5rem;
-            margin-bottom: 1.5rem;
-            color: var(--accent);
-        }
-
-        .status-title {
-            font-weight: 700;
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .status-description {
-            opacity: 0.9;
-            line-height: 1.6;
-            margin-bottom: 1.5rem;
-        }
-
-        .progress-container {
-            margin: 1.5rem 0;
-        }
-
-        .progress {
-            height: 6px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 3px;
-            overflow: hidden;
-        }
-
-        .progress-bar {
-            background: var(--accent);
-            border-radius: 3px;
-            animation: progressAnimation 2s ease-in-out infinite;
-        }
-
-        @keyframes progressAnimation {
-            0% { width: 30%; }
-            50% { width: 70%; }
-            100% { width: 30%; }
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 0.75rem;
-            margin-top: 1.5rem;
-        }
-
-        .btn {
-            flex: 1;
-            border-radius: 8px;
-            font-weight: 600;
-            height: 44px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            border: none;
-            color: white;
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.18);
-            border: none;
-            color: white;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: none; }
-        }
-
-        .logo {
-            width: 70px;
-            margin-bottom: 1rem;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="status-card">
-        <img src="{{ asset('img/favicon.png') }}" alt="FDRE ETA logo" class="logo">
-        
-        <div class="status-icon">
-            <i class="fas fa-tools"></i>
+@section('content')
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">{{ $standard->name }}</h4>
         </div>
-        
-        <div class="status-title">Registration Temporarily Closed</div>
-        
-        <div class="status-description">
-            We're currently encoding data and performing system upgrades to serve you better. 
-            The registration portal will be available again soon.
-        </div>
-        
-        <div class="progress-container">
-            <div class="progress">
-                <div class="progress-bar"></div>
-            </div>
-            <small class="text-white-50">Data encoding in progress</small>
-        </div>
-        
-        <div class="btn-group">
-            <a href="/" class="btn btn-secondary">
-                <i class="fas fa-home me-2"></i>Home
-            </a>
-            <a href="{{ route('login') }}" class="btn btn-primary">
-                <i class="fas fa-arrow-left me-2"></i>Back to Login
-            </a>
+        <div class="card-body">
+
+            @if ($substandards->isNotEmpty())
+                <div class="card mb-3">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">{{ $currentSubStandard->name }}</h5>
+                    </div>
+                    <div class="card-body">
+                        @if ($indicators->isNotEmpty())
+                            <div class="card mb-3">
+                                <div class="card-header bg-info text-white">
+                                    <h6 class="mb-0">{{ $currentIndicator->name }}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <!-- Readonly Questions Section -->
+                                    @foreach ($questions as $question)
+                                        <div class="card mb-3">
+                                            <div class="card-header bg-light">
+                                                <h6 class="mb-0">
+                                                    <i class="fa-solid fa-question-circle text-primary"></i>
+                                                    {{ $question->question_text }}
+                                                </h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <textarea name="answers[{{ $question->id }}][answer]" class="form-control summernote readonly-summernote" readonly>
+                                                    {{ old("answers.$question->id.answer", $answers[$question->id] ?? '') }}
+                                                </textarea>
+                                                <input type="hidden" name="answers[{{ $question->id }}][question_id]"
+                                                    value="{{ $question->id }}">
+                                            </div>
+                                        </div>
+                                    @endforeach
+
+                                    <!-- Required Attachments Section -->
+                                    @if ($attachments->isNotEmpty())
+                                        <div class="card mt-4">
+                                            <div class="card-header bg-warning text-dark">
+                                                <h6 class="mb-0">Required Attachments</h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="alert alert-info p-3 rounded">
+                                                    <strong>ðŸ“Œ Important:</strong> All attachments must be in <strong>PDF
+                                                        format</strong>.
+                                                </div>
+                                                <table class="table table-bordered shadow-sm">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th style="width: 5%;" class="text-center">#</th>
+                                                            <th style="width: 55%;">Attachment</th>
+                                                            <th style="width: 20%;" class="text-center">Status</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach ($attachments as $index => $attachment)
+                                                            <tr class="align-middle">
+                                                                <td class="text-center fw-bold">{{ $index + 1 }}</td>
+                                                              <td>{{ str_starts_with($attachment->name, 'Others') ? 'Others' : $attachment->name }}</td>
+                                                                <td class="text-center">
+                                                                    <span
+                                                                        class="badge rounded-pill {{ $attachment->status === 'Completed' ? 'bg-success text-white' : 'bg-danger text-white' }} px-3 py-2">
+                                                                        @if ($attachment->status === 'Completed')
+                                                                            <i class="fas fa-check-circle"></i>
+                                                                            {{ $attachment->status }}
+                                                                        @else
+                                                                            <i class="fas fa-times-circle"></i>
+                                                                            {{ $attachment->status }}
+                                                                        @endif
+                                                                    </span>
+                                                                    @if ($attachment->status === 'Completed')
+                                                                        <div class="mt-2">
+                                                                            <button type="button"
+                                                                                class="btn btn-outline-success btn-sm view-pdf"
+                                                                                data-bs-toggle="modal"
+                                                                                data-bs-target="#pdfModal{{ $attachment->id }}"
+                                                                                data-pdf-url="{{ route('backend.applications.viewMedia', ['application_id' => $application_id, 'attachment_id' => $attachment->id]) }}#page={{ $attachment->start_page ?? 1 }}"
+                                                                                data-start-page="{{ $attachment->start_page ?? 1 }}">
+                                                                                <i class="fas fa-file-pdf"></i> View
+                                                                            </button>
+                                                                        </div>
+                                                                    @endif
+                                                                </td>
+                                                            </tr>
+                                                        @endforeach
+                                                    </tbody>
+                                                </table>
+                                                @foreach ($attachments as $attachment)
+                                                    @if ($attachment->status === 'Completed')
+                                                        <!-- PDF Viewer Modal -->
+                                                        <div class="modal fade" id="pdfModal{{ $attachment->id }}"
+                                                            tabindex="-1"
+                                                            aria-labelledby="pdfModalLabel{{ $attachment->id }}"
+                                                            aria-hidden="true">
+                                                            <div class="modal-dialog modal-dialog-centered modal-xl">
+                                                                <div class="modal-content shadow-lg">
+                                                                    <div class="modal-header bg-primary text-white">
+                                                                        <h5 class="modal-title"
+                                                                            id="pdfModalTitle{{ $attachment->id }}">
+                                                                            <i class="fas fa-file-pdf"></i> ETA
+                                                                            Accreditation System:
+                                                                            {{ str_starts_with($attachment->name, 'Others') ? 'Others' : $attachment->name }}
+                                                                        </h5>
+                                                                        <button type="button" class="btn-close"
+                                                                            data-bs-dismiss="modal"
+                                                                            aria-label="Close"></button>
+                                                                    </div>
+                                                                    <div class="modal-body">
+                                                                        <!-- Responsive iframe to view PDF -->
+                                                                        <iframe id="pdfViewer{{ $attachment->id }}"
+                                                                            src="{{ route('backend.applications.viewMedia', ['application_id' => $application_id, 'attachment_id' => $attachment->id]) }}?page={{ $attachment->start_page ?? 1 }}"
+                                                                            width="100%" height="600px" frameborder="0">
+                                                                        </iframe>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    @endif
+                                                @endforeach
+
+                                                <script>
+                                                    document.addEventListener('DOMContentLoaded', function() {
+                                                        document.querySelectorAll('.view-pdf').forEach(function(button) {
+                                                            button.addEventListener('click', function() {
+                                                                var pdfUrl = this.getAttribute('data-pdf-url');
+                                                                var modalId = this.getAttribute('data-bs-target').replace('#', '');
+                                                                document.querySelector('#' + modalId + ' iframe').setAttribute('src', pdfUrl);
+                                                            });
+                                                        });
+                                                    });
+                                                </script>
+                                            </div>
+                                        </div>
+                                    @endif
+
+                                    <!-- All Reviewers Comment Section for Chairperson -->
+                                    @if ($isChairperson && $allReviews->isNotEmpty() && $review_phase == 'desk_review')
+                                        <div class="card mt-4">
+                                            <div
+                                                class="card-header bg-light d-flex justify-content-between align-items-center">
+                                                <h6 class="mb-0">All Reviewers Comment</h6>
+                                                <i class="fas fa-copy text-primary" id="copyText" style="cursor: pointer;"
+                                                    title="Copy All Reviews"></i>
+                                            </div>
+                                            <div class="card-body" id="reviewContent">
+                                                @foreach ($allReviews as $review)
+                                                    <div class="mb-4">
+                                                        <strong><u>{{ $review->reviewer->name ?? 'Unknown Reviewer' }}</u></strong>
+                                                        <div class="mt-2">
+                                                            {!! $review->comment !!}
+                                                        </div>
+                                                        <div class="mt-2">
+                                                            Rating Score: {{ $review->rating_value }}
+                                                        </div>
+                                                    </div>
+                                                    @if (!$loop->last)
+                                                        <hr class="my-3">
+                                                    @endif
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                        <script>
+                                            document.getElementById('copyText').addEventListener('click', function() {
+                                                // Get the review content
+                                                let reviewContent = document.getElementById('reviewContent').innerText;
+
+                                                // Create a temporary textarea to copy text
+                                                let tempTextArea = document.createElement('textarea');
+                                                tempTextArea.value = reviewContent;
+                                                document.body.appendChild(tempTextArea);
+
+                                                // Select and copy the text
+                                                tempTextArea.select();
+                                                document.execCommand('copy');
+
+                                                // Remove the temporary textarea
+                                                document.body.removeChild(tempTextArea);
+
+                                                // Show a success message (optional)
+                                                alert('All reviewer comments copied to clipboard!');
+                                            });
+                                        </script>
+                                    @endif
+
+                                    <!-- Your Review Section -->
+                                    <div class="card mt-4">
+                                        <div class="card-header bg-success text-white">
+                                            <h6 class="mb-0">{{ $label }}</h6> <!-- Dynamic label -->
+                                        </div>
+                                        <div class="card-body">
+                                            
+											<form method="POST"
+												action="{{ route('backend.applications.submitDeskReview') }}"
+												enctype="multipart/form-data" id="reviewForm">
+												@csrf
+												<input type="hidden" name="application_id" value="{{ $application_id }}">
+												<input type="hidden" name="standard_id" value="{{ $standard_id }}">
+												<input type="hidden" name="substandard_id" value="{{ $currentSubStandard->id }}">
+												<input type="hidden" name="indicator_id" value="{{ $currentIndicator->id }}">
+												<input type="hidden" name="review_phase" value="{{ $review_phase }}">
+
+												<!-- Dynamic textarea -->
+												@if ($review_phase == 'toa_second_round' && !$isChairperson)
+													<!-- Hidden field with NA value for non-chairpersons in toa_second_round -->
+													<input type="hidden" name="{{ $field_name }}" value="NA">
+													<div class="alert alert-info mt-2">
+														Only chairperson can provide review comments in the second round. Your review will be recorded as "NA".
+													</div>
+												@else
+													<!-- Dynamic textarea for chairpersons or other phases -->
+													<textarea name="{{ $field_name }}" 
+															  class="form-control summernote" 
+															  id="reviewTextarea" 
+															  required>
+														{{ $ownReview->comment ?? '' }}
+													</textarea>
+												@endif
+
+												@if ($review_phase === 'toa_first_round' || $review_phase === 'toa_second_round')
+													<div class="mb-3">
+														<label for="rating_value" class="form-label">Rating Value (1-5)</label>
+														<input type="number" name="rating_value" class="form-control"
+															min="1" max="5"
+															value="{{ $ownReview->rating_value ?? '' }}" required>
+													</div>
+												@endif
+
+												<div class="d-flex justify-content-between mt-3">
+													<!-- Previous button as separate form/link -->
+													@if ($currentIndicator->id != $indicators->first()->id)
+														@php
+															// Find previous indicator
+															$currentIndex = $indicators->search(function ($item) use ($currentIndicator) {
+																return $item->id == $currentIndicator->id;
+															});
+															$previousIndicator = $indicators[$currentIndex - 1] ?? null;
+														@endphp
+														
+														@if($previousIndicator)
+															<a href="{{ route('backend.applications.fillReviews', [
+																'application_id' => $application_id,
+																'standard_id' => $standard_id,
+																'substandard_id' => $currentSubStandard->id,
+																'indicator_id' => $previousIndicator->id
+															]) }}" class="btn btn-warning btn-sm">
+																<i class="fas fa-reply"></i> Previous
+															</a>
+														@endif
+													@endif
+
+													<a href="{{ route('backend.applications.showStandardsForDeskReview', ['id' => $application_id]) }}"
+														class="btn btn-outline-secondary btn-sm d-flex align-items-center"
+														data-bs-toggle="tooltip"
+														title="{{ __('Back to Standards Home') }}">
+														<i class="fas fa-clipboard-check me-2"></i>
+														{{ __('Standards Home') }}
+													</a>
+
+													<!-- Save & Next button (stays in main form) -->
+													<button type="submit" name="direction" value="next" class="btn btn-primary">
+														<i class="fa fa-save"></i> Save & Next
+													</button>
+												</div>
+											</form>
+											
+											
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <p class="alert alert-warning">No indicators found for this substandard.</p>
+                        @endif
+                    </div>
+                </div>
+            @else
+                <p class="alert alert-danger">No substandards found for this standard.</p>
+            @endif
         </div>
     </div>
+@endsection
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+@push('after-styles')
+    <link href="https://cdn.jsdelivr.net/npm/summernote@0.9.0/dist/summernote-lite.min.css" rel="stylesheet" />
+    <style>
+        .note-editor.note-frame:after {
+            display: none;
+        }
+
+        .note-editor .note-toolbar .note-dropdown-menu,
+        .note-popover .popover-content .note-dropdown-menu {
+            min-width: 180px;
+        }
+
+        /* Fix Summernote fullscreen */
+        .modal-open .note-editor {
+            z-index: 1050 !important;
+        }
+    </style>
+@endpush
+
+@push('after-scripts')
+    <script src="https://cdn.jsdelivr.net/npm/summernote@0.9.0/dist/summernote-lite.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('.summernote').each(function() {
+                var $this = $(this); // Get the current textarea
+
+                // Initialize Summernote
+                $this.summernote({
+                    height: 150,
+                    toolbar: [
+                        ['style', ['bold', 'italic', 'underline']],
+                        ['para', ['ul', 'ol', 'paragraph']]
+                    ],
+                    callbacks: {
+                        onInit: function() {
+                            $(".note-editor").css("width", "100%");
+                        },
+                        onPaste: function(e) {
+                            e.preventDefault();
+
+                            // Get plain text only, strip all formatting
+                            let bufferText = ((e.originalEvent || e).clipboardData || window
+                                .clipboardData).getData('text/plain');
+
+                            // Paste as plain text
+                            document.execCommand('insertText', false, bufferText);
+                        }
+                    }
+                });
+
+
+                // Disable Summernote if it has the "readonly-summernote" class
+                if ($this.hasClass('readonly-summernote')) {
+                    $this.summernote('disable');
+                }
+            });
+
+            // Ensure Fullscreen Works Properly
+            $(document).on('click', '.note-btn.fullscreen', function() {
+                setTimeout(function() {
+                    $(".note-editable").css("height", $(window).height() - 150 + "px");
+                }, 500);
+            });
+        });
+    </script>
+@endpush
