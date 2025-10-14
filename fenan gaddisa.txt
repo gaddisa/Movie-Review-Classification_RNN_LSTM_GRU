@@ -16,7 +16,7 @@ class AttachementModal extends ModalComponent
 
     // Form fields
     public $name;
-    public $attachement_type = 'table';
+    public $attachement_type = 'DOCUMENT'; // Changed default to DOCUMENT
     public $status = 'active';
     public $table_html;
     public $dct_id;
