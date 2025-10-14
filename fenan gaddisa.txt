@@ -1,83 +1,158 @@
-@extends('backend.layouts.app')
+<?php
 
-@section('title') 
-    {{ __($module_action) }} {{ __($module_title) }}
-@endsection
+namespace App\Livewire\Attachement;
 
-@section('breadcrumbs')
-    <x-backend.breadcrumbs>
-        <x-backend.breadcrumb-item type="active" icon='{{ $module_icon }}'>{{ __($module_title) }}</x-backend.breadcrumb-item>
-    </x-backend.breadcrumbs>
-@endsection
+use LivewireUI\Modal\ModalComponent;
+use Modules\Attachement\Models\Attachement;
+use Modules\DCT\Models\DCT;
+use Illuminate\Validation\Rule;
+use RealRashid\SweetAlert\Facades\Alert; // Add this
 
-@section('content')
-    <div class="card">
-        <div class="card-body">
-            <x-backend.section-header>
-                <i class="{{ $module_icon }}"></i> {{ __($module_title) }} <small class="text-muted">{{ __($module_action) }}</small>
+class AttachementModal extends ModalComponent
+{
+    public $attachementId;
+    public $isEdit = false;
+    public $dctId; // Add this property
 
-                <x-slot name="subtitle">
-                    @lang(':module_name Management Dashboard', ['module_name' => Str::title($module_name)])
-                </x-slot>
-                <x-slot name="toolbar">
-                    <x-buttons.cancel />
-                </x-slot>
-            </x-backend.section-header>
+    // Form fields
+    public $name;
+    public $attachement_type = 'table';
+    public $status = 'active';
+    public $table_html;
+    public $dct_id;
+    public $is_required = 'Optional';
 
-            <hr>
+    protected function rules()
+    {
+        return [
+            'name' => 'required|string|max:1255',
+            'attachement_type' => 'required|string',
+            'status' => 'required|string',
+            'table_html' => 'nullable|string',
+            'is_required' => 'required|in:Mandatory,Optional',
+            'dct_id' => 'required|exists:dcts,id',
+        ];
+    }
 
-            <div class="row mt-4">
-                <div class="col">
-                    <form method="POST" action="{{ route('backend.dcts.store') }}">
-                        @csrf
+    public function mount($siteId = null, $attachementId = null)
+    {
+        // Set DCT ID from the passed parameter
+        $this->dct_id = $siteId ?? null;
+        $this->dctId = $siteId ?? null;
 
-                        <div class="row">
-                            <div class="col-12 mb-3">
-                                <div class="form-group">
-                                    <label for="program_id" class="form-label">Select Program <span class="text-danger">*</span></label>
-                                    <select name="program_id" id="program_id" class="form-control" required>
-                                        <option value="">-- Select a Program --</option>
-                                        @foreach($programs as $program)
-                                            <option value="{{ $program->id }}" {{ old('program_id') == $program->id ? 'selected' : '' }}>
-                                                {{ $program->name }} - {{ $program->description }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    <small class="form-text text-muted">
-                                        Select the program for which you want to create a DCT (Data Collection Tool). 
-                                        The DCT name will be automatically generated based on the program description.
-                                    </small>
-                                    @error('program_id')
-                                        <div class="text-danger">{{ $message }}</div>
-                                    @enderror
-                                </div>
-                            </div>
-                        </div>
+        if ($attachementId) {
+            $this->isEdit = true;
+            $this->loadAttachement($attachementId);
+        }
+    }
 
-                        <div class="row">
-                            <div class="col-12">
-                                <div class="alert alert-info">
-                                    <h6 class="alert-heading"><i class="fas fa-info-circle"></i> How DCTs Work</h6>
-                                    <hr>
-                                    <p class="mb-1"><strong>DCT (Data Collection Tool)</strong> will be automatically created with the format: <code>DCT-{program-description}</code></p>
-                                    <p class="mb-0">Once created, you can add standards, substandards, indicators, and questions to organize your accreditation documentation.</p>
-                                </div>
-                            </div>
-                        </div>
+    public function loadAttachement($attachementId)
+    {
+        try {
+            $attachement = Attachement::findOrFail($attachementId);
+            $this->attachementId = $attachementId;
+            $this->name = $attachement->name;
+            $this->attachement_type = $attachement->attachement_type;
+            $this->status = $attachement->status;
+            $this->is_required = $attachement->is_required;
+            $this->table_html = $attachement->table_html;
+            $this->dct_id = $attachement->dct_id;
+        } catch (\Exception $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to load attachement data',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            $this->closeModal();
+        }
+    }
 
-                        <div class="row">
-                            <div class="col-12">
-                                <div class="form-group">
-                                    <x-buttons.create title="Create DCT" class="float-end">
-                                        {{ __('Create') }} {{ ucwords(Str::singular($module_name)) }}
-                                    </x-buttons.create>
-                                    <x-buttons.cancel />
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-@endsection
+    public function saveAttachment()
+    {
+        $this->validate();
+
+        // ADD OWNERSHIP CHECK HERE
+        if (!$this->canCreateAttachment($this->dct_id, auth()->id())) {
+            $this->closeModal();
+            return;
+        }
+
+        try {
+            $data = [
+                'name' => $this->name,
+                'attachement_type' => $this->attachement_type,
+                'status' => $this->status,
+                'is_required' => $this->is_required,
+                'table_html' => $this->table_html,
+                'dct_id' => $this->dct_id,
+            ];
+
+            if ($this->isEdit) {
+                $attachement = Attachement::findOrFail($this->attachementId);
+                $attachement->update($data);
+            } else {
+                Attachement::create($data);
+            }
+
+            $this->dispatch('refreshAttachements');
+            $this->closeModal();
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => 'Attachement saved successfully'
+            ]);
+        } catch (\Exception $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to save attachement',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+        }
+    }
+
+    /**
+     * Check if user can create attachment for the given DCT
+     */
+    protected function canCreateAttachment($dctId, $userId)
+    {
+        $dct = DCT::find($dctId);
+        
+        if (!$dct) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'DCT not found!',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            return false;
+        }
+
+        if ($dct->created_by != $userId) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'You can only add attachments to DCTs that you created!',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
+    public function getDctsProperty()
+    {
+        return DCT::orderBy('name')->get(['id', 'name']);
+    }
+
+    public function render()
+    {
+        return view('livewire.attachement.attachement-modal');
+    }
+
+    public static function modalMaxWidth(): string
+    {
+        return '2xl';
+    }
+}
