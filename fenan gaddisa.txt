@@ -1,208 +1,89 @@
 <?php
 
-namespace Modules\DCT\Http\Controllers\Backend;
+namespace Modules\Program\Http\Controllers\Backend;
 
 use App\Authorizable;
 use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use Modules\Program\Models\Program;
 use RealRashid\SweetAlert\Facades\Alert;
 use App\Http\Controllers\Backend\BackendBaseController;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
 
-class DCTSController extends BackendBaseController
+class ProgramsController extends BackendBaseController
 {
     use Authorizable;
 
     public function __construct()
     {
         // Page Title
-        $this->module_title = 'DCTS';
+        $this->module_title = 'Programs';
 
         // module name
-        $this->module_name = 'dcts';
+        $this->module_name = 'programs';
 
         // directory path of the module
-        $this->module_path = 'dct::backend';
+        $this->module_path = 'program::backend';
 
         // module icon
         $this->module_icon = 'fa-regular fa-sun';
 
         // module model name, path
-        $this->module_model = "Modules\DCT\Models\DCT";
+        $this->module_model = "Modules\Program\Models\Program";
     }
 
-    /**
-     * Override the create method to show programs in a regular select
-     */
-    public function create()
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Create';
-
-        // Get all programs for the select dropdown
-        $programs = Program::orderBy('name')->get(['id', 'name', 'description']);
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'programs')
-        );
-    }
-
-    /**
-     * Override the edit method to show programs in a regular select
-     */
-    public function edit($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'Edit';
-
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get all programs for the select dropdown
-        $programs = Program::orderBy('name')->get(['id', 'name', 'description']);
-
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-        return view(
-            "{$module_path}.{$module_name}.edit",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}", 'programs')
-        );
-    }
-
-    // ... rest of your existing methods (index_data, store, update) remain the same
     public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
     {
-        $buttonModuleName = 'standards';
-        $additionalButtons = [
-            [
-                'route' => "backend.$buttonModuleName.standards",
-                'title' => 'Standards',
-                'class' => 'btn-outline-info',
-                'icon' => 'fa-solid fa-sitemap',
-            ],
-            [
-                'route' => "backend.applications.downloadDctStructure",
-                'title' => 'Download Structure',
-                'class' => 'btn-outline-primary',
-                'icon' => 'fa-solid fa-download',
-            ],
-        ];
+        // Specify custom columns for the Programs module
+        $columns = $columns ?? ['id', 'name', 'program_level', 'institute_type', 'accreditation_type', 'status', 'updated_at'];
 
+        // Call the parent method with the specified columns and additional buttons
         return parent::index_data($columns, $additionalButtons);
     }
 
     public function store(Request $request)
-{
-    $module_title = $this->module_title;
-    $module_name = $this->module_name;
-    $module_model = $this->module_model;
-    $module_action = 'Store';
+    {
+        $module_title = $this->module_title;
+        $module_name = $this->module_name;
+        $module_path = $this->module_path;
+        $module_icon = $this->module_icon;
+        $module_model = $this->module_model;
+        $module_name_singular = Str::singular($module_name);
 
-    // Validate request input
-    $validatedData = $request->validate([
-        'program_id' => 'required|exists:programs,id'
-    ]);
+        $module_action = 'Store';
 
-    // Fetch the program
-    $program = Program::findOrFail($validatedData['program_id']);
-    $name = 'DCT-' . Str::slug($program->description);
-
-    DB::beginTransaction();
-    try {
-        $record = $module_model::create([
-            'name' => $name,
-            'program_id' => $program->id
+        // Validate the request
+        $validatedData = $request->validate([
+            'name' => 'required|string|max:255',
+            'program_level' => 'required|string|max:255',
+            'institute_type' => 'required|string|max:255',
+            'accreditation_type' => 'required|string|in:Program Level,Institutional Accreditation',
+            'status' => 'required|string',
         ]);
 
-        DB::commit();
+        // Create the description column value
+        $description = sprintf(
+            '%s %s Program (%s) - %s',
+            $validatedData['name'],
+            $validatedData['program_level'],
+            $validatedData['institute_type'],
+            $validatedData['accreditation_type']
+        );
 
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $record->id);
+        // Merge the description into the validated data
+        $validatedData['description'] = $description;
 
-        Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
+        // Save the program
+        $$module_name_singular = $module_model::create($validatedData);
+
+        // Notify the user
+        Alert::toast(Str::singular($module_title) . "' Added Successfully", 'success')
             ->position('top-end')
             ->autoClose(5000)
             ->timerProgressBar();
 
+        // Log the user action
+        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+
+        // Redirect back to the program list
         return redirect("admin/{$module_name}");
-        
-    } catch (\Illuminate\Database\QueryException $e) {
-        DB::rollBack();
-        
-        // Check if it's a duplicate entry error (MySQL error code 1062)
-        if ($e->getCode() == 23000 && str_contains($e->getMessage(), '1062')) {
-            return back()->withErrors(['program_id' => 'A DCT with this name already exists. Please try again.'])->withInput();
-        }
-        
-        report($e);
-        return back()->withErrors(['error' => 'An error occurred while processing your request.']);
-        
-    } catch (\Exception $e) {
-        DB::rollBack();
-        report($e);
-        return back()->withErrors(['error' => 'An error occurred while processing your request.']);
-    }
-}
-
-    public function update(Request $request, $id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_model = $this->module_model;
-        $module_action = 'Update';
-
-        // Validate request input
-        $validatedData = $request->validate([
-            'program_id' => 'required|exists:programs,id'
-        ]);
-
-        // Find the existing record
-        $record = $module_model::findOrFail($id);
-
-        // Fetch the new program details
-        $program = Program::findOrFail($validatedData['program_id']);
-        $newName = 'DCT-' . Str::slug($program->description);
-
-        // Ensure unique name (skip if it's the same as current)
-        if ($record->name !== $newName && $module_model::where('name', $newName)->exists()) {
-            return back()->withErrors(['name' => 'The generated name already exists.'])->withInput();
-        }
-
-        DB::beginTransaction();
-        try {
-            $record->update([
-                'name' => $newName,
-                'program_id' => $program->id
-            ]);
-
-            DB::commit();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $record->id);
-
-            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect("admin/{$module_name}");
-        } catch (\Exception $e) {
-            DB::rollBack();
-            report($e);
-            return back()->withErrors(['error' => 'An error occurred while updating the record.']);
-        }
     }
 }
