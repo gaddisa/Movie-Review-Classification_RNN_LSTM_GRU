@@ -1,158 +1,120 @@
-<?php
+<div class="p-4 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg shadow-lg border border-gray-200">
+  <div class="flex justify-between items-center pb-2 border-b border-gray-200 mb-3">
+    <h2 class="text-xl font-bold text-gray-800 flex items-center">
+      <i class="fas fa-paperclip mr-2 text-blue-600"></i>
+      {{ $isEdit ? __('Edit Attachment') : __('Add New Attachment') }}
+    </h2>
+    <button wire:click="$dispatch('closeModal')"
+            class="text-gray-500 hover:text-red-600 transition duration-200 transform hover:scale-110 p-1">
+      <i class="fas fa-times-circle text-xl"></i>
+    </button>
+  </div>
 
-namespace App\Livewire\Attachement;
+  <form wire:submit.prevent="saveAttachment" class="space-y-4">
+    <!-- DCT Selection -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        <i class="fas fa-project-diagram mr-1 text-gray-500"></i> @lang('DCT') *
+      </label>
+      <select wire:model="dct_id" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition text-sm">
+        <option value="">-- Select DCT --</option>
+        @foreach ($this->dcts as $dct)
+          <option value="{{ $dct->id }}">{{ $dct->name }}</option>
+        @endforeach
+      </select>
+      @error('dct_id')
+        <span class="text-xs text-red-500 flex items-center mt-1">
+          <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+        </span>
+      @enderror
+    </div>
 
-use LivewireUI\Modal\ModalComponent;
-use Modules\Attachement\Models\Attachement;
-use Modules\DCT\Models\DCT;
-use Illuminate\Validation\Rule;
-use RealRashid\SweetAlert\Facades\Alert; // Add this
+    <!-- Name (full width) -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        <i class="fas fa-signature mr-1 text-gray-500"></i> @lang('Name') *
+      </label>
+      <textarea wire:model="name" rows="3" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition resize-y text-sm"></textarea>
+      @error('name')
+        <span class="text-xs text-red-500 flex items-center mt-1">
+          <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+        </span>
+      @enderror
+    </div>
 
-class AttachementModal extends ModalComponent
-{
-    public $attachementId;
-    public $isEdit = false;
-    public $dctId; // Add this property
+    <!-- Combined row: Type, Status, Required -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+      <!-- Type -->
+      <div>
+        <label class="font-medium text-gray-700 mb-1 flex items-center">
+          <i class="fas fa-tag mr-1 text-gray-500"></i> @lang('Type') *
+        </label>
+        <select wire:model="attachement_type" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+          <option value="DOCUMENT">DOCUMENT</option>
+          <option value="TABLE">TABLE</option>
+          <option value="IMAGE">IMAGE</option>
+          <option value="VIDEO">VIDEO</option>
+        </select>
+        @error('attachement_type')
+          <span class="text-xs text-red-500 flex items-center mt-1">
+            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+          </span>
+        @enderror
+      </div>
 
-    // Form fields
-    public $name;
-    public $attachement_type = 'DOCUMENT'; // Changed default to DOCUMENT
-    public $status = 'active';
-    public $table_html;
-    public $dct_id;
-    public $is_required = 'Optional';
+      <!-- Status -->
+      <div>
+        <label class="font-medium text-gray-700 mb-1 flex items-center">
+          <i class="fas fa-toggle-on mr-1 text-gray-500"></i> @lang('Status') *
+        </label>
+        <select wire:model="status" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        @error('status')
+          <span class="text-xs text-red-500 flex items-center mt-1">
+            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+          </span>
+        @enderror
+      </div>
 
-    protected function rules()
-    {
-        return [
-            'name' => 'required|string|max:1255',
-            'attachement_type' => 'required|string',
-            'status' => 'required|string',
-            'table_html' => 'nullable|string',
-            'is_required' => 'required|in:Mandatory,Optional',
-            'dct_id' => 'required|exists:dcts,id',
-        ];
-    }
+      <!-- Is Required -->
+      <div>
+        <label class="font-medium text-gray-700 mb-1 flex items-center">
+          <i class="fas fa-asterisk mr-1 text-gray-500"></i> @lang('Required') *
+        </label>
+        <select wire:model="is_required" class="w-full border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+          <option value="Optional">Optional</option>
+          <option value="Mandatory">Mandatory</option>
+        </select>
+        @error('is_required')
+          <span class="text-xs text-red-500 flex items-center mt-1">
+            <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+          </span>
+        @enderror
+      </div>
+    </div>
 
-    public function mount($siteId = null, $attachementId = null)
-    {
-        // Set DCT ID from the passed parameter
-        $this->dct_id = $siteId ?? null;
-        $this->dctId = $siteId ?? null;
+    <!-- Note about images and videos -->
+    <!-- Note about images and videos -->
+<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
+    <p class="text-yellow-700">
+        <strong>Note:</strong> For picture and video attachments, institutions/TVETs can submit a PDF file containing links to their videos and photos.
+    </p>
+</div>
 
-        if ($attachementId) {
-            $this->isEdit = true;
-            $this->loadAttachement($attachementId);
-        }
-    }
-
-    public function loadAttachement($attachementId)
-    {
-        try {
-            $attachement = Attachement::findOrFail($attachementId);
-            $this->attachementId = $attachementId;
-            $this->name = $attachement->name;
-            $this->attachement_type = $attachement->attachement_type;
-            $this->status = $attachement->status;
-            $this->is_required = $attachement->is_required;
-            $this->table_html = $attachement->table_html;
-            $this->dct_id = $attachement->dct_id;
-        } catch (\Exception $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to load attachement data',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            $this->closeModal();
-        }
-    }
-
-    public function saveAttachment()
-    {
-        $this->validate();
-
-        // ADD OWNERSHIP CHECK HERE
-        if (!$this->canCreateAttachment($this->dct_id, auth()->id())) {
-            $this->closeModal();
-            return;
-        }
-
-        try {
-            $data = [
-                'name' => $this->name,
-                'attachement_type' => $this->attachement_type,
-                'status' => $this->status,
-                'is_required' => $this->is_required,
-                'table_html' => $this->table_html,
-                'dct_id' => $this->dct_id,
-            ];
-
-            if ($this->isEdit) {
-                $attachement = Attachement::findOrFail($this->attachementId);
-                $attachement->update($data);
-            } else {
-                Attachement::create($data);
-            }
-
-            $this->dispatch('refreshAttachements');
-            $this->closeModal();
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => 'Attachement saved successfully'
-            ]);
-        } catch (\Exception $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to save attachement',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-        }
-    }
-
-    /**
-     * Check if user can create attachment for the given DCT
-     */
-    protected function canCreateAttachment($dctId, $userId)
-    {
-        $dct = DCT::find($dctId);
-        
-        if (!$dct) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'DCT not found!',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            return false;
-        }
-
-        if ($dct->created_by != $userId) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'You can only add attachments to DCTs that you created!',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            return false;
-        }
-
-        return true;
-    }
-
-    public function getDctsProperty()
-    {
-        return DCT::orderBy('name')->get(['id', 'name']);
-    }
-
-    public function render()
-    {
-        return view('livewire.attachement.attachement-modal');
-    }
-
-    public static function modalMaxWidth(): string
-    {
-        return '2xl';
-    }
-}
+    <div class="flex justify-end space-x-3 pt-2">
+      <button wire:click="$dispatch('closeModal')" type="button" class="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center text-sm">
+        <i class="fas fa-times mr-2"></i> @lang('Cancel')
+      </button>
+      <button type="submit" class="px-4 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center text-sm" wire:loading.attr="disabled">
+        <span wire:loading.remove wire:target="saveAttachment">
+          <i class="fas fa-save mr-2"></i> {{ $isEdit ? __('Update') : __('Save') }}
+        </span>
+        <span wire:loading wire:target="saveAttachment">
+          <i class="fas fa-spinner fa-spin mr-2"></i> @lang('Saving...')
+        </span>
+      </button>
+    </div>
+  </form>
+</div>
