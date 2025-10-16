@@ -1,146 +1,87 @@
 <?php
 namespace App\Livewire\Institutions;
 
-use Livewire\Component;
-use App\Models\Institute;
-use App\Models\Campus;
 use LivewireUI\Modal\ModalComponent;
+use App\Models\Institute;
+use Illuminate\Support\Facades\Auth;
+use RealRashid\SweetAlert\Facades\Alert;
 
-class InstituteCampusManager extends Component
+class InstituteModal extends ModalComponent
 {
-    public $search = '';
-    public $selectedInstituteId = '';
-    public $institutes = [];
-    public $selectedInstitute = null;
-    public $allInstitutesWithCampuses = [];
+    public $instituteId;
+    public $isEdit = false;
 
-    protected $listeners = [
-        'refreshInstitutes' => 'loadData'
-    ];
+    // Form fields
+    public $name;
+    public $status = 'Active';
 
-    public function mount()
+    protected function rules()
     {
-        $this->loadData();
+        return [
+            'name' => 'required|string|max:255|unique:institutes,name' . ($this->isEdit ? ',' . $this->instituteId : ''),
+            'status' => 'required|in:Active,Inactive',
+        ];
     }
 
-    public function loadData()
+    public function mount($instituteId = null)
     {
-        // Load all institutes for the dropdown
-        $this->institutes = Institute::active()
-            ->when($this->search, function($query) {
-                $query->where('name', 'like', '%' . $this->search . '%');
-            })
-            ->orderBy('name')
-            ->get();
-
-        // Load all institutes with campuses for display
-        $this->allInstitutesWithCampuses = Institute::with(['campuses' => function($query) {
-            $query->active();
-        }])->active()->get();
-
-        // Auto-select first institute if none selected and institutes exist
-        if (empty($this->selectedInstituteId) && $this->institutes->count() > 0) {
-            $this->selectedInstituteId = $this->institutes->first()->id;
-            $this->selectInstitute();
-        } else if ($this->selectedInstituteId) {
-            $this->selectInstitute();
+        if ($instituteId) {
+            $this->isEdit = true;
+            $this->loadInstitute($instituteId);
         }
     }
 
-    public function updatedSearch()
-    {
-        $this->loadData();
-    }
-
-    public function updatedSelectedInstituteId()
-    {
-        $this->selectInstitute();
-    }
-
-    public function selectInstitute()
-    {
-        if ($this->selectedInstituteId) {
-            $this->selectedInstitute = Institute::with(['campuses' => function($query) {
-                $query->active();
-            }])->find($this->selectedInstituteId);
-        } else {
-            $this->selectedInstitute = null;
-        }
-    }
-
-    public function addInstitute()
-    {
-        $this->dispatch('openModal', 'institutions.institute-modal');
-    }
-
-    public function editInstitute($instituteId)
-    {
-        $this->dispatch('openModal', 'institutions.institute-modal', ['instituteId' => $instituteId]);
-    }
-
-    public function addCampus($instituteId = null)
-    {
-        $instituteId = $instituteId ?: $this->selectedInstituteId;
-        $this->dispatch('openModal', 'institutions.campus-modal', ['instituteId' => $instituteId]);
-    }
-
-    public function editCampus($campusId)
-    {
-        $this->dispatch('openModal', 'institutions.campus-modal', ['campusId' => $campusId]);
-    }
-
-    public function deleteInstitute($instituteId)
+    public function loadInstitute($instituteId)
     {
         try {
             $institute = Institute::findOrFail($instituteId);
-            
-            // Check if institute has campuses
-            if ($institute->campuses()->count() > 0) {
-                $this->dispatch('showToast', [
-                    'type' => 'error',
-                    'message' => 'Cannot delete institute. It has associated campuses.',
-                    'position' => 'top-end',
-                    'duration' => 5000
-                ]);
-                return;
-            }
-
-            $institute->delete();
-            $this->loadData();
-            
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => 'Institute deleted successfully!',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
+            $this->instituteId = $instituteId;
+            $this->name = $institute->name;
+            $this->status = $institute->status;
         } catch (\Exception $e) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Failed to delete institute: ' . $e->getMessage(),
+                'message' => 'Failed to load institute data',
                 'position' => 'top-end',
                 'duration' => 5000
             ]);
+            $this->closeModal();
         }
     }
 
-    public function deleteCampus($campusId)
+    public function saveInstitute()
     {
+        $this->validate();
+
         try {
-            $campus = Campus::findOrFail($campusId);
-            $campus->delete();
-            $this->loadData();
+            $data = [
+                'name' => $this->name,
+                'status' => $this->status,
+                'created_by' => Auth::id(),
+            ];
+
+            if ($this->isEdit) {
+                $institute = Institute::findOrFail($this->instituteId);
+                $institute->update($data);
+                $message = 'Institute updated successfully!';
+            } else {
+                Institute::create($data);
+                $message = 'Institute created successfully!';
+            }
+
+            $this->dispatch('refreshInstitutes');
+            $this->closeModal();
             
             $this->dispatch('showToast', [
                 'type' => 'success',
-                'message' => 'Campus deleted successfully!',
+                'message' => $message,
                 'position' => 'top-end',
                 'duration' => 5000
             ]);
         } catch (\Exception $e) {
             $this->dispatch('showToast', [
                 'type' => 'error',
-                'message' => 'Failed to delete campus: ' . $e->getMessage(),
+                'message' => 'Failed to save institute: ' . $e->getMessage(),
                 'position' => 'top-end',
                 'duration' => 5000
             ]);
@@ -149,6 +90,11 @@ class InstituteCampusManager extends Component
 
     public function render()
     {
-        return view('livewire.institutions.institute-campus-manager');
+        return view('livewire.institutions.institute-modal');
+    }
+
+    public static function modalMaxWidth(): string
+    {
+        return '2xl';
     }
 }
