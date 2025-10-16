@@ -98,3 +98,4 @@ class InstituteModal extends ModalComponent
         return '2xl';
     }
 }
+
