@@ -1,101 +1,91 @@
-<?php
-namespace App\Livewire\Institutions;
+<div class="p-4 bg-gradient-to-br from-gray-50 to-green-50 rounded-lg shadow-lg border border-gray-200">
+    <div class="flex justify-between items-center pb-2 border-b border-gray-200 mb-3">
+        <h2 class="text-xl font-bold text-gray-800 flex items-center">
+            <i class="fas fa-building mr-2 text-green-600"></i>
+            {{ $isEdit ? __('Edit Campus') : __('Add New Campus') }}
+        </h2>
+        <button wire:click="$dispatch('closeModal')"
+                class="text-gray-500 hover:text-red-600 transition duration-200 transform hover:scale-110 p-1">
+            <i class="fas fa-times-circle text-xl"></i>
+        </button>
+    </div>
 
-use LivewireUI\Modal\ModalComponent;
-use App\Models\Institute;
-use Illuminate\Support\Facades\Auth;
-use RealRashid\SweetAlert\Facades\Alert;
+    <form wire:submit.prevent="saveCampus" class="space-y-4">
+        <!-- Institute Selection -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                <i class="fas fa-university mr-1 text-gray-500"></i> @lang('Institution') *
+            </label>
+            <select 
+                wire:model="instituteId"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required>
+                <option value="">-- Select Institution Name --</option>
+                @foreach ($this->institutes as $institute)
+                    <option value="{{ $institute->id }}">{{ $institute->name }}</option>
+                @endforeach
+            </select>
+            @error('instituteId')
+                <span class="text-xs text-red-500 flex items-center mt-1">
+                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                </span>
+            @enderror
+        </div>
 
-class InstituteModal extends ModalComponent
-{
-    public $instituteId;
-    public $isEdit = false;
+        <!-- Campus Name -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                <i class="fas fa-signature mr-1 text-gray-500"></i> @lang('Campus Name') *
+            </label>
+            <input 
+                type="text" 
+                wire:model="name"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Main Campus, Bala Bala Campus"
+                required>
+            @error('name')
+                <span class="text-xs text-red-500 flex items-center mt-1">
+                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                </span>
+            @enderror
+        </div>
 
-    // Form fields
-    public $name;
-    public $status = 'Active';
+        <!-- Status -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                <i class="fas fa-toggle-on mr-1 text-gray-500"></i> @lang('Status') *
+            </label>
+            <select 
+                wire:model="status"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+            </select>
+            @error('status')
+                <span class="text-xs text-red-500 flex items-center mt-1">
+                    <i class="fas fa-exclamation-circle mr-1"></i> {{ $message }}
+                </span>
+            @enderror
+        </div>
 
-    protected function rules()
-    {
-        return [
-            'name' => 'required|string|max:255|unique:institutes,name' . ($this->isEdit ? ',' . $this->instituteId : ''),
-            'status' => 'required|in:Active,Inactive',
-        ];
-    }
-
-    public function mount($instituteId = null)
-    {
-        if ($instituteId) {
-            $this->isEdit = true;
-            $this->loadInstitute($instituteId);
-        }
-    }
-
-    public function loadInstitute($instituteId)
-    {
-        try {
-            $institute = Institute::findOrFail($instituteId);
-            $this->instituteId = $instituteId;
-            $this->name = $institute->name;
-            $this->status = $institute->status;
-        } catch (\Exception $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to load institute data',
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-            $this->closeModal();
-        }
-    }
-
-    public function saveInstitute()
-    {
-        $this->validate();
-
-        try {
-            $data = [
-                'name' => $this->name,
-                'status' => $this->status,
-                'created_by' => Auth::id(),
-            ];
-
-            if ($this->isEdit) {
-                $institute = Institute::findOrFail($this->instituteId);
-                $institute->update($data);
-                $message = 'Institute updated successfully!';
-            } else {
-                Institute::create($data);
-                $message = 'Institute created successfully!';
-            }
-
-            $this->dispatch('refreshInstitutes');
-            $this->closeModal();
-            
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => $message,
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-        } catch (\Exception $e) {
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to save institute: ' . $e->getMessage(),
-                'position' => 'top-end',
-                'duration' => 5000
-            ]);
-        }
-    }
-
-    public function render()
-    {
-        return view('livewire.institutions.institute-modal');
-    }
-
-    public static function modalMaxWidth(): string
-    {
-        return '2xl';
-    }
-}
-
+        <div class="flex justify-end space-x-3 pt-2">
+            <button 
+                wire:click="$dispatch('closeModal')" 
+                type="button" 
+                class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center">
+                <i class="fas fa-times mr-2"></i> @lang('Cancel')
+            </button>
+            <button 
+                type="submit" 
+                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center" 
+                wire:loading.attr="disabled">
+                <span wire:loading.remove wire:target="saveCampus">
+                    <i class="fas fa-save mr-2"></i> {{ $isEdit ? __('Update') : __('Save') }}
+                </span>
+                <span wire:loading wire:target="saveCampus">
+                    <i class="fas fa-spinner fa-spin mr-2"></i> @lang('Saving...')
+                </span>
+            </button>
+        </div>
+    </form>
+</div>
