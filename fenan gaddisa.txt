@@ -1,529 +1,111 @@
 <?php
+namespace App\Livewire\Institutions;
 
-namespace App\Http\Controllers\Backend;
+use LivewireUI\Modal\ModalComponent;
+use App\Models\Institute;
+use App\Models\Campus;
+use Illuminate\Support\Facades\Auth;
 
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Gate;
-use App\Authorizable;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use Yajra\DataTables\DataTables;
-use Modules\Program\Models\Program;
-use Modules\Attachement\Models\Attachement;
-use App\Models\Indicator_attachment_direct;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use RealRashid\SweetAlert\Facades\Alert;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Backend\BackendBaseController;
-
-class IndicatorsController extends BackendBaseController
+class CampusModal extends ModalComponent
 {
-    use Authorizable;
+    public $campusId;
+    public $isEdit = false;
+    public $instituteId;
 
-    public $module_title;
-    public $module_name;
-    public $module_path;
-    public $module_icon;
-    public $module_model;
+    // Form fields
+    public $name;
+    public $status = 'Active';
 
-    public function __construct()
+    protected function rules()
     {
-        // Page Title
-        $this->module_title = 'Indicators Management';
-        $this->module_title = 'Indicators';
-        $this->module_name = 'indicators';
-        $this->module_path = 'backend';
-        $this->module_icon = "fa-solid fa-diagram-project";
-        $this->module_model = "App\\Models\\Indicator";
-    }
-
-    public function standards()
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'List';
-
-        $$module_name = $module_model::paginate(15);
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        return view(
-            "{$module_path}.{$module_name}.index_datatable",
-            compact('module_title', 'module_name', "{$module_name}", 'module_icon', 'module_name_singular', 'module_action')
-        );
-    }
-
-    public function create(array $additionalData = [])
-    {
-        $substandard_id = request()->get('id'); // Get 'id' from the request if passed
-
-        // Other code for setting up the module
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Create';
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        // Pass the 'id' to the view if needed
-        return view(
-            "{$module_path}.{$module_name}.create",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'substandard_id')
-        );
-    }
-    
-    /**
-     * Create attachment and pivot record for indicator
-     */
-    private function createIndicatorAttachment($indicator, $dct_id)
-    {
-        try {
-            // Create the attachment
-            $attachment = \Modules\Attachement\Models\Attachement::create([
-                'name' => "Others - Indicator " . $indicator->id,
-                'attachement_type' => 'others',
-                'dct_id' => $dct_id,
-                'table_html' => null,
-                'status' => 'Active',
-                'is_required' => 'Optional',
-                'created_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
-
-            // Create the pivot record in indicator_attachment table
-            \App\Models\Indicator_attachment_direct::create([
-                'indicator_id' => $indicator->id,
-                'attachment_id' => $attachment->id,
-                'created_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
-
-            return true;
-        } catch (\Exception $e) {
-            logger()->error('Error creating indicator attachment: ' . $e->getMessage());
-            return false;
-        }
-    }
-     
-    /**
- * Check if user can create indicator for the given substandard
- */
-    protected function canCreateIndicator($substandardId, $userId)
-    {
-        $substandard = \App\Models\Substandard::find($substandardId);
-        
-        if (!$substandard) {
-            Alert::toast('Substandard not found!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return false;
-        }
-    
-        if ($substandard->created_by != $userId) {
-            Alert::toast('You can only add indicators to substandards that you created!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-            return false;
-        }
-    
-        return true;
-    }
-
-
-    public function store(Request $request)
-    {
-       $substandard_id = $request->get('substandard_id');
-       $substandard = \App\Models\Substandard::find($substandard_id);
-    
-    // Check if substandard exists
-    if (!$substandard) {
-        Alert::toast('Substandard not found!', 'error')
-            ->position('top-end')
-            ->autoClose(5000)
-            ->timerProgressBar();
-        return redirect()->back()->withInput();
-    }
-    
-    // Check if standard relation exists
-    if (!$substandard->standard) {
-        Alert::toast('Standard not found for this substandard!', 'error')
-            ->position('top-end')
-            ->autoClose(5000)
-            ->timerProgressBar();
-        return redirect()->back()->withInput();
-    }
-    
-    $dct_id = $substandard->standard->dct_id;
-        
-    if (!$this->canCreateIndicator($substandard_id, auth()->id())) {
-        return redirect()->route('backend.dcts.index');
-    }  
-        
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-        
-
-        $module_action = 'Store';
-
-        // Custom validation for indicators
-        $validator = Validator::make($request->all(), [
-            'name' => [
-                'required',
-                'string',
-                'max:1255',
-                Rule::unique('indicators')->where(function ($query) use ($substandard_id) {
-                    return $query->where('substandard_id', $substandard_id);
-                })
-            ],
-        ], [
-            'name.unique' => 'An indicator with this name already exists for the selected substandard.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->with('toast', [
-                    'type' => 'error',
-                    'message' => $validator->errors()->first(),
-                    'position' => 'top-end'
-                ])
-                ->withInput();
-        }
-
-        // Start a database transaction
-        DB::beginTransaction();
-
-        try {
-            // Add the substandard_id to the validated data before creating the record
-            $data = $validator->validated();
-            $data['substandard_id'] = $substandard_id;
-
-            // Create the new record
-            $$module_name_singular = $module_model::create($data);
-
-            // Create attachment and pivot record
-            $this->createIndicatorAttachment($$module_name_singular, $dct_id);
-
-            // Commit the transaction
-            DB::commit();
-
-            Alert::toast(Str::singular($module_title) . ' Added Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect to index_datatable with the substandard_id to filter the records
-            return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
-        } catch (\Exception $e) {
-            // Rollback the transaction on error
-            DB::rollBack();
-
-            // Log the error
-            Log::error("Error in store: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to create record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to create record.']);
-        }
-    }
-
-    public function update(Request $request, $id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-        
-
-        $module_action = 'Update';
-
-        // First, find the record to get the existing substandard_id
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get substandard_id from the existing record
-        $substandard_id = $$module_name_singular->substandard_id;
- if (!$this->canCreateIndicator($substandard_id, auth()->id())) {
-        return redirect()->route('backend.dcts.index');
-    }  
-        // Custom validation for indicators
-        $validator = Validator::make($request->all(), [
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('indicators')->where(function ($query) use ($substandard_id) {
-                    return $query->where('substandard_id', $substandard_id);
-                })->ignore($id)
-            ],
-        ], [
-            'name.unique' => 'An indicator with this name already exists for the selected substandard.',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->with('toast', [
-                    'type' => 'error',
-                    'message' => $validator->errors()->first(),
-                    'position' => 'top-end'
-                ])
-                ->withInput();
-        }
-
-        // Start a database transaction
-        DB::beginTransaction();
-
-        try {
-            // Update the record with validated data
-            $$module_name_singular->update($validator->validated());
-
-            // Commit the transaction
-            DB::commit();
-
-            Alert::toast(Str::singular($module_title) . ' Updated Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            return redirect()->route("backend.{$module_name}.show", $$module_name_singular->id);
-        } catch (\Exception $e) {
-            // Rollback the transaction on error
-            DB::rollBack();
-
-            // Log the error
-            Log::error("Error in update: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to update record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withInput()->withErrors(['error' => 'Failed to update record.']);
-        }
-    }
-
-    /**
-     * Delete attachment and pivot records for indicator
-     */
-    private function deleteIndicatorAttachment($indicatorId)
-    {
-        try {
-            // Find and delete the pivot records
-            $indicatorAttachments = \App\Models\Indicator_attachment_direct::where('indicator_id', $indicatorId)->get();
-            
-            foreach ($indicatorAttachments as $indicatorAttachment) {
-                // Delete the attachment
-                \Modules\Attachement\Models\Attachement::where('id', $indicatorAttachment->attachment_id)->delete();
-                // Delete the pivot record
-                $indicatorAttachment->delete();
-            }
-            
-            return true;
-        } catch (\Exception $e) {
-            logger()->error('Error deleting indicator attachment: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    public function destroy($id)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'destroy';
-        
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-        
-        
-        $$module_name_singular = $module_model::findOrFail($id);
-        
-        // Get the substandard_id BEFORE deleting so we can redirect properly
-        $substandard_id = $$module_name_singular->substandard_id;
-         if (!$this->canCreateIndicator($substandard_id, auth()->id())) {
-        return redirect()->route('backend.dcts.index');
-    }  
-
-        // Start a database transaction
-        DB::beginTransaction();
-
-        try {
-            // Delete associated attachments
-            $this->deleteIndicatorAttachment($id);
-
-            $$module_name_singular->delete();
-
-            // Commit the transaction
-            DB::commit();
-
-            Alert::toast(Str::singular($module_title) . ' Deleted Successfully', 'success')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
-
-            // Redirect back to the indicators list filtered by substandard_id
-            return redirect()->route("backend.{$module_name}.index", ['id' => $substandard_id]);
-        } catch (\Exception $e) {
-            // Rollback the transaction on error
-            DB::rollBack();
-
-            // Log the error
-            Log::error("Error in destroy: " . $e->getMessage());
-
-            // Flash error message
-            Alert::toast('Failed to delete record!', 'error')
-                ->position('top-end')
-                ->autoClose(5000)
-                ->timerProgressBar();
-
-            return redirect()->back()->withErrors(['error' => 'Failed to delete record.']);
-        }
-    }
-
-    public function index(Request $request)
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'List';
-
-        // Fetch the data using pagination for the standard table
-        $$module_name = $module_model::paginate(15);
-
-        // Get the `id` from the request
-        $id = $request->query('id');
-
-        logUserAccess($module_title . ' ' . $module_action);
-
-        // Return the view with the necessary data, including the `id`
-        return view(
-            "{$module_path}.{$module_name}.index_datatable",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_name_singular', 'module_action', 'id')
-        );
-    }
-
-    public function index_data(?array $columns = null, array $additionalButtons = [], array $additionalData = [])
-    {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name;
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-
-        $module_action = 'List';
-        $page_heading = label_case($module_title);
-        $title = $page_heading . ' ' . label_case($module_action);
-
-        $buttonModuleName = 'questions';
-
-        $additionalButtons = [
-            [
-                'route' => "backend.$buttonModuleName.index", // Matches the route name
-                'title' => 'Questions',
-                'class' => 'btn-outline-info',
-                'icon' => 'fa-solid fa-question-circle',
-            ],
-            [
-                'route' => "backend.indicator_attachments.index", // Matches the route name
-                'title' => 'Required Attachements',
-                'class' => 'btn-outline-info',
-                'icon' => 'fas fa-paperclip',
-            ],
+        return [
+            'instituteId' => 'required|exists:institutes,id',
+            'name' => 'required|string|max:255',
+            'status' => 'required|in:Active,Inactive',
         ];
-
-        $columns = $columns ?? ['id', 'name', 'updated_at'];
-
-        // Base query
-        $data = $module_model::select($columns)->orderBy('id', 'asc');
-
-        // Retrieve `id` from request if not passed in $additionalData
-        $id = $additionalData['id'] ?? request()->query('id');
-        // Filter by substandard_id if an ID is provided
-        if ($id) {
-            $data = $data->where('substandard_id', $id);
-        }
-
-        return Datatables::of($data)
-            ->addColumn('action', function ($data) use ($module_name, $additionalButtons, $additionalData) {
-                return view('backend.includes.action_column', compact('module_name', 'data', 'additionalButtons', 'additionalData'));
-            })
-            ->editColumn('name', '<strong>{{$name}}</strong>')
-            ->editColumn('updated_at', function ($data) {
-                if ($data->updated_at) {
-                    $diff = Carbon::now()->diffInHours($data->updated_at);
-
-                    if ($diff < 25) {
-                        return $data->updated_at->diffForHumans();
-                    }
-
-                    return $data->updated_at->isoFormat('llll');
-                }
-
-                return 'No Date Available';
-            })
-            ->rawColumns(['name', 'action'])
-            ->orderColumns(['id'], '-:column $1')
-            ->make(true);
     }
 
-    public function edit($id)
+    public function mount($instituteId = null, $campusId = null)
     {
-        $module_title = $this->module_title;
-        $module_name = $this->module_name; // e.g., "dcts"
-        $module_path = $this->module_path;
-        $module_icon = $this->module_icon;
-        $module_model = $this->module_model;
-        $module_name_singular = Str::singular($module_name);
-        $module_action = 'Edit';
+        $this->instituteId = $instituteId;
 
-        // Authorization: check via 'manage' method which is inside AdminContentPolicy
-         
-        $$module_name_singular = $module_model::findOrFail($id);
+        if ($campusId) {
+            $this->isEdit = true;
+            $this->loadCampus($campusId);
+        }
+    }
 
-        logUserAccess($module_title . ' ' . $module_action . ' | Id: ' . $$module_name_singular->id);
+    public function loadCampus($campusId)
+    {
+        try {
+            $campus = Campus::findOrFail($campusId);
+            $this->campusId = $campusId;
+            $this->name = $campus->name;
+            $this->status = $campus->status;
+            $this->instituteId = $campus->institute_id;
+        } catch (\Exception $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to load campus data',
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+            $this->closeModal();
+        }
+    }
 
-        return view(
-            "{$module_path}.{$module_name}.edit",
-            compact('module_title', 'module_name', 'module_path', 'module_icon', 'module_action', 'module_name_singular', "{$module_name_singular}")
-        );
+    public function saveCampus()
+    {
+        $this->validate();
+
+        try {
+            $data = [
+                'name' => $this->name,
+                'institute_id' => $this->instituteId,
+                'status' => $this->status,
+                'created_by' => Auth::id(),
+            ];
+
+            if ($this->isEdit) {
+                $campus = Campus::findOrFail($this->campusId);
+                $campus->update($data);
+                $message = 'Campus updated successfully!';
+            } else {
+                Campus::create($data);
+                $message = 'Campus created successfully!';
+            }
+
+            $this->dispatch('refreshInstitutes');
+            $this->closeModal();
+            
+            $this->dispatch('showToast', [
+                'type' => 'success',
+                'message' => $message,
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+        } catch (\Exception $e) {
+            $this->dispatch('showToast', [
+                'type' => 'error',
+                'message' => 'Failed to save campus: ' . $e->getMessage(),
+                'position' => 'top-end',
+                'duration' => 5000
+            ]);
+        }
+    }
+
+    public function getInstitutesProperty()
+    {
+        return Institute::active()->orderBy('name')->get(['id', 'name']);
+    }
+
+    public function render()
+    {
+        return view('livewire.institutions.campus-modal');
+    }
+
+    public static function modalMaxWidth(): string
+    {
+        return '2xl';
     }
 }
