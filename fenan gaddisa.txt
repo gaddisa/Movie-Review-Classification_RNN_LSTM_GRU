@@ -2,566 +2,150 @@
 
 namespace App\Livewire\PaymentReport;
 
-use App\Models\User;
-use App\Models\Payment;
 use Livewire\Component;
-use App\Models\EmployeeInfo;
+use Livewire\WithPagination;
+use App\Models\Payment;
 use App\Models\PaymentAllocation;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Auth;
+use App\Models\RentAgreement;
+use Modules\Site\Models\Site;
 use LivewireUI\Modal\ModalComponent;
-use App\Notifications\GeneralNotification;
+use Illuminate\Support\Facades\Auth;
+use Spatie\Permission\Models\Role;
+use Carbon\Carbon;
 
-class PaymentApprovalModal extends ModalComponent
+class PendingPayments extends Component
 {
-    public $paymentId;
-    public $rejectReason;
-    public $approvalAction = 'approve';
-    public $payment;
-    public $allocations;
-    public $showRejectReason = false;
-    public $currentUserRole;
-    public $canApprove = false;
+    use WithPagination;
 
-    protected $rules = [
-        'rejectReason' => 'required_if:approvalAction,reject|max:255',
-    ];
+    public $startYear;
+    public $endYear;
+    public $startMonth;
+    public $endMonth;
+    public $siteId;
+    public $sites = [];
+    public $filtersApplied = false;
+    public $totalPendingAmount = 0;
+    public $useDateFilters = false; // New property to toggle date filters
 
-    public function mount($paymentId)
+    protected $paginationTheme = 'bootstrap';
+    protected $listeners = ['payment-approved' => '$refresh'];
+
+    public function mount()
     {
-        $this->paymentId = $paymentId;
-        $this->currentUserRole = Auth::user()->roles->first()->name;
-        $this->loadPayment();
+        $this->sites = Site::all();
+        $this->setDefaultDateRange();
     }
 
-    protected function loadPayment()
+    protected function setDefaultDateRange()
     {
-        try {
-            $this->payment = Payment::with(['allocations', 'agreement.tenant.user'])->findOrFail($this->paymentId);
-            $this->allocations = $this->payment->allocations;
-
-            $this->logPaymentAction(
-                'VIEW_PAYMENT',
-                $this->payment,
-                ['allocations_count' => $this->allocations->count()]
-            );
-
-            if (!$this->canAccessPayment()) {
-                $this->logPaymentAction(
-                    'UNAUTHORIZED_ACCESS_ATTEMPT',
-                    $this->payment,
-                    ['user_roles' => Auth::user()->roles->pluck('name')->toArray()]
-                );
-                
-                $this->dispatch('showToast', [
-                    'type' => 'error',
-                    'message' => 'Unauthorized action.'
-                ]);
-                $this->closeModal();
-                return;
-            }
-
-            $this->canApprove = $this->checkApprovalRights();
-        } catch (\Exception $e) {
-            Log::error('Payment loading failed', [
-                'error' => $e->getMessage(),
-                'payment_id' => $this->paymentId,
-                'user' => $this->getUserLogInfo()
-            ]);
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => 'Failed to load payment data'
-            ]);
-            $this->closeModal();
-        }
+        $currentDate = now();
+        $this->startYear = 2024; // Default to 2024
+        $this->startMonth = 7;   // Default to July
+        $this->endYear = $currentDate->year;
+        $this->endMonth = $currentDate->month;
     }
 
-    protected function canAccessPayment(): bool
+    public function toggleDateFilters()
     {
-        $user = Auth::user();
-        $payment = $this->payment;
-
-        if ($user->hasAnyRole(['super admin', 'deputy director', 'cashier'])) {
-            return true;
-        }
-
-        return $payment->created_by === $user->id;
+        $this->useDateFilters = !$this->useDateFilters;
+        $this->resetPage();
     }
 
-    protected function checkApprovalRights(): bool
+    public function applyFilters()
     {
-        $user = Auth::user();
-        $payment = $this->payment;
-
-        if ($payment->status !== 'pending') {
-            return false;
-        }
-
-        // Super admin can always approve/reject regardless of workflow stage
-        if ($user->hasRole('super admin')) {
-            return true;
-        }
-
-        if ($payment->updated_by === $payment->created_by) {
-            return $user->hasRole('cashier');
-        } else {
-            return $user->hasAnyRole(['super admin', 'ceo', 'deputy director']);
-        }
+        $this->filtersApplied = true;
+        $this->resetPage();
     }
 
-    public function updatedApprovalAction($value)
+    public function resetFilters()
     {
-        $this->showRejectReason = $value === 'reject';
-        if ($value === 'approve') {
-            $this->rejectReason = null;
-        }
-        $this->resetValidation('rejectReason');
-    }
-
-    public function submitApproval()
-    {
-        $this->validate();
-
-        try {
-            DB::beginTransaction();
-
-            $user = Auth::user();
-            $payment = Payment::findOrFail($this->paymentId);
-            
-            $this->logPaymentAction(
-                'ATTEMPT_' . strtoupper($this->approvalAction),
-                $payment,
-                ['reason' => $this->approvalAction === 'reject' ? $this->rejectReason : null]
-            );
-
-            $this->verifyApprovalWorkflow($payment, $user);
-
-            if ($this->approvalAction === 'approve') {
-                $this->processApproval($payment, $user);
-            } else {
-                $this->processRejection($payment, $user);
-            }
-
-            DB::commit();
-
-            $this->logPaymentAction(
-                'SUCCESS_' . strtoupper($this->approvalAction),
-                $payment->fresh()
-            );
-
-            $this->dispatch('payment-approved');
-            $this->closeModal();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            $this->logPaymentAction(
-                'FAILED_' . strtoupper($this->approvalAction),
-                $payment ?? null,
-                ['error' => $e->getMessage()]
-            );
-            
-            $this->dispatch('showToast', [
-                'type' => 'error',
-                'message' => $e->getMessage()
-            ]);
-        }
-    }
-
-    protected function verifyApprovalWorkflow(Payment $payment, $user)
-    {
-        if ($payment->status !== 'pending') {
-            throw new \Exception('Only pending payments can be approved/rejected');
-        }
-
-        // Super admin can bypass all workflow checks
-        if ($user->hasRole('super admin')) {
-            return;
-        }
-
-        if ($payment->updated_by === $payment->created_by) {
-            if (!$user->hasRole('cashier')) {
-                throw new \Exception('Only cashiers can approve initial submissions');
-            }
-        } else {
-            if (!$user->hasAnyRole(['super admin', 'ceo', 'deputy director'])) {
-                throw new \Exception('Only administrators can give final approval');
-            }
-        }
-    }
-
-    protected function processApproval(Payment $payment, $user)
-    {
-        // Check if super admin is approving
-        if ($user->hasRole('super admin')) {
-            // Super admin direct approval - find deputy director to use their ID
-            $deputyDirector = User::role('deputy director')->first();
-            
-            if ($deputyDirector) {
-                // Use deputy director's ID for the approval chain
-                $approverId = $deputyDirector->id;
-                
-                // First update as if cashier approved (using deputy director ID)
-                if ($payment->updated_by === $payment->created_by) {
-                    $payment->update(['updated_by' => $approverId]);
-                    
-                    $this->logPaymentAction(
-                        'SUPER_ADMIN_DIRECT_APPROVAL_FIRST_STAGE',
-                        $payment,
-                        [
-                            'deputy_director_used_id' => $approverId,
-                            'next_step' => 'immediate_final_approval'
-                        ]
-                    );
-                }
-                
-                // Then proceed with final approval using deputy director ID
-                PaymentAllocation::where('payment_id', $payment->id)
-                    ->update([
-                        'status' => 'approved',
-                        'updated_by' => $approverId
-                    ]);
-
-                $payment->update([
-                    'status' => 'approved',
-                    'approved_by' => $approverId, // Use deputy director ID
-                    'approved_at' => now(),
-                    'updated_by' => $approverId
-                ]);
-
-                $this->logPaymentAction(
-                    'SUPER_ADMIN_DIRECT_FINAL_APPROVAL',
-                    $payment,
-                    [
-                        'allocations_approved' => $payment->allocations->count(),
-                        'approved_by_deputy_director_id' => $approverId,
-                        'super_admin_actual_id' => $user->id
-                    ]
-                );
-
-                $this->notifyCashiers('admin_approved', $payment, $user);
-                $this->notifyTenant('approved', $payment, $user);
-
-                $this->dispatch('showToast', [
-                    'type' => 'success',
-                    'message' => 'Payment fully approved by super admin.'
-                ]);
-            } else {
-                // If no deputy director exists, use super admin's ID directly
-                PaymentAllocation::where('payment_id', $payment->id)
-                    ->update([
-                        'status' => 'approved',
-                        'updated_by' => $user->id
-                    ]);
-
-                $payment->update([
-                    'status' => 'approved',
-                    'approved_by' => $user->id,
-                    'approved_at' => now(),
-                    'updated_by' => $user->id
-                ]);
-
-                $this->logPaymentAction(
-                    'SUPER_ADMIN_DIRECT_APPROVAL_NO_DEPUTY',
-                    $payment,
-                    [
-                        'allocations_approved' => $payment->allocations->count(),
-                        'super_admin_id' => $user->id
-                    ]
-                );
-
-                $this->notifyCashiers('admin_approved', $payment, $user);
-                $this->notifyTenant('approved', $payment, $user);
-
-                $this->dispatch('showToast', [
-                    'type' => 'success',
-                    'message' => 'Payment fully approved by super admin.'
-                ]);
-            }
-        } elseif ($user->hasRole('cashier') && $payment->updated_by === $payment->created_by) {
-            // Cashier first approval (normal flow)
-            $payment->update(['updated_by' => $user->id]);
-
-            $this->logPaymentAction(
-                'CASHIER_APPROVAL',
-                $payment,
-                ['next_step' => 'waiting_admin_approval']
-            );
-
-            $this->notifyAdmins('cashier_approved', $payment, $user);
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => 'Payment approved by cashier. Waiting for final approval.'
-            ]);
-        } elseif ($user->hasAnyRole(['super admin', 'ceo', 'deputy director'])) {
-            // Final approval by other admins (normal flow)
-            PaymentAllocation::where('payment_id', $payment->id)
-                ->update([
-                    'status' => 'approved',
-                    'updated_by' => $user->id
-                ]);
-
-            $payment->update([
-                'status' => 'approved',
-                'approved_by' => $user->id,
-                'approved_at' => now(),
-                'updated_by' => $user->id
-            ]);
-
-            $this->logPaymentAction(
-                'FINAL_APPROVAL',
-                $payment,
-                [
-                    'allocations_approved' => $payment->allocations->count(),
-                    'approved_by' => $user->email
-                ]
-            );
-
-            $this->notifyCashiers('admin_approved', $payment, $user);
-            $this->notifyTenant('approved', $payment, $user);
-
-            $this->dispatch('showToast', [
-                'type' => 'success',
-                'message' => 'Payment fully approved.'
-            ]);
-        }
-    }
-
-    protected function processRejection(Payment $payment, $user)
-    {
-        // For super admin rejection, also use deputy director ID if available
-        $rejecterId = $user->id;
-        $rejecterRole = 'CASHIER_REJECTION';
-        
-        if ($user->hasRole('super admin')) {
-            $deputyDirector = User::role('deputy director')->first();
-            if ($deputyDirector) {
-                $rejecterId = $deputyDirector->id;
-            }
-            $rejecterRole = 'SUPER_ADMIN_DIRECT_REJECTION';
-        } elseif ($user->hasAnyRole(['super admin', 'ceo', 'deputy director'])) {
-            $rejecterRole = 'ADMIN_REJECTION';
-        }
-
-        PaymentAllocation::where('payment_id', $payment->id)
-            ->update([
-                'status' => 'rejected',
-                'updated_by' => $rejecterId,
-                'reject_reason' => $this->rejectReason
-            ]);
-
-        $payment->update([
-            'status' => 'rejected',
-            'reject_reason' => $this->rejectReason,
-            'updated_by' => $rejecterId
-        ]);
-
-        $this->logPaymentAction(
-            $rejecterRole,
-            $payment,
-            [
-                'reason' => $this->rejectReason,
-                'actual_user_id' => $user->id,
-                'recorded_user_id' => $rejecterId
-            ]
-        );
-
-        if ($user->hasRole('cashier')) {
-            $this->notifyAdmins('cashier_rejected', $payment, $user);
-        } elseif ($user->hasRole('super admin')) {
-            $this->notifyCashiers('admin_rejected', $payment, $user);
-            $this->notifyAdmins('admin_rejected', $payment, $user);
-        } else {
-            $this->notifyCashiers('admin_rejected', $payment, $user);
-        }
-
-        $this->notifyTenant('rejected', $payment, $user);
-
-        $this->dispatch('showToast', [
-            'type' => 'error',
-            'message' => 'Payment rejected.'
-        ]);
-    }
-
-    protected function notifyAdmins(string $action, Payment $payment, $user)
-    {
-        try {
-            $admins = User::role(['super admin', 'ceo', 'deputy director'])->get();
-            $actionText = str_replace('_', ' ', $action);
-
-            foreach ($admins as $admin) {
-                $admin->notify(new GeneralNotification([
-                    'title' => 'Payment ' . ucfirst($actionText),
-                    'message' => sprintf(
-                        '%s %s payment %s (TTN: %s, Amount: %s)',
-                        $user->name,
-                        $actionText,
-                        $payment->id,
-                        $payment->ttn_number,
-                        number_format($payment->total_amount, 2)
-                    ),
-                    'module' => 'Payment',
-                    'type' => $action,
-                    'icon' => 'fas fa-money-bill-wave',
-                    'url_backend' => route('backend.paymentreports.index'),
-                    'url_frontend' => ''
-                ]));
-            }
-
-            $this->logPaymentAction(
-                'ADMIN_NOTIFICATION_SENT',
-                $payment,
-                [
-                    'action' => $action,
-                    'recipients_count' => $admins->count(),
-                    'notified_by' => $user->email
-                ]
-            );
-        } catch (\Exception $e) {
-            Log::error('Admin notification failed', [
-                'error' => $e->getMessage(),
-                'payment_id' => $payment->id,
-                'notifier' => $this->getUserLogInfo()
-            ]);
-        }
-    }
-
-    protected function notifyCashiers(string $action, Payment $payment, $user)
-    {
-        try {
-            $cashiers = User::role('cashier')->get();
-            $actionText = str_replace('_', ' ', $action);
-
-            foreach ($cashiers as $cashier) {
-                $cashier->notify(new GeneralNotification([
-                    'title' => 'Payment ' . ucfirst($actionText),
-                    'message' => sprintf(
-                        '%s %s payment %s (TTN: %s, Amount: %s)',
-                        $user->name,
-                        $actionText,
-                        $payment->id,
-                        $payment->ttn_number,
-                        number_format($payment->total_amount, 2)
-                    ),
-                    'module' => 'Payment',
-                    'type' => $action,
-                    'icon' => 'fas fa-money-bill-wave',
-                    'url_backend' => route('backend.paymentreports.index'),
-                    'url_frontend' => ''
-                ]));
-            }
-
-            $this->logPaymentAction(
-                'CASHIER_NOTIFICATION_SENT',
-                $payment,
-                [
-                    'action' => $action,
-                    'recipients_count' => $cashiers->count(),
-                    'notified_by' => $user->email
-                ]
-            );
-        } catch (\Exception $e) {
-            Log::error('Cashier notification failed', [
-                'error' => $e->getMessage(),
-                'payment_id' => $payment->id,
-                'notifier' => $this->getUserLogInfo()
-            ]);
-        }
-    }
-
-    protected function notifyTenant(string $action, Payment $payment, $user)
-    {
-        try {
-            $tenantUser = \App\Models\User::find($payment->created_by);
-
-            if (!$tenantUser) {
-                Log::warning('Tenant user not found using created_by', [
-                    'payment_id' => $payment->id,
-                    'created_by' => $payment->created_by,
-                    'notifier' => $this->getUserLogInfo()
-                ]);
-                return;
-            }
-
-            $actionText = $action === 'approved' ? 'approved' : 'rejected';
-            $reason = $action === 'rejected' ? " Reason: {$payment->reject_reason}" : '';
-
-            $notification = new GeneralNotification([
-                'title' => "Payment {$actionText}",
-                'message' => sprintf(
-                    'Your payment (TTN: %s) of %s has been %s by %s.%s',
-                    $payment->ttn_number,
-                    number_format($payment->total_amount, 2),
-                    $actionText,
-                    $user->name,
-                    $reason
-                ),
-                'module' => 'Payment',
-                'type' => $action,
-                'icon' => $action === 'approved' ? 'fas fa-check-circle' : 'fas fa-times-circle',
-                'url_backend' => route('backend.employeeinfo.index'),
-                'url_frontend' => route('backend.employeeinfo.index'),
-            ]);
-
-            $tenantUser->notify($notification);
-
-            $this->logPaymentAction(
-                'TENANT_NOTIFICATION_SENT',
-                $payment,
-                [
-                    'tenant_id' => $tenantUser->id,
-                    'action' => $action,
-                    'notified_by' => $user->email
-                ]
-            );
-        } catch (\Exception $e) {
-            Log::error('Tenant notification failed', [
-                'error' => $e->getMessage(),
-                'payment_id' => $payment->id,
-                'notifier' => $this->getUserLogInfo()
-            ]);
-        }
-    }
-
-    private function logPaymentAction($action, Payment $payment, $extraData = [])
-    {
-        $performer = Auth::user();
-        $logMessage = sprintf(
-            "PAYMENT ACTION: %s | Performer: %s %s (%s) | Payment ID: %d | TTN: %s | Amount: %s | Status: %s | Data: %s",
-            $action,
-            $performer->first_name,
-            $performer->last_name,
-            $performer->email,
-            $payment->id,
-            $payment->ttn_number,
-            number_format($payment->total_amount, 2),
-            $payment->status,
-            json_encode($extraData)
-        );
-
-        Log::info($logMessage);
-    }
-
-    private function getUserLogInfo()
-    {
-        $user = Auth::user();
-        return [
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'roles' => $user->roles->pluck('name')->toArray()
-        ];
-    }
-
-    public static function modalMaxWidth(): string
-    {
-        return '2xl';
+        $this->reset(['siteId', 'filtersApplied', 'useDateFilters']);
+        $this->setDefaultDateRange();
+        $this->resetPage();
     }
 
     public function render()
     {
-        return view('livewire.payment-report.payment-approval-modal', [
-            'canApprove' => $this->canApprove
+        $user = Auth::user();
+        $query = PaymentAllocation::query()
+            ->where('status', 'pending')
+            ->with(['payment', 'agreement.room.site', 'agreement.tenant', 'payment.updater.roles']);
+
+        // Apply date filters only if enabled and filters are applied
+        if ($this->useDateFilters && $this->filtersApplied) {
+            $query->where(function($q) {
+                $q->where(function($q1) {
+                    $q1->where('year_gregorian', '>', $this->startYear)
+                       ->orWhere(function($q2) {
+                           $q2->where('year_gregorian', $this->startYear)
+                              ->where('month_gregorian', '>=', $this->startMonth);
+                       });
+                })
+                ->where(function($q1) {
+                    $q1->where('year_gregorian', '<', $this->endYear)
+                       ->orWhere(function($q2) {
+                           $q2->where('year_gregorian', $this->endYear)
+                              ->where('month_gregorian', '<=', $this->endMonth);
+                       });
+                });
+            });
+        }
+
+        if ($this->siteId) {
+            $query->whereHas('agreement.room', function ($q) {
+                $q->where('site_id', $this->siteId);
+            });
+        }
+
+        // Role-based filtering
+        if ($user->hasRole('tenant')) {
+            // Tenants see only their own pending payments
+            $query->whereHas('agreement.tenant', function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            });
+        } elseif ($user->hasRole('cashier')) {
+            // Cashiers see payments submitted by tenants (not yet approved by cashier)
+            $query->whereHas('payment.updater.roles', function ($q) {
+                $q->where('name', 'tenant');
+            });
+        } elseif ($user->hasAnyRole(['super admin', 'deputy director','ceo'])) {
+            // For super admin: show both payments approved by cashiers AND payments not yet approved by anyone
+            if ($user->hasRole('super admin')) {
+                $query->where(function($q) use ($user) {
+                    // Payments approved by cashiers (waiting for admin approval)
+                    $q->whereHas('payment.updater.roles', function ($q) {
+                        $q->where('name', 'cashier');
+                    })
+                    // OR payments not yet approved by anyone (still with tenant)
+                    ->orWhereHas('payment.updater.roles', function ($q) {
+                        $q->where('name', 'tenant');
+                    });
+                });
+            } else {
+                // For deputy director and CEO: only show payments approved by cashiers
+                $query->whereHas('payment.updater.roles', function ($q) {
+                    $q->where('name', 'cashier');
+                });
+            }
+        }
+
+        // Optional: Add payment status check to ensure we only show truly pending payments
+        $query->whereHas('payment', function ($q) {
+            $q->where('status', 'pending');
+        });
+
+        $allocations = $query->paginate(25);
+        $this->totalPendingAmount = $query->sum('total_for_the_month');
+
+        return view('livewire.payment-report.pending-payments', [
+            'allocations' => $allocations,
+            'totalPendingAmount' => $this->totalPendingAmount,
+            'user' => $user,
         ]);
+    }
+
+    public function openApprovalModal($paymentId)
+    {
+        $this->dispatch('openModal', 'payment-report.payment-approval-modal', ['paymentId' => $paymentId]);
     }
 }
