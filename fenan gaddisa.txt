@@ -1,16 +1,4 @@
-
-use Illuminate\Support\Facades\Response;
-
-<div class="mt-4 mb-6 flex justify-end">
-    <button 
-        onclick="window.location.href='{{ route('backend.rentagreements.download') }}'"
-        class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 font-bold"
-        wire:loading.attr="disabled">
-        <i class="fas fa-file-archive"></i> @lang('DOWNLOAD ALL DATA (ZIP)')
-    </button>
-</div>
-
-public function download()
+    public function download()
     {
         if (!Gate::allows('manageSystemSettings', 'view')) {
             abort(403, 'Unauthorized action.');
@@ -24,7 +12,11 @@ public function download()
             ->get();
 
         $groupedBySite = $rentAgreements->groupBy(function ($agreement) {
-            return optional($agreement->room->site)->name ?? 'Unknown Site';
+            // Fixed: Check if room exists and has site
+            if ($agreement->room && $agreement->room->site) {
+                return $agreement->room->site->name;
+            }
+            return 'Unknown Site';
         });
 
         $groupedBySite = $groupedBySite->sortBy(function ($agreements, $siteName) {
@@ -103,7 +95,12 @@ public function download()
         ]);
 
         foreach ($agreements as $agreement) {
-            $siteName = optional($agreement->room->site)->name ?? 'Unknown Site';
+            // Fixed: Check if room and site exist
+            $siteName = 'Unknown Site';
+            if ($agreement->room && $agreement->room->site) {
+                $siteName = $agreement->room->site->name;
+            }
+            
             $tenantName = optional($agreement->tenant)->full_name ?? 'N/A';
             $employeeId = optional($agreement->tenant)->employee_id ?? 'N/A';
             $roomName = optional($agreement->room)->name ?? 'N/A';
