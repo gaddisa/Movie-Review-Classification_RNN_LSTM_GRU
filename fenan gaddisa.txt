@@ -1,151 +1,131 @@
 <?php
 
-namespace App\Livewire\PaymentReport;
+return [
 
-use Livewire\Component;
-use Livewire\WithPagination;
-use App\Models\Payment;
-use App\Models\PaymentAllocation;
-use App\Models\RentAgreement;
-use Modules\Site\Models\Site;
-use LivewireUI\Modal\ModalComponent;
-use Illuminate\Support\Facades\Auth;
-use Spatie\Permission\Models\Role;
-use Carbon\Carbon;
+    /*
+    |--------------------------------------------------------------------------
+    | Backup Name (IMPORTANT)
+    |--------------------------------------------------------------------------
+    | This folder will store your backups.
+    | Never use APP_NAME because spaces break folder paths.
+    |--------------------------------------------------------------------------
+    */
 
-class PendingPayments extends Component
-{
-    use WithPagination;
+    'backup' => [
 
-    public $startYear;
-    public $endYear;
-    public $startMonth;
-    public $endMonth;
-    public $siteId;
-    public $sites = [];
-    public $filtersApplied = false;
-    public $totalPendingAmount = 0;
-    public $useDateFilters = false; // New property to toggle date filters
+        'name' => 'backups', // <<< FIXED
 
-    protected $paginationTheme = 'bootstrap';
-    protected $listeners = ['payment-approved' => '$refresh'];
+        'source' => [
 
-    public function mount()
-    {
-        $this->sites = Site::all();
-        $this->setDefaultDateRange();
-    }
+            'files' => [
 
-    protected function setDefaultDateRange()
-    {
-        $currentDate = now();
-        $this->startYear = 2024; // Default to 2024
-        $this->startMonth = 7;   // Default to July
-        $this->endYear = $currentDate->year;
-        $this->endMonth = $currentDate->month;
-    }
+                'include' => [
+                    base_path('.env'),
+                    base_path('storage'),
+                    base_path('public'),
+                    base_path('database'),
+                    base_path('config'),
+                ],
 
-    public function toggleDateFilters()
-    {
-        $this->useDateFilters = !$this->useDateFilters;
-        $this->resetPage();
-    }
+                'exclude' => [
+                    base_path('vendor'),
+                    base_path('node_modules'),
+                    base_path('storage/framework/cache'),
+                    base_path('storage/framework/sessions'),
+                    base_path('storage/framework/views'),
+                    base_path('storage/logs'),
+                    base_path('storage/debugbar'),
+                    base_path('.git'),
+                    base_path('tests'),
+                    base_path('bootstrap/cache'),
+                ],
 
-    public function applyFilters()
-    {
-        $this->filtersApplied = true;
-        $this->resetPage();
-    }
+                'follow_links' => false,
+                'ignore_unreadable_directories' => false,
+                'relative_path' => null,
+            ],
 
-    public function resetFilters()
-    {
-        $this->reset(['siteId', 'filtersApplied', 'useDateFilters']);
-        $this->setDefaultDateRange();
-        $this->resetPage();
-    }
+            'databases' => [
+                'mysql',
+            ],
+        ],
 
-    public function render()
-    {
-        $user = Auth::user();
-        $query = PaymentAllocation::query()
-            ->where('status', 'pending')
-            ->with(['payment', 'agreement.room.site', 'agreement.tenant', 'payment.updater.roles']);
+        'destination' => [
+            'filename_prefix' => '',
+            'disks' => [
+                'local',
+            ],
+        ],
+    ],
 
-        // Apply date filters only if enabled and filters are applied
-        if ($this->useDateFilters && $this->filtersApplied) {
-            $query->where(function($q) {
-                $q->where(function($q1) {
-                    $q1->where('year_gregorian', '>', $this->startYear)
-                       ->orWhere(function($q2) {
-                           $q2->where('year_gregorian', $this->startYear)
-                              ->where('month_gregorian', '>=', $this->startMonth);
-                       });
-                })
-                ->where(function($q1) {
-                    $q1->where('year_gregorian', '<', $this->endYear)
-                       ->orWhere(function($q2) {
-                           $q2->where('year_gregorian', $this->endYear)
-                              ->where('month_gregorian', '<=', $this->endMonth);
-                       });
-                });
-            });
-        }
 
-        if ($this->siteId) {
-            $query->whereHas('agreement.room', function ($q) {
-                $q->where('site_id', $this->siteId);
-            });
-        }
+    /*
+    |--------------------------------------------------------------------------
+    | Database Dumpers (FULL FIX – NO TABLES SKIPPED)
+    |--------------------------------------------------------------------------
+    | Forces Spatie to dump ALL tables, ALL data, COMPLETE INSERTS.
+    | Also auto-detects mysqldump on all systems.
+    |--------------------------------------------------------------------------
+    */
 
-        // Role-based filtering
-        if ($user->hasRole('tenant')) {
-            // Tenants see only their own pending payments
-            $query->whereHas('agreement.tenant', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
-            });
-        } elseif ($user->hasRole('cashier')) {
-            // Cashiers see payments submitted by tenants (not yet approved by cashier)
-            $query->whereHas('payment.updater.roles', function ($q) {
-                $q->where('name', 'tenant');
-            });
-        } elseif ($user->hasAnyRole(['super admin', 'deputy director','ceo'])) {
-            // For super admin: show both payments approved by cashiers AND payments not yet approved by anyone
-            if ($user->hasRole('super admin')) {
-                $query->where(function($q) use ($user) {
-                    // Payments approved by cashiers (waiting for admin approval)
-                    $q->whereHas('payment.updater.roles', function ($q) {
-                        $q->where('name', 'cashier');
-                    })
-                    // OR payments not yet approved by anyone (still with tenant)
-                    ->orWhereHas('payment.updater.roles', function ($q) {
-                        $q->where('name', 'tenant');
-                    });
-                });
-            } else {
-                // For deputy director and CEO: only show payments approved by cashiers
-                $query->whereHas('payment.updater.roles', function ($q) {
-                    $q->where('name', 'cashier');
-                });
-            }
-        }
+    'database_dumpers' => [
 
-        // Optional: Add payment status check to ensure we only show truly pending payments
-        $query->whereHas('payment', function ($q) {
-            $q->where('status', 'pending');
-        });
+        'mysql' => [
+            'dump_binary_path' => '',  // Auto-detect mysqldump
 
-        $allocations = $query->paginate(25);
-        $this->totalPendingAmount = $query->sum('total_for_the_month');
+            'use_single_transaction' => true,
+            'timeout' => 300,
 
-        return view('livewire.payment-report.pending-payments', [
-            'allocations' => $allocations,
-            'totalPendingAmount' => $this->totalPendingAmount,
-            'user' => $user,
-        ]);
-    }
+            // Never exclude schema
+            'exclude_tables' => [],
 
-    public function openApprovalModal($paymentId)
-    {
-        $this->dispatch('openModal', 'payment-report.payment-approval-modal', ['paymentId' => $paymentId]);
-    }
-}
+            'connections' => [
+                'mysql' => [
+
+                    // Never disable any table
+                    'disable_tables' => [],
+
+                    // Required for complete INSERT statements
+                    'dump' => [
+                        '--skip-lock-tables',
+                        '--default-character-set=utf8mb4',
+                        '--skip-add-drop-table',
+                        '--complete-insert',
+                    ],
+                ],
+            ],
+        ],
+    ],
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Disable Notifications (optional)
+    |--------------------------------------------------------------------------
+    */
+
+    'notifications' => [
+        'notifications' => [],
+    ],
+
+    'monitor_backups' => [],
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cleanup Strategy
+    |--------------------------------------------------------------------------
+    */
+
+    'cleanup' => [
+        'strategy' => \Spatie\Backup\Tasks\Cleanup\Strategies\DefaultStrategy::class,
+        'default_strategy' => [
+            'keep_all_backups_for_days' => 7,
+            'keep_daily_backups_for_days' => 10,
+            'keep_weekly_backups_for_weeks' => 8,
+            'keep_monthly_backups_for_months' => 4,
+            'keep_yearly_backups_for_years' => 2,
+            'delete_oldest_backups_when_using_more_megabytes_than' => 5120,
+        ],
+    ],
+];
