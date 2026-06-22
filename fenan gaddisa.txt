@@ -1,131 +1,176 @@
 <?php
 
+use Illuminate\Support\Str;
+
 return [
 
     /*
     |--------------------------------------------------------------------------
-    | Backup Name (IMPORTANT)
+    | Default Database Connection Name
     |--------------------------------------------------------------------------
-    | This folder will store your backups.
-    | Never use APP_NAME because spaces break folder paths.
-    |--------------------------------------------------------------------------
+    |
+    | Here you may specify which of the database connections below you wish
+    | to use as your default connection for database operations. This is
+    | the connection which will be utilized unless another connection
+    | is explicitly specified when you execute a query / statement.
+    |
     */
 
-    'backup' => [
-
-        'name' => 'backups', // <<< FIXED
-
-        'source' => [
-
-            'files' => [
-
-                'include' => [
-                    base_path('.env'),
-                    base_path('storage'),
-                    base_path('public'),
-                    base_path('database'),
-                    base_path('config'),
-                ],
-
-                'exclude' => [
-                    base_path('vendor'),
-                    base_path('node_modules'),
-                    base_path('storage/framework/cache'),
-                    base_path('storage/framework/sessions'),
-                    base_path('storage/framework/views'),
-                    base_path('storage/logs'),
-                    base_path('storage/debugbar'),
-                    base_path('.git'),
-                    base_path('tests'),
-                    base_path('bootstrap/cache'),
-                ],
-
-                'follow_links' => false,
-                'ignore_unreadable_directories' => false,
-                'relative_path' => null,
-            ],
-
-            'databases' => [
-                'mysql',
-            ],
-        ],
-
-        'destination' => [
-            'filename_prefix' => '',
-            'disks' => [
-                'local',
-            ],
-        ],
-    ],
-
+    'default' => env('DB_CONNECTION', 'sqlite'),
 
     /*
     |--------------------------------------------------------------------------
-    | Database Dumpers (FULL FIX – NO TABLES SKIPPED)
+    | Database Connections
     |--------------------------------------------------------------------------
-    | Forces Spatie to dump ALL tables, ALL data, COMPLETE INSERTS.
-    | Also auto-detects mysqldump on all systems.
-    |--------------------------------------------------------------------------
+    |
+    | Below are all of the database connections defined for your application.
+    | An example configuration is provided for each database system which
+    | is supported by Laravel. You're free to add / remove connections.
+    |
     */
 
-    'database_dumpers' => [
+    'connections' => [
+
+        'sqlite' => [
+            'driver' => 'sqlite',
+            'url' => env('DB_URL'),
+            'database' => env('DB_DATABASE', database_path('database.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
+        ],
 
         'mysql' => [
-            'dump_binary_path' => '',  // Auto-detect mysqldump
+            'driver' => 'mysql',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '3306'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => env('DB_CHARSET', 'utf8mb4'),
+            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => 'InnoDB',
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+            'dump' => [
+                'dump_binary_path' => env('DB_DUMP_PATH',''), // only the path, so without `mysqldump` or `pg_dump`
+                'use_single_transaction',
+                'timeout' => 60 * 15, // 5 minute timeout
+            ]
 
-            'use_single_transaction' => true,
-            'timeout' => 300,
-
-            // Never exclude schema
-            'exclude_tables' => [],
-
-            'connections' => [
-                'mysql' => [
-
-                    // Never disable any table
-                    'disable_tables' => [],
-
-                    // Required for complete INSERT statements
-                    'dump' => [
-                        '--skip-lock-tables',
-                        '--default-character-set=utf8mb4',
-                        '--skip-add-drop-table',
-                        '--complete-insert',
-                    ],
-                ],
-            ],
         ],
-    ],
 
+        'mariadb' => [
+            'driver' => 'mariadb',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '3306'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => env('DB_CHARSET', 'utf8mb4'),
+            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => 'InnoDB',
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
+        'pgsql' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => 'prefer',
+        ],
+
+        'sqlsrv' => [
+            'driver' => 'sqlsrv',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', 'localhost'),
+            'port' => env('DB_PORT', '1433'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
+            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
+        ],
+
+    ],
 
     /*
     |--------------------------------------------------------------------------
-    | Disable Notifications (optional)
+    | Migration Repository Table
     |--------------------------------------------------------------------------
+    |
+    | This table keeps track of all the migrations that have already run for
+    | your application. Using this information, we can determine which of
+    | the migrations on disk haven't actually been run on the database.
+    |
     */
 
-    'notifications' => [
-        'notifications' => [],
+    'migrations' => [
+        'table' => 'migrations',
+        'update_date_on_publish' => true,
     ],
-
-    'monitor_backups' => [],
-
 
     /*
     |--------------------------------------------------------------------------
-    | Cleanup Strategy
+    | Redis Databases
     |--------------------------------------------------------------------------
+    |
+    | Redis is an open source, fast, and advanced key-value store that also
+    | provides a richer body of commands than a typical key-value system
+    | such as Memcached. You may define your connection settings here.
+    |
     */
 
-    'cleanup' => [
-        'strategy' => \Spatie\Backup\Tasks\Cleanup\Strategies\DefaultStrategy::class,
-        'default_strategy' => [
-            'keep_all_backups_for_days' => 7,
-            'keep_daily_backups_for_days' => 10,
-            'keep_weekly_backups_for_weeks' => 8,
-            'keep_monthly_backups_for_months' => 4,
-            'keep_yearly_backups_for_years' => 2,
-            'delete_oldest_backups_when_using_more_megabytes_than' => 5120,
+    'redis' => [
+
+        'client' => env('REDIS_CLIENT', 'phpredis'),
+
+        'options' => [
+            'cluster' => env('REDIS_CLUSTER', 'redis'),
+            'prefix' => env('REDIS_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_').'_database_'),
         ],
+
+        'default' => [
+            'url' => env('REDIS_URL'),
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'username' => env('REDIS_USERNAME'),
+            'password' => env('REDIS_PASSWORD'),
+            'port' => env('REDIS_PORT', '6379'),
+            'database' => env('REDIS_DB', '0'),
+        ],
+
+        'cache' => [
+            'url' => env('REDIS_URL'),
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'username' => env('REDIS_USERNAME'),
+            'password' => env('REDIS_PASSWORD'),
+            'port' => env('REDIS_PORT', '6379'),
+            'database' => env('REDIS_CACHE_DB', '1'),
+        ],
+
     ],
+
 ];
